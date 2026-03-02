@@ -3,6 +3,9 @@ name = "chijin"
 version = "0.1.0"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE (OCC 7.9)"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/lzpel/chijin"
 
 [features]
 default = ["buildin"]
@@ -24,3 +27,7 @@ ureq = "3"
 libflate = "2"
 tar = "0.4"
 cmake = "0.1"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
+rustdoc-args = ["--cfg", "docsrs"]

@@ -13,21 +13,25 @@ const OCC_LIBS: &[&str] = &[
 	"TKPrim",
 	"TKBO",
 	"TKBool",
-	"TKShHealing",  // includes former TKShapeUpgrade
+	"TKShHealing", // includes former TKShapeUpgrade
 	"TKMesh",
 	"TKGeomBase",
 	"TKGeomAlgo",
 	"TKG3d",
 	"TKG2d",
-	"TKBin",        // was TKBinTools
+	"TKBin", // was TKBinTools
 	"TKXSBase",
-	"TKDE",         // DE framework base (OCCT 7.8+)
-	"TKDECascade",  // DE cascade bridge (OCCT 7.8+)
-	"TKDESTEP",     // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
+	"TKDE",        // DE framework base (OCCT 7.8+)
+	"TKDECascade", // DE cascade bridge (OCCT 7.8+)
+	"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
 	"TKService",
 ];
 
 fn main() {
+	if env::var("DOCS_RS").is_ok() {
+		return;
+	}
+
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
