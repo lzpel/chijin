@@ -1,53 +1,54 @@
 //! Stretch example: シリンダーを作って中心から XYZ 方向に引き延ばす
 //!
 //! ```
-//! cargo run --example stretch --features buildin
+//! cargo run --example stretch --features bundled
 //! ```
 //!
 //! 出力: out/stretched.brep (BRep テキスト形式)
 
-use chijin::Shape;
+use chijin::{Error, Shape};
 use glam::DVec3;
 use std::path::Path;
 
-/// 切断面フェイスの Compound を delta 方向に押し出してフィラーを生成する。
-/// BooleanShape::new_faces から直接フェイスを受け取るため heuristic フィルタは不要。
-fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Shape {
+/// 切断面フェイスの Compound を delta 方向に押し出してフィラーを作ります。
+/// BooleanShape::new_faces から直接フェイスを受け取るため、
+/// heuristic による法線・重心フィルタは不要です。
+fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Result<Shape, Error> {
     let mut filler: Option<Shape> = None;
     for face in cut_faces.faces() {
-        let extruded = Shape::from(face.extrude(delta).unwrap());
+        let extruded = Shape::from(face.extrude(delta)?);
         filler = Some(match filler {
             None => extruded,
-            Some(f) => Shape::from(f.union(&extruded).unwrap()),
+            Some(f) => Shape::from(f.union(&extruded)?),
         });
     }
-    filler.unwrap_or_else(Shape::empty)
+    Ok(filler.unwrap_or_else(Shape::empty))
 }
 
-/// 1 軸分の切断 → 正側を移動 → ギャップ充填を行う。
-fn stretch_axis(shape: Shape, axis: usize, cut_coord: f64, delta: f64) -> Shape {
-    let plane_origin = axis_vec(axis, cut_coord);
-    let plane_normal = axis_unit(axis);
-    let half = Shape::half_space(plane_origin, plane_normal);
+/// 指定された座標とベクトルで形状を分割し、片方を平行移動させた後、隙間を押し出し形状で埋めることで引き伸ばしを行います。
+/// intersect の BooleanShape::new_faces から切断面を直接取得するため、
+/// 法線・重心による heuristic フィルタを使いません。
+fn stretch_vector(shape: &Shape, origin: DVec3, delta: DVec3) -> Result<Shape, Error> {
+    let half = Shape::half_space(origin, delta.normalize());
 
-    let intersect = shape.intersect(&half).unwrap();
-    let part_neg = intersect.shape;
-    let cut_faces = intersect.new_faces;
-    let part_pos = Shape::from(shape.subtract(&half).unwrap()).translated(axis_vec(axis, delta));
+    let intersect_result = shape.intersect(&half)?;
+    let part_neg = intersect_result.shape;
+    let cut_faces = intersect_result.new_faces;
+    let part_pos = Shape::from(shape.subtract(&half)?).translated(delta);
 
-    let filler = extrude_faces(&cut_faces, axis_vec(axis, delta));
-    let combined = Shape::from(part_neg.union(&filler).unwrap());
-    Shape::from(combined.union(&part_pos).unwrap())
+    let filler = extrude_faces(&cut_faces, delta)?;
+    let combined = Shape::from(part_neg.union(&filler)?);
+    combined.union(&part_pos).map(Shape::from)
 }
 
 /// (cx,cy,cz) で切断し、(dx,dy,dz) だけ各軸方向に引き延ばす。
 /// delta が 0 以下の軸はスキップする。
-fn stretch(shape: Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Shape {
+fn stretch(shape: Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Shape, Error> {
     let eps = 1e-10;
-    let shape = if dx > eps { stretch_axis(shape, 0, cx, dx) } else { shape };
-    let shape = if dy > eps { stretch_axis(shape, 1, cy, dy) } else { shape };
-    let shape = if dz > eps { stretch_axis(shape, 2, cz, dz) } else { shape };
-    shape.clean().unwrap()
+    let shape = if dx > eps { stretch_vector(&shape, DVec3::new(cx, 0.0, 0.0), DVec3::new(dx, 0.0, 0.0))? } else { shape };
+    let shape = if dy > eps { stretch_vector(&shape, DVec3::new(0.0, cy, 0.0), DVec3::new(0.0, dy, 0.0))? } else { shape };
+    let shape = if dz > eps { stretch_vector(&shape, DVec3::new(0.0, 0.0, cz), DVec3::new(0.0, 0.0, dz))? } else { shape };
+    shape.clean()
 }
 
 fn main() {
@@ -72,7 +73,8 @@ fn main() {
     );
 
     // ── ストレッチ ────────────────────────────────────────────
-    let result = stretch(cylinder, center.x, center.y, center.z, dx, dy, dz);
+    let result = stretch(cylinder, center.x, center.y, center.z, dx, dy, dz)
+        .expect("ストレッチに失敗");
 
     // ── BRep テキストとして書き出し ───────────────────────────
     let out_path = "out/stretched.brep";
@@ -93,18 +95,4 @@ fn main() {
         mesh.vertices.len(),
         mesh.indices.len() / 3,
     );
-}
-
-// ── ユーティリティ ────────────────────────────────────────────────
-
-fn axis_vec(axis: usize, v: f64) -> DVec3 {
-    match axis {
-        0 => DVec3::new(v, 0.0, 0.0),
-        1 => DVec3::new(0.0, v, 0.0),
-        _ => DVec3::new(0.0, 0.0, v),
-    }
-}
-
-fn axis_unit(axis: usize) -> DVec3 {
-    axis_vec(axis, 1.0)
 }

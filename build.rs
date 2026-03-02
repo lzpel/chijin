@@ -35,12 +35,12 @@ fn main() {
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-	let (occt_include, occt_lib_dir) = if cfg!(feature = "buildin") {
+	let (occt_include, occt_lib_dir) = if cfg!(feature = "bundled") {
 		build_occt_from_source(&out_dir, &manifest_dir)
-	} else if cfg!(feature = "OCCT_ROOT") {
+	} else if cfg!(feature = "prebuilt") {
 		use_system_occt()
 	} else {
-		panic!("Either 'buildin' or 'OCCT_ROOT' feature must be enabled");
+		panic!("Either 'bundled' or 'prebuilt' feature must be enabled");
 	};
 
 	// Link OCC libraries
@@ -92,7 +92,7 @@ fn main() {
 	println!("cargo:rerun-if-changed=cpp/wrapper.cpp");
 }
 
-/// Feature "buildin": Download OCCT 7.9.3 source and build with CMake.
+/// Feature "bundled": Download OCCT 7.9.3 source and build with CMake.
 fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, PathBuf) {
 	let occt_version = "V7_9_3";
 	let occt_url = format!(
@@ -236,13 +236,13 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	occt_root.join("lib")
 }
 
-/// Feature "OCCT_ROOT": Use system-installed OCCT.
+/// Feature "prebuilt": Use system-installed OCCT.
 fn use_system_occt() -> (PathBuf, PathBuf) {
 	let occt_root = env::var("OCCT_ROOT")
 		.or_else(|_| env::var("CASROOT"))
 		.expect(
 			"OCCT_ROOT or CASROOT environment variable must be set \
-             when using the 'OCCT_ROOT' feature",
+             when using the 'prebuilt' feature",
 		);
 
 	let occt_root = PathBuf::from(occt_root);
