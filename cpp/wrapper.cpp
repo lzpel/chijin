@@ -1,10 +1,62 @@
-#include "wrapper.h"
+#include "chijin/src/ffi.rs.h"
 
 #include <cmath>
 #include <cstring>
 #include <algorithm>
 
 namespace chijin {
+
+// ==================== RustReadStreambuf ====================
+
+std::streambuf::int_type RustReadStreambuf::underflow() {
+    rust::Slice<uint8_t> slice(
+        reinterpret_cast<uint8_t*>(buf_), sizeof(buf_));
+    size_t n = rust_reader_read(reader_, slice);
+    if (n == 0) return traits_type::eof();
+    setg(buf_, buf_, buf_ + n);
+    return traits_type::to_int_type(*gptr());
+}
+
+// ==================== RustWriteStreambuf ====================
+
+std::streambuf::int_type RustWriteStreambuf::overflow(int_type ch) {
+    if (ch != traits_type::eof()) {
+        buf_[pos_++] = static_cast<char>(ch);
+        if (pos_ >= sizeof(buf_)) {
+            if (!flush_buf()) return traits_type::eof();
+        }
+    }
+    return ch;
+}
+
+std::streamsize RustWriteStreambuf::xsputn(const char* s, std::streamsize count) {
+    std::streamsize written = 0;
+    while (written < count) {
+        std::streamsize space = sizeof(buf_) - pos_;
+        std::streamsize chunk = std::min(count - written, space);
+        std::memcpy(buf_ + pos_, s + written, chunk);
+        pos_ += static_cast<size_t>(chunk);
+        written += chunk;
+        if (pos_ >= sizeof(buf_)) {
+            if (!flush_buf()) return written;
+        }
+    }
+    return written;
+}
+
+int RustWriteStreambuf::sync() {
+    return flush_buf() ? 0 : -1;
+}
+
+bool RustWriteStreambuf::flush_buf() {
+    if (pos_ == 0) return true;
+    rust::Slice<const uint8_t> slice(
+        reinterpret_cast<const uint8_t*>(buf_), pos_);
+    size_t n = rust_writer_write(writer_, slice);
+    if (n < pos_) return false;
+    pos_ = 0;
+    return true;
+}
 
 // ==================== Shape I/O (streambuf callback) ====================
 
@@ -26,11 +78,26 @@ std::unique_ptr<TopoDS_Shape> read_step_stream(RustReader& reader) {
 }
 
 std::unique_ptr<TopoDS_Shape> read_brep_bin_stream(RustReader& reader) {
-    RustReadStreambuf sbuf(reader);
-    std::istream is(&sbuf);
+    // BinTools::Read requires a seekable stream: the binary format stores
+    // backward references (offsets) for shared sub-shapes and seeks to them.
+    // Our RustReadStreambuf is sequential only, so buffer everything in
+    // memory first and use std::istringstream which is seekable.
+    std::string data;
+    char buf[8192];
+    for (;;) {
+        rust::Slice<uint8_t> slice(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
+        size_t n = rust_reader_read(reader, slice);
+        if (n == 0) break;
+        data.append(buf, n);
+    }
 
+    std::istringstream iss(std::move(data));
     auto shape = std::make_unique<TopoDS_Shape>();
-    BinTools::Read(*shape, is);
+    try {
+        BinTools::Read(*shape, iss);
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
 
     if (shape->IsNull()) {
         return nullptr;
@@ -41,7 +108,11 @@ std::unique_ptr<TopoDS_Shape> read_brep_bin_stream(RustReader& reader) {
 bool write_brep_bin_stream(const TopoDS_Shape& shape, RustWriter& writer) {
     RustWriteStreambuf sbuf(writer);
     std::ostream os(&sbuf);
-    BinTools::Write(shape, os);
+    try {
+        BinTools::Write(shape, os);
+    } catch (const Standard_Failure&) {
+        return false;
+    }
     return os.good();
 }
 
@@ -51,7 +122,11 @@ std::unique_ptr<TopoDS_Shape> read_brep_text_stream(RustReader& reader) {
 
     auto shape = std::make_unique<TopoDS_Shape>();
     BRep_Builder builder;
-    BRepTools::Read(*shape, is, builder);
+    try {
+        BRepTools::Read(*shape, is, builder);
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
 
     if (shape->IsNull()) {
         return nullptr;
@@ -62,7 +137,11 @@ std::unique_ptr<TopoDS_Shape> read_brep_text_stream(RustReader& reader) {
 bool write_brep_text_stream(const TopoDS_Shape& shape, RustWriter& writer) {
     RustWriteStreambuf sbuf(writer);
     std::ostream os(&sbuf);
-    BRepTools::Write(shape, os);
+    try {
+        BRepTools::Write(shape, os);
+    } catch (const Standard_Failure&) {
+        return false;
+    }
     return os.good();
 }
 
@@ -318,7 +397,17 @@ std::unique_ptr<TopExp_Explorer> explore_faces(const TopoDS_Shape& shape) {
 }
 
 std::unique_ptr<TopExp_Explorer> explore_edges(const TopoDS_Shape& shape) {
-    return std::make_unique<TopExp_Explorer>(shape, TopAbs_EDGE);
+    // TopExp_Explorer visits shared edges once per adjacent face.
+    // Build a flat compound of unique edges so each is visited exactly once.
+    TopTools_IndexedMapOfShape edgeMap;
+    TopExp::MapShapes(shape, TopAbs_EDGE, edgeMap);
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    for (int i = 1; i <= edgeMap.Extent(); i++) {
+        builder.Add(compound, edgeMap(i));
+    }
+    return std::make_unique<TopExp_Explorer>(compound, TopAbs_EDGE);
 }
 
 bool explorer_more(const TopExp_Explorer& explorer) {

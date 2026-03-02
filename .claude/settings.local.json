@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(ls:*)",
+      "Bash(nm:*)",
+      "Bash(*)",
+      "Bash(x86_64-w64-mingw32-gcc:*)",
+      "Bash(RUSTFLAGS=\"-Z print-link-args\" cargo test:*)",
+      "Bash(# Get all undefined symbols specifically from OSD_WNT.cxx.obj nm -u target/occt/win64/gcc/lib/libTKernel.a)",
+      "Bash(ar x:*)",
+      "Bash(mkdir:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(cmake:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ar t:*)",
+      "Bash(objdump:*)",
+      "Bash(x86_64-w64-mingw32-g++:*)",
+      "Bash(rm:*)",
+      "Bash(/C/Users/smith/mingw64/bin/c++.exe:*)"
+    ]
+  }
+}

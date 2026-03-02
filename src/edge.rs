@@ -1,6 +1,5 @@
 use crate::ffi;
 use crate::iterators::ApproximationSegmentIterator;
-use glam::DVec3;
 
 /// An edge topology shape.
 pub struct Edge {

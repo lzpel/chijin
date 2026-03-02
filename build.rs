@@ -2,7 +2,9 @@ use std::env;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// Required OCC toolkit libraries to link against.
+/// Required OCC toolkit libraries to link against (OCCT 7.8+ / 7.9.x naming).
+/// In OCCT 7.8+: TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into
+/// TKDESTEP/TKBin/TKShHealing respectively.
 const OCC_LIBS: &[&str] = &[
 	"TKernel",
 	"TKMath",
@@ -10,27 +12,27 @@ const OCC_LIBS: &[&str] = &[
 	"TKTopAlgo",
 	"TKPrim",
 	"TKBO",
-	"TKShHealing",
-	"TKShapeUpgrade",
-	"TKSTEP",
-	"TKSTEP209",
-	"TKSTEPAttr",
-	"TKSTEPBase",
+	"TKBool",
+	"TKShHealing",  // includes former TKShapeUpgrade
 	"TKMesh",
 	"TKGeomBase",
 	"TKGeomAlgo",
 	"TKG3d",
 	"TKG2d",
-	"TKBinTools",
+	"TKBin",        // was TKBinTools
 	"TKXSBase",
+	"TKDE",         // DE framework base (OCCT 7.8+)
+	"TKDECascade",  // DE cascade bridge (OCCT 7.8+)
+	"TKDESTEP",     // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
 	"TKService",
 ];
 
 fn main() {
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
 	let (occt_include, occt_lib_dir) = if cfg!(feature = "buildin") {
-		build_occt_from_source(&out_dir)
+		build_occt_from_source(&out_dir, &manifest_dir)
 	} else if cfg!(feature = "OCCT_ROOT") {
 		use_system_occt()
 	} else {
@@ -43,11 +45,26 @@ fn main() {
 		println!("cargo:rustc-link-lib=static={}", lib);
 	}
 
+	// Standard_ErrorHandler inline methods are defined both in the OCCT header
+	// (compiled into wrapper.o) and in Standard_ErrorHandler.cxx (in TKernel.a).
+	// MinGW's linker treats both as strong symbols and errors; allow the duplicate.
+	println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+
+	// TKernel's OSD_WNT.cxx registers a static initialiser (Init_OSD_WNT) that
+	// calls advapi32 functions (AllocateAndInitializeSid etc.) at program startup.
+	// Standard_Macro.hxx forcibly undefs OCCT_UWP unless WINAPI_FAMILY_APP is set,
+	// so the dependency cannot be removed via compiler flags alone.
+	// Rust passes -nodefaultlibs, bypassing GCC's spec that normally adds -ladvapi32.
+	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+		println!("cargo:rustc-link-arg=-ladvapi32");
+	}
+
 	// Build cxx bridge + C++ wrapper
 	cxx_build::bridge("src/ffi.rs")
 		.file("cpp/wrapper.cpp")
 		.include(&occt_include)
 		.std("c++17")
+		.define("_USE_MATH_DEFINES", None)
 		.compile("chijin_cpp");
 
 	println!("cargo:rerun-if-changed=src/ffi.rs");
@@ -56,7 +73,7 @@ fn main() {
 }
 
 /// Feature "buildin": Download OCCT 7.9.3 source and build with CMake.
-fn build_occt_from_source(out_dir: &Path) -> (PathBuf, PathBuf) {
+fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, PathBuf) {
 	let occt_version = "V7_9_3";
 	let occt_url = format!(
 		"https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz",
@@ -121,11 +138,13 @@ fn build_occt_from_source(out_dir: &Path) -> (PathBuf, PathBuf) {
 		.expect("OCCT source directory not found after extraction");
 
 	// Install into target/occt for a stable, predictable location
-	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 	let occt_root = manifest_dir.join("target").join("occt");
 
+	// Determine lib path (CMake on Windows/MinGW installs to win64/gcc/lib)
+	let lib_dir = find_occt_lib_dir(&occt_root);
+
 	// Build with CMake only if not already installed
-	if !occt_root.join("lib").exists() {
+	if !lib_dir.exists() {
 		eprintln!("Building OCCT with CMake (this may take a while)...");
 
 		let built = cmake::Config::new(&source_dir)
@@ -156,7 +175,10 @@ fn build_occt_from_source(out_dir: &Path) -> (PathBuf, PathBuf) {
 		eprintln!("OCCT built at: {}", built.display());
 	}
 
-	// Determine include and lib paths
+	// Re-resolve lib dir after build (in case it was just created)
+	let lib_dir = find_occt_lib_dir(&occt_root);
+
+	// Determine include path
 	let include_dir = if occt_root.join("include").join("opencascade").exists() {
 		occt_root.join("include").join("opencascade")
 	} else if occt_root.join("inc").exists() {
@@ -164,9 +186,25 @@ fn build_occt_from_source(out_dir: &Path) -> (PathBuf, PathBuf) {
 	} else {
 		occt_root.join("include")
 	};
-	let lib_dir = occt_root.join("lib");
 
 	(include_dir, lib_dir)
+}
+
+/// Find the OCCT lib directory, checking common install layouts.
+/// CMake on Windows/MinGW installs to win64/gcc/lib; on Linux to lib.
+fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
+	let candidates = [
+		occt_root.join("lib"),
+		occt_root.join("win64").join("gcc").join("lib"),
+		occt_root.join("win64").join("vc14").join("lib"),
+	];
+	for dir in &candidates {
+		if dir.exists() {
+			return dir.clone();
+		}
+	}
+	// Default fallback
+	occt_root.join("lib")
 }
 
 /// Feature "OCCT_ROOT": Use system-installed OCCT.

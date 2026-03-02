@@ -36,6 +36,8 @@
 #include <GCPnts_TangentialDeflection.hxx>
 
 #include <BRep_Builder.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Trsf.hxx>
@@ -45,24 +47,32 @@
 #include <BRepTools.hxx>
 #include <STEPControl_Reader.hxx>
 #include <Message_ProgressRange.hxx>
+#include <Standard_Failure.hxx>
 
 #include <BRepBuilderAPI_Transform.hxx>
 
 #include <streambuf>
 #include <istream>
 #include <ostream>
+#include <sstream>
 #include <memory>
 
-// Forward-declare the Rust opaque types
+namespace chijin {
+
+// Type aliases to bring OCCT global types into chijin namespace.
+// Required because the cxx bridge uses namespace = "chijin".
+using TopoDS_Shape = ::TopoDS_Shape;
+using TopoDS_Face = ::TopoDS_Face;
+using TopoDS_Edge = ::TopoDS_Edge;
+using TopExp_Explorer = ::TopExp_Explorer;
+
+// Forward-declare the Rust opaque types (defined by cxx in ffi.rs.h)
 struct RustReader;
 struct RustWriter;
 
-// Forward-declare the Rust FFI callbacks
-size_t rust_reader_read(RustReader& reader, rust::Slice<uint8_t> buf);
-size_t rust_writer_write(RustWriter& writer, rust::Slice<const uint8_t> buf);
-bool rust_writer_flush(RustWriter& writer);
-
-namespace chijin {
+// Forward-declare shared structs (defined by cxx in ffi.rs.h)
+struct MeshData;
+struct ApproxPoints;
 
 // ==================== Streambuf bridges ====================
 
@@ -72,14 +82,7 @@ public:
     explicit RustReadStreambuf(RustReader& reader) : reader_(reader) {}
 
 protected:
-    int_type underflow() override {
-        rust::Slice<uint8_t> slice(
-            reinterpret_cast<uint8_t*>(buf_), sizeof(buf_));
-        size_t n = rust_reader_read(reader_, slice);
-        if (n == 0) return traits_type::eof();
-        setg(buf_, buf_, buf_ + n);
-        return traits_type::to_int_type(*gptr());
-    }
+    int_type underflow() override;
 
 private:
     RustReader& reader_;
@@ -96,45 +99,12 @@ public:
     }
 
 protected:
-    int_type overflow(int_type ch) override {
-        if (ch != traits_type::eof()) {
-            buf_[pos_++] = static_cast<char>(ch);
-            if (pos_ >= sizeof(buf_)) {
-                if (!flush_buf()) return traits_type::eof();
-            }
-        }
-        return ch;
-    }
-
-    std::streamsize xsputn(const char* s, std::streamsize count) override {
-        std::streamsize written = 0;
-        while (written < count) {
-            std::streamsize space = sizeof(buf_) - pos_;
-            std::streamsize chunk = std::min(count - written, space);
-            std::memcpy(buf_ + pos_, s + written, chunk);
-            pos_ += static_cast<size_t>(chunk);
-            written += chunk;
-            if (pos_ >= sizeof(buf_)) {
-                if (!flush_buf()) return written;
-            }
-        }
-        return written;
-    }
-
-    int sync() override {
-        return flush_buf() ? 0 : -1;
-    }
+    int_type overflow(int_type ch) override;
+    std::streamsize xsputn(const char* s, std::streamsize count) override;
+    int sync() override;
 
 private:
-    bool flush_buf() {
-        if (pos_ == 0) return true;
-        rust::Slice<const uint8_t> slice(
-            reinterpret_cast<const uint8_t*>(buf_), pos_);
-        size_t n = rust_writer_write(writer_, slice);
-        if (n < pos_) return false;
-        pos_ = 0;
-        return true;
-    }
+    bool flush_buf();
 
     RustWriter& writer_;
     char buf_[8192];
@@ -185,14 +155,6 @@ bool shape_is_null(const TopoDS_Shape& shape);
 
 // ==================== Meshing ====================
 
-struct MeshData {
-    rust::Vec<double> vertices;
-    rust::Vec<double> uvs;
-    rust::Vec<double> normals;
-    rust::Vec<uint32_t> indices;
-    bool success;
-};
-
 MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance);
 
 // ==================== Explorer / Iterators ====================
@@ -215,11 +177,6 @@ std::unique_ptr<TopoDS_Shape> face_extrude(const TopoDS_Face& face,
 std::unique_ptr<TopoDS_Shape> face_to_shape(const TopoDS_Face& face);
 
 // ==================== Edge Methods ====================
-
-struct ApproxPoints {
-    rust::Vec<double> coords;
-    uint32_t count;
-};
 
 ApproxPoints edge_approximation_segments(
     const TopoDS_Edge& edge, double tolerance);

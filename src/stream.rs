@@ -20,9 +20,16 @@ impl RustReader {
 	/// The caller must ensure that the resulting `RustReader` is not used
 	/// after `reader` is dropped. In practice, this is guaranteed because
 	/// the C++ FFI call is synchronous.
-	pub fn from_ref(reader: &mut dyn Read) -> Self {
+	pub fn from_ref<'a>(reader: &'a mut (dyn Read + 'a)) -> Self {
+		// SAFETY: Caller must ensure `reader` outlives this RustReader.
+		// The `'static` bound is required by the raw pointer type, so we
+		// use transmute to erase the lifetime (lifetimes are compile-time only).
 		RustReader {
-			inner: reader as *mut dyn Read,
+			inner: unsafe {
+				std::mem::transmute::<*mut (dyn Read + 'a), *mut (dyn Read + 'static)>(
+					reader as *mut (dyn Read + 'a),
+				)
+			},
 		}
 	}
 }
@@ -40,9 +47,15 @@ impl RustWriter {
 	///
 	/// # Safety
 	/// Same as `RustReader::from_ref`.
-	pub fn from_ref(writer: &mut dyn Write) -> Self {
+	pub fn from_ref<'a>(writer: &'a mut (dyn Write + 'a)) -> Self {
+		// SAFETY: Caller must ensure `writer` outlives this RustWriter.
+		// See RustReader::from_ref for the same rationale.
 		RustWriter {
-			inner: writer as *mut dyn Write,
+			inner: unsafe {
+				std::mem::transmute::<*mut (dyn Write + 'a), *mut (dyn Write + 'static)>(
+					writer as *mut (dyn Write + 'a),
+				)
+			},
 		}
 	}
 }

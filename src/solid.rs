@@ -1,5 +1,4 @@
 use crate::ffi;
-use glam::DVec3;
 
 /// A solid topology shape (result of extrusion).
 pub struct Solid {

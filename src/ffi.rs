@@ -1,5 +1,8 @@
+use crate::stream::{RustReader, RustWriter};
+use crate::stream::{rust_reader_read, rust_writer_write, rust_writer_flush};
+
 #[cxx::bridge(namespace = "chijin")]
-pub mod ffi {
+mod ffi_bridge {
 	// Shared struct for mesh data returned from C++
 	struct MeshData {
 		vertices: Vec<f64>, // flat xyz
@@ -28,7 +31,7 @@ pub mod ffi {
 	unsafe extern "C++" {
 		include!("chijin/cpp/wrapper.h");
 
-		// Opaque C++ types
+		// Opaque C++ types (accessed as chijin::TopoDS_Shape etc. via using aliases)
 		type TopoDS_Shape;
 		type TopoDS_Face;
 		type TopoDS_Edge;
@@ -123,3 +126,6 @@ pub mod ffi {
 		fn edge_approximation_segments(edge: &TopoDS_Edge, tolerance: f64) -> ApproxPoints;
 	}
 }
+
+// Re-export all bridge items so other modules can use `crate::ffi::TopoDS_Shape` etc.
+pub use ffi_bridge::*;
