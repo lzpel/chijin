@@ -49,11 +49,6 @@ fn main() {
 		println!("cargo:rustc-link-lib=static={}", lib);
 	}
 
-	// Safety-net: suppress any residual duplicate-symbol errors when linking
-	// against OCCT static libraries on MinGW.  The primary fix is the
-	// OCC_CONVERT_SIGNALS define added below to the cxx_build step.
-	println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
-
 	// TKernel's OSD_WNT.cxx registers a static initialiser (Init_OSD_WNT) that
 	// calls advapi32 functions (AllocateAndInitializeSid etc.) at program startup.
 	// Standard_Macro.hxx forcibly undefs OCCT_UWP unless WINAPI_FAMILY_APP is set,
@@ -70,20 +65,6 @@ fn main() {
 		.include(&occt_include)
 		.std("c++17")
 		.define("_USE_MATH_DEFINES", None);
-
-	// On MinGW (Windows GNU toolchain), GCC at -O0 emits inline C++ methods
-	// (from Standard_ErrorHandler.hxx) as strong (non-COMDAT) symbols in wrapper.o.
-	// TKernel.a unconditionally defines the same methods in Standard_ErrorHandler.cxx.obj.
-	// This causes "multiple definition" link errors.
-	//
-	// Standard_ErrorHandler.hxx only generates the inline stubs when OCC_CONVERT_SIGNALS
-	// is NOT defined (via `#if !defined(OCC_CONVERT_SIGNALS)`).  Defining it here
-	// suppresses those stubs in wrapper.o so only TKernel.a's implementation is linked.
-	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-		&& env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu")
-	{
-		build.define("OCC_CONVERT_SIGNALS", None);
-	}
 
 	build.compile("chijin_cpp");
 
