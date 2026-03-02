@@ -1,6 +1,6 @@
 [package]
 name = "chijin"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE (OCC 7.9)"
 license = "MIT"
@@ -8,11 +8,11 @@ readme = "README.md"
 repository = "https://github.com/lzpel/chijin"
 
 [features]
-default = ["buildin"]
+default = ["bundled"]
 # Download and build OCCT 7.9.3 from source during cargo build
-buildin = []
-# Use system-installed OCCT via OCCT_ROOT environment variable
-OCCT_ROOT = []
+bundled = []
+# Use a system-installed OCCT via the OCCT_ROOT environment variable
+prebuilt = []
 
 [dependencies]
 cxx = "1"
