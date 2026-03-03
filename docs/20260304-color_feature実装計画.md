@@ -10,6 +10,14 @@
 
 ### 1.1 実装の戦略は2通りある
 
+>feature colorをつけてコンパイルするとpub struct Shape {
+>pub(crate) inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
+>}にpub colormap: HashMap<TShape*, RGB>が追加される。
+>Shapeのclean()やブーリアン演算でそれが保持される。
+>STEP読み込み書き込みでそれが保持される。（形全体への色はすべての面への色へ変換される）
+>このライブラリの使用者がgltf出力などを書くときにcolormapを利用できる
+>という修正は可能ですか？
+
 可能です。ただし、いくつかの設計上の判断が必要です。整理します。
 
 実現可能性: ✅ 可能
