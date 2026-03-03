@@ -37,14 +37,15 @@ pub struct Shape {
 TShape* は C++ のポインタなので Rust の HashMap のキーにするには FFI 越しにハッシュ値を取るのが自然です。OCCT には TopoDS_Shape の HashCode() がありますが、衝突の可能性があるため、より安全な方法は C++ 側で TopTools_DataMapOfShapeInteger（IsSame() ベースのマップ）を使うことです。
 
 難易度の内訳
-機能	難易度	理由
-ブール演算での色リレー	中	Modified() は既に使っている。deep_copy前後の対応づけが必要
 
-clean()
- での色リレー	中	ShapeUpgrade_UnifySameDomain も Modified() を持つ
-STEP 読み込み（色付き）	高	STEPCAFControl_Reader + XCAFDoc_ColorTool + TDocStd_Document 等の新FFIが大量に必要
-STEP 書き出し（色付き）	高	同上（STEPCAFControl_Writer）
-Shape全体色 → 全Face色への展開	低	Rust側で全faceに同色をsetするだけ
+|機能|難易度|理由|
+|---|---|---|
+|ブール演算での色リレー|中|Modified() は既に使っている。deep_copy前後の対応づけが必要
+|clean()での色リレー|中|ShapeUpgrade_UnifySameDomain も Modified() を持つ
+|STEP 読み込み（色付き）|高|STEPCAFControl_Reader + XCAFDoc_ColorTool + TDocStd_Document 等の新FFIが大量に必要|
+|STEP 書き出し（色付き）|高|同上（STEPCAFControl_Writer）|
+|Shape全体色 → 全Face色への展開|低|Rust側で全faceに同色をsetするだけ|
+
 2つの実装戦略
 戦略1: C++側にカラーマップを持つ（推奨）
 
