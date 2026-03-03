@@ -119,6 +119,62 @@ fn test_translated_preserves_colors() {
 }
 
 #[test]
+fn test_step_color_roundtrip() {
+	// Create a box with 6 distinctly-colored faces
+	let colors: [[u8; 3]; 6] = [
+		[255, 0, 0],   // Red
+		[0, 255, 0],   // Green
+		[0, 0, 255],   // Blue
+		[255, 255, 0], // Yellow
+		[255, 0, 255], // Magenta
+		[0, 255, 255], // Cyan
+	];
+
+	let mut shape =
+		Shape::box_from_corners(DVec3::new(0.0, 0.0, 0.0), DVec3::new(10.0, 10.0, 10.0));
+	for (face, color) in shape.faces().zip(colors.iter()) {
+		shape.set_face_color(&face, *color);
+	}
+	assert_eq!(shape.color_count(), 6);
+
+	// Write to STEP bytes using XDE
+	let mut step_data: Vec<u8> = Vec::new();
+	shape
+		.write_step_colored(&mut step_data)
+		.expect("write_step_colored should succeed");
+	assert!(!step_data.is_empty(), "STEP output should be non-empty");
+
+	// Read back
+	let mut cursor = std::io::Cursor::new(&step_data);
+	let loaded =
+		Shape::read_step_colored(&mut cursor).expect("read_step_colored should succeed");
+
+	// Collect all colors present in the loaded shape
+	let mut found: std::collections::HashSet<[u8; 3]> = Default::default();
+	for face in loaded.faces() {
+		if let Some(color) = loaded.face_color(&face) {
+			found.insert(color);
+		}
+	}
+
+	// All 6 distinct colors must survive the STEP round-trip.
+	// (0 and 255 are exact in sRGB-linear conversion, so no rounding drift.)
+	assert_eq!(
+		found.len(),
+		6,
+		"All 6 face colors must be preserved after STEP round-trip, got: {:?}",
+		found
+	);
+	for color in &colors {
+		assert!(
+			found.contains(color),
+			"Color {:?} missing after round-trip",
+			color
+		);
+	}
+}
+
+#[test]
 fn test_stretch_preserves_colors() {
 	// 1. 基本となる直方体を作成
 	let mut base = Shape::box_from_corners(DVec3::new(0.0, 0.0, 0.0), DVec3::new(10.0, 10.0, 10.0));

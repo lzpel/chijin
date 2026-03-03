@@ -55,6 +55,23 @@
 #include <cstring>
 #include <algorithm>
 
+#ifdef CHIJIN_COLOR
+// XDE (Application Framework) headers — only present when ApplicationFramework
+// module is built (BUILD_MODULE_ApplicationFramework = ON in CMake).
+// Note: XCAFApp_Application is intentionally NOT included to avoid pulling in
+// the visualization stack (XCAFPrs_Driver → TKVCAF → TKV3d).
+// TDocStd_Document can be constructed directly — no application is needed for
+// our simple write/read use case (no undo, no native-format persistence).
+#include <TDocStd_Document.hxx>
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
+#include <STEPCAFControl_Reader.hxx>
+#include <STEPCAFControl_Writer.hxx>
+#include <Quantity_Color.hxx>
+#include <TDF_LabelSequence.hxx>
+#endif // CHIJIN_COLOR
+
 namespace chijin {
 
 // ==================== RustReadStreambuf ====================
@@ -919,6 +936,156 @@ std::unique_ptr<TopoDS_Shape> clean_shape_colored(
     } catch (const Standard_Failure&) {
         return nullptr;
     }
+}
+
+// ==================== XDE STEP Colored I/O ====================
+
+// Recursively extract face colors from an XDE document label tree.
+// Stores each colored shape's color into out_colors using its TopoDS_Shape
+// as key (IsSame()-based lookup).
+static void extract_colors_from_label(
+    const TDF_Label& label,
+    const Handle(XCAFDoc_ShapeTool)& shape_tool,
+    const Handle(XCAFDoc_ColorTool)& color_tool,
+    ColorMap& out_colors)
+{
+    // Check this label for a color
+    TopoDS_Shape shape = shape_tool->GetShape(label);
+    if (!shape.IsNull()) {
+        Quantity_Color color;
+        bool found = color_tool->GetColor(label, XCAFDoc_ColorSurf, color);
+        if (!found) found = color_tool->GetColor(label, XCAFDoc_ColorGen, color);
+        if (found) {
+            Standard_Real r, g, b;
+            color.Values(r, g, b, Quantity_TOC_sRGB);
+            out_colors.set(shape,
+                static_cast<uint8_t>(std::lround(r * 255.0)),
+                static_cast<uint8_t>(std::lround(g * 255.0)),
+                static_cast<uint8_t>(std::lround(b * 255.0)));
+        }
+    }
+
+    // Recurse into direct sub-shapes (faces, edges, ...)
+    TDF_LabelSequence subshapes;
+    shape_tool->GetSubShapes(label, subshapes);
+    for (int i = 1; i <= subshapes.Length(); ++i) {
+        extract_colors_from_label(subshapes.Value(i), shape_tool, color_tool, out_colors);
+    }
+}
+
+std::unique_ptr<TopoDS_Shape> read_step_colored_from_slice(
+    rust::Slice<const uint8_t> data, ColorMap& out_colors)
+{
+    // Copy slice into a string so we can use istringstream (seekable).
+    std::string buf(reinterpret_cast<const char*>(data.data()), data.size());
+    std::istringstream iss(std::move(buf));
+
+    // Create the XDE document directly — no XCAFApp_Application needed.
+    // TDocStd_Document creates its own TDF_Data (label tree) in the constructor.
+    // Using the application singleton would pull in XCAFPrs_Driver → TKVCAF →
+    // TKV3d, which we do not need.
+    Handle(TDocStd_Document) doc = new TDocStd_Document("XmlXCAF");
+
+    // Heap-allocate and intentionally leak the reader to prevent crash on
+    // process exit (same pattern as read_step_stream — Bug 2 fix).
+    auto* caf_reader = new STEPCAFControl_Reader();
+    caf_reader->SetColorMode(Standard_True);
+
+    if (caf_reader->ChangeReader().ReadStream("step", iss) != IFSelect_RetDone) {
+        return nullptr;
+    }
+
+    if (!caf_reader->Transfer(doc, Message_ProgressRange())) {
+        return nullptr;
+    }
+
+    Handle(XCAFDoc_ShapeTool) shape_tool =
+        XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+    Handle(XCAFDoc_ColorTool) color_tool =
+        XCAFDoc_DocumentTool::ColorTool(doc->Main());
+
+    TDF_LabelSequence free_shapes;
+    shape_tool->GetFreeShapes(free_shapes);
+    if (free_shapes.IsEmpty()) {
+        return nullptr;
+    }
+
+    // Build result: single shape or compound of all free shapes
+    TopoDS_Shape result;
+    if (free_shapes.Length() == 1) {
+        result = shape_tool->GetShape(free_shapes.Value(1));
+    } else {
+        BRep_Builder builder;
+        TopoDS_Compound compound;
+        builder.MakeCompound(compound);
+        for (int i = 1; i <= free_shapes.Length(); ++i) {
+            builder.Add(compound, shape_tool->GetShape(free_shapes.Value(i)));
+        }
+        result = compound;
+    }
+
+    // Extract colors from each free shape's label tree
+    for (int i = 1; i <= free_shapes.Length(); ++i) {
+        extract_colors_from_label(
+            free_shapes.Value(i), shape_tool, color_tool, out_colors);
+    }
+
+    // doc Handle goes out of scope here; TDocStd_Document is destroyed.
+    // The extracted TopoDS_Shape objects hold independent Handle<TShape>
+    // references and remain valid after the document is gone.
+    return std::make_unique<TopoDS_Shape>(result);
+}
+
+rust::Vec<uint8_t> write_step_colored_to_vec(
+    const TopoDS_Shape& shape, const ColorMap& colors)
+{
+    // Create XDE document directly (see read_step_colored_from_slice comment).
+    Handle(TDocStd_Document) doc = new TDocStd_Document("XmlXCAF");
+
+    Handle(XCAFDoc_ShapeTool) shape_tool =
+        XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+    Handle(XCAFDoc_ColorTool) color_tool =
+        XCAFDoc_DocumentTool::ColorTool(doc->Main());
+
+    // Register the main shape in the document
+    TDF_Label shape_label = shape_tool->NewShape();
+    shape_tool->SetShape(shape_label, shape);
+
+    // For each face with a color: add a sub-shape label and assign the color
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Shape& face = ex.Current();
+        uint8_t r, g, b;
+        if (!colors.get(face, r, g, b)) continue;
+
+        TDF_Label face_label = shape_tool->AddSubShape(shape_label, face);
+        Quantity_Color qcolor(
+            static_cast<double>(r) / 255.0,
+            static_cast<double>(g) / 255.0,
+            static_cast<double>(b) / 255.0,
+            Quantity_TOC_sRGB);
+        color_tool->SetColor(face_label, qcolor, XCAFDoc_ColorSurf);
+    }
+
+    // Transfer the document to STEP model
+    STEPCAFControl_Writer caf_writer;
+    caf_writer.SetColorMode(Standard_True);
+    if (!caf_writer.Transfer(doc)) {
+        return rust::Vec<uint8_t>(); // empty = failure
+    }
+
+    // Write STEP model to an in-memory string buffer
+    std::ostringstream oss;
+    if (caf_writer.ChangeWriter().WriteStream(oss) != IFSelect_RetDone) {
+        return rust::Vec<uint8_t>(); // empty = failure
+    }
+
+    std::string s = oss.str();
+    rust::Vec<uint8_t> result;
+    result.reserve(s.size());
+    for (unsigned char c : s) {
+        result.push_back(c);
+    }
+    return result;
 }
 
 #endif // CHIJIN_COLOR

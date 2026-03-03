@@ -68,6 +68,23 @@ mod color_ffi_bridge {
 			after_copy: &TopoDS_Shape,
 			src: &ColorMap,
 		) -> UniquePtr<ColorMap>;
+
+		// ==================== XDE STEP colored I/O ====================
+
+		/// Read a STEP byte slice with XDE color support.
+		/// Face colors found in the file are written into `out_colors`.
+		/// Using a byte slice avoids RustReader type sharing across cxx bridges.
+		fn read_step_colored_from_slice(
+			data: &[u8],
+			out_colors: Pin<&mut ColorMap>,
+		) -> UniquePtr<TopoDS_Shape>;
+
+		/// Write a shape to STEP bytes with face colors via XDE.
+		/// Returns an empty Vec on failure.
+		fn write_step_colored_to_vec(
+			shape: &TopoDS_Shape,
+			colors: &ColorMap,
+		) -> Vec<u8>;
 	}
 }
 

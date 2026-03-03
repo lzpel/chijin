@@ -48,6 +48,25 @@ fn main() {
 	for lib in OCC_LIBS {
 		println!("cargo:rustc-link-lib=static={}", lib);
 	}
+	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
+	// In OCCT 7.9.3, library layout (verified by nm):
+	//   TKLCAF   — TDocStd_Document, TDocStd_Application (NewDocument / Close)
+	//   TKXCAF   — XCAFApp_Application, XCAFDoc_ColorTool, XCAFDoc_ShapeTool,
+	//              XCAFDoc_DocumentTool
+	//   TKDESTEP — STEPCAFControl_Reader / Writer (already in OCC_LIBS above)
+	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
+	// In OCCT 7.9.3, library layout (verified by nm):
+	//   TKLCAF   — TDocStd_Document, TDocStd_Application (NewDocument / Close)
+	//   TKXCAF   — XCAFApp_Application, XCAFDoc_ColorTool, XCAFDoc_ShapeTool,
+	//              XCAFDoc_DocumentTool
+	//   TKCAF    — TNaming_NamedShape, TNaming_Builder (needed by TKXCAF's XCAFDoc)
+	//   TKCDF    — CDM_Document, CDM_Application (needed by TKLCAF's TDocStd_Document)
+	//   TKDESTEP — STEPCAFControl_Reader / Writer (already in OCC_LIBS above)
+	if cfg!(feature = "color") {
+		for lib in &["TKLCAF", "TKXCAF", "TKCAF", "TKCDF"] {
+			println!("cargo:rustc-link-lib=static={}", lib);
+		}
+	}
 
 	// Safety-net: suppress any residual duplicate-symbol errors when linking
 	// against OCCT static libraries on MinGW.  The primary fix is the
@@ -59,8 +78,16 @@ fn main() {
 	// Standard_Macro.hxx forcibly undefs OCCT_UWP unless WINAPI_FAMILY_APP is set,
 	// so the dependency cannot be removed via compiler flags alone.
 	// Rust passes -nodefaultlibs, bypassing GCC's spec that normally adds -ladvapi32.
+	//
+	// Additional Windows system libs required by OCCT static libs:
+	//   ole32          — Image_AlienPixMap uses CoInitializeEx / CoCreateInstance /
+	//                    CreateStreamOnHGlobal / GetHGlobalFromStream (WIC image I/O)
+	//   windowscodecs  — GUID_WICPixelFormat* / CLSID_WICImagingFactory / GUID_ContainerFormat*
+	//                    data symbols (Windows Imaging Component GUIDs)
 	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
 		println!("cargo:rustc-link-arg=-ladvapi32");
+		println!("cargo:rustc-link-arg=-lole32");
+		println!("cargo:rustc-link-arg=-lwindowscodecs");
 	}
 
 	// Build cxx bridge + C++ wrapper
@@ -204,7 +231,9 @@ fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, Path
 			.define("BUILD_MODULE_ModelingAlgorithms", "ON")
 			.define("BUILD_MODULE_DataExchange", "ON")
 			.define("BUILD_MODULE_Visualization", "OFF")
-			.define("BUILD_MODULE_ApplicationFramework", "OFF")
+			// ApplicationFramework is required for XDE (colored STEP I/O, feature = "color").
+		// Enabled unconditionally so the bundled OCCT build includes TKCAF / TKXDESTEP.
+		.define("BUILD_MODULE_ApplicationFramework", "ON")
 			.define("BUILD_MODULE_Draw", "OFF")
 			.define("BUILD_DOC_Overview", "OFF")
 			.build();

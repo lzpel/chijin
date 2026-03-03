@@ -223,6 +223,21 @@ std::unique_ptr<ColorMap> remap_colors_after_copy(
     const TopoDS_Shape& after_copy,
     const ColorMap& src);
 
+// ==================== XDE STEP colored I/O ====================
+
+/// Read a STEP byte slice using XDE (STEPCAFControl_Reader).
+/// On success, face colors found in the file are written into out_colors.
+/// Using a byte slice avoids RustReader/RustWriter type-sharing issues across
+/// separate cxx bridges.
+std::unique_ptr<TopoDS_Shape> read_step_colored_from_slice(
+    rust::Slice<const uint8_t> data, ColorMap& out_colors);
+
+/// Write shape to STEP bytes using XDE (STEPCAFControl_Writer).
+/// Face colors from colors are stored as STYLED_ITEM entries in the file.
+/// Returns an empty Vec on failure.
+rust::Vec<uint8_t> write_step_colored_to_vec(
+    const TopoDS_Shape& shape, const ColorMap& colors);
+
 #endif // CHIJIN_COLOR
 
 } // namespace chijin

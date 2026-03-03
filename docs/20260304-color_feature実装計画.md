@@ -8,6 +8,69 @@
 
 将来的には STEP の色付き読み書き（XDE）にも対応するが、本計画ではまず **ブール演算・変換における色リレー** に焦点を当てる。
 
+### 1.1 実装の戦略は2通りある
+
+可能です。ただし、いくつかの設計上の判断が必要です。整理します。
+
+実現可能性: ✅ 可能
+全体の構成はこうなります：
+
+```rust
+#[cfg(feature = "color")]
+use std::collections::HashMap;
+pub struct Shape {
+    pub(crate) inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
+    #[cfg(feature = "color")]
+    pub colormap: HashMap<u64, [u8; 3]>,  // ← TShape* ではなく u64 ハッシュ
+}
+```
+
+なぜ TShape* ではなく u64 か
+TShape* は C++ のポインタなので Rust の HashMap のキーにするには FFI 越しにハッシュ値を取るのが自然です。OCCT には TopoDS_Shape の HashCode() がありますが、衝突の可能性があるため、より安全な方法は C++ 側で TopTools_DataMapOfShapeInteger（IsSame() ベースのマップ）を使うことです。
+
+難易度の内訳
+機能	難易度	理由
+ブール演算での色リレー	中	Modified() は既に使っている。deep_copy前後の対応づけが必要
+
+clean()
+ での色リレー	中	ShapeUpgrade_UnifySameDomain も Modified() を持つ
+STEP 読み込み（色付き）	高	STEPCAFControl_Reader + XCAFDoc_ColorTool + TDocStd_Document 等の新FFIが大量に必要
+STEP 書き出し（色付き）	高	同上（STEPCAFControl_Writer）
+Shape全体色 → 全Face色への展開	低	Rust側で全faceに同色をsetするだけ
+2つの実装戦略
+戦略1: C++側にカラーマップを持つ（推奨）
+
+```cpp
+// wrapper.h に追加
+struct ColoredShape {
+    TopoDS_Shape shape;
+    // IsSame() ベースの OCCT 純正マップ
+    NCollection_DataMap<TopoDS_Shape, std::array<uint8_t,3>,
+                        TopTools_ShapeMapHasher> color_map;
+};
+```
+
+C++ 側でブール演算時に Modified() を使って自動リレー
+Rust 側は ColoredShape を cxx 経由で操作
+メリット: IsSame() ベースなので衝突なし、deep_copy 後もC++内で対応づけ可能
+
+**戦略2: Rust側にカラーマップを持つ**
+
+```rust
+pub colormap: Vec<([f64; 3], [u8; 3])>,  // (法線or重心, RGB)
+```
+
+C++ 側の変更が最小限
+ブール演算ごとに Rust 側で face 列挙してリマップ
+メリット: FFI 変更が少ない。デメリット: ポインタベースの正確な追跡ができない
+最大のハードル: STEP I/O
+正直に言うと、STEP の色付き読み書きが最も工数が大きいです。必要な新しい C++ バインディング：
+
+TDocStd_Document, TDF_Label, XCAFDoc_ShapeTool, XCAFDoc_ColorTool,
+STEPCAFControl_Reader, STEPCAFControl_Writer, Quantity_Color,
+Handle(TDocStd_Document), XCAFApp_Application, ...
+もし STEP I/O の色対応を後回しにして、まずブール演算 + clean() での色リレーだけを実装するなら、工数はかなり抑えられます。ユーザーが直方体を Shape::box_from_corners() で作り、手動で colormap を設定 → stretch → glTF出力、という流れなら STEP I/O は不要です。
+
 ## 2. 設計概要
 
 ### 2.1 データ構造

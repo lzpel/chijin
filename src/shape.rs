@@ -549,4 +549,49 @@ impl Shape {
 	pub fn color_count(&self) -> i32 {
 		crate::color_ffi::colormap_size(&self.colors)
 	}
+
+	// ==================== XDE STEP colored I/O ====================
+
+	/// Read a STEP stream with XDE color support.
+	///
+	/// Uses `STEPCAFControl_Reader` to parse the file and extract per-face
+	/// colors stored as `STYLED_ITEM` entries. The returned `Shape` carries
+	/// those colors in its color map.
+	///
+	/// Falls back cleanly when the file has no color annotations — the
+	/// returned `Shape` will have an empty color map.
+	///
+	/// # Errors
+	/// Returns [`Error::StepReadFailed`] if the data cannot be parsed.
+	pub fn read_step_colored(reader: &mut impl Read) -> Result<Shape, Error> {
+		// Buffer the entire stream: STEPCAFControl_Reader needs seekable data.
+		let mut data = Vec::new();
+		reader.read_to_end(&mut data).map_err(|_| Error::StepReadFailed)?;
+		let mut out_colors = crate::color_ffi::colormap_new();
+		let inner = crate::color_ffi::read_step_colored_from_slice(
+			data.as_slice(),
+			out_colors.pin_mut(),
+		);
+		if inner.is_null() {
+			return Err(Error::StepReadFailed);
+		}
+		Ok(shape_new!(inner, out_colors))
+	}
+
+	/// Write this shape to a STEP stream with face colors via XDE.
+	///
+	/// Uses `STEPCAFControl_Writer` to create a STEP file that stores each
+	/// face color as a `STYLED_ITEM` referencing `SURFACE_SIDE_STYLE`. The
+	/// resulting file can be read back with [`read_step_colored`](Self::read_step_colored)
+	/// or viewed in any XDE-capable CAD tool (FreeCAD, CATIA, etc.).
+	///
+	/// # Errors
+	/// Returns [`Error::StepWriteFailed`] if writing fails.
+	pub fn write_step_colored(&self, writer: &mut impl Write) -> Result<(), Error> {
+		let bytes = crate::color_ffi::write_step_colored_to_vec(&self.inner, &self.colors);
+		if bytes.is_empty() {
+			return Err(Error::StepWriteFailed);
+		}
+		writer.write_all(&bytes).map_err(|_| Error::StepWriteFailed)
+	}
 }
