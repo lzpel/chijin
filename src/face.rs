@@ -14,6 +14,15 @@ impl Face {
 		Face { inner }
 	}
 
+	/// Return the `TShapeId` (underlying `TopoDS_TShape*` address) of this face.
+	///
+	/// Use this to look up or set entries in `Shape::colormap`.
+	/// Only available when compiled with `--features color`.
+	#[cfg(feature = "color")]
+	pub fn tshape_id(&self) -> crate::shape::TShapeId {
+		crate::shape::TShapeId(ffi::face_tshape_id(&self.inner))
+	}
+
 	/// Get the normal vector at the center of mass of this face.
 	///
 	/// The center of mass is computed using surface-area-weighted integration,

@@ -9,8 +9,10 @@
 #include <TopoDS_Edge.hxx>
 #include <TopExp_Explorer.hxx>
 
+#include <cstdint>
 #include <streambuf>
 #include <memory>
+#include <vector>
 
 namespace chijin {
 
@@ -98,10 +100,16 @@ std::unique_ptr<TopoDS_Shape> deep_copy(const TopoDS_Shape& shape);
 /// Result of a boolean operation: the output shape plus any faces
 /// generated at the tool boundary (cut cross-sections for cut/common;
 /// empty compound for fuse).
+///
+/// from_a / from_b encode face-origin pairs as flat arrays:
+///   [post_copy_tshape_id, source_tshape_id, ...]
+/// Used by the Rust `color` feature to remap colormaps after the operation.
 class BooleanShape {
 public:
     TopoDS_Shape shape;
     TopoDS_Shape new_faces;
+    std::vector<uint64_t> from_a;  // pairs: [post_id, src_a_id, ...]
+    std::vector<uint64_t> from_b;  // pairs: [post_id, src_b_id, ...]
 };
 
 std::unique_ptr<BooleanShape> boolean_fuse(
@@ -113,6 +121,8 @@ std::unique_ptr<BooleanShape> boolean_common(
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r);
 std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r);
+rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r);
+rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r);
 
 // ==================== Shape Methods ====================
 
@@ -137,6 +147,7 @@ std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explor
 
 // ==================== Face Methods ====================
 
+uint64_t face_tshape_id(const TopoDS_Face& face);
 void face_center_of_mass(const TopoDS_Face& face,
     double& cx, double& cy, double& cz);
 void face_normal_at_center(const TopoDS_Face& face,

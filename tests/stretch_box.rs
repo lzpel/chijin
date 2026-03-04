@@ -29,7 +29,8 @@ fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Result<Shape, Error> {
 /// intersect の BooleanShape::new_faces から切断面を直接取得するため、
 /// 法線・重心による heuristic フィルタを使いません。
 fn stretch_vector(shape: &Shape, origin: DVec3, delta: DVec3) -> Result<Shape, Error> {
-	let half = Shape::half_space(origin, delta.normalize());
+	// Negate so the solid fills the -delta side; intersect then yields part_neg.
+	let half = Shape::half_space(origin, -delta.normalize());
 
 	let intersect_result = shape.intersect(&half)?;
 	let part_neg = intersect_result.shape;
@@ -78,7 +79,7 @@ fn stretch(shape: &Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) 
 /// テスト用のベース形状として、外部のSTEPファイルを読み込みます。
 pub fn lambda360box() -> Shape {
 	let mut file = std::fs::File::open(
-		"tests/LAMBDA360-BOX-d6cb2eb2d6e0d802095ea1eda691cf9a3e9bf3394301a0d148f53e55f0f97951.step",
+		"steps/LAMBDA360-BOX-d6cb2eb2d6e0d802095ea1eda691cf9a3e9bf3394301a0d148f53e55f0f97951.step",
 	)
 	.expect("Failed to open step file");
 	Shape::read_step(&mut file).expect("Failed to read step file")
@@ -213,7 +214,8 @@ fn diagnose_new_faces() {
 	let delta = glam::DVec3::new(1.0, 0.0, 0.0);
 
 	// --- tool A: half_space (非有界フェイス) ---
-	let half = Shape::half_space(origin, delta.normalize());
+	// Negate so the solid fills the -delta side; intersect then yields part_neg.
+	let half = Shape::half_space(origin, -delta.normalize());
 	println!("\n[tool=half_space]");
 	println!("  half_space: face_count={}, shell_count={}", half.faces().count(), half.shell_count());
 	let r_half = shape.intersect(&half).expect("intersect(half_space) failed");

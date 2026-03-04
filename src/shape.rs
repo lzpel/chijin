@@ -6,6 +6,26 @@ use crate::stream::{RustReader, RustWriter};
 use glam::{DVec2, DVec3};
 use std::io::{Read, Write};
 
+// ==================== Color types ====================
+
+/// Identifier for a `TopoDS_TShape` object (pointer address).
+///
+/// Used as the key in `Shape::colormap`. Valid as long as the owning `Shape` is alive.
+#[cfg(feature = "color")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TShapeId(pub u64);
+
+/// RGB color with components in `0.0..=1.0`.
+#[cfg(feature = "color")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rgb {
+	pub r: f32,
+	pub g: f32,
+	pub b: f32,
+}
+
+// ==================== BooleanShape ====================
+
 /// Result of a boolean operation.
 ///
 /// `new_faces` is a compound of the faces generated at the tool boundary:
@@ -26,18 +46,35 @@ impl From<BooleanShape> for Shape {
 	}
 }
 
+// ==================== Shape ====================
+
 /// A topological shape wrapping `TopoDS_Shape`.
 ///
 /// This is the central type in Chijin. Shapes can represent solids, compounds,
 /// faces, edges, or any other topology supported by OpenCASCADE.
 pub struct Shape {
 	pub(crate) inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
+	/// Face-level color map. Key is [`TShapeId`] (the `TopoDS_TShape*` address).
+	/// Only available when compiled with `--features color`.
+	#[cfg(feature = "color")]
+	pub colormap: std::collections::HashMap<TShapeId, Rgb>,
 }
 
 // `Shape` is `Send` because `UniquePtr<TopoDS_Shape>` is `Send`
 // (see ffi.rs — `unsafe impl Send for TopoDS_Shape`).
 // `Sync` is intentionally NOT implemented: OCC Handle<> ref-counts are
 // non-atomic, making concurrent `&Shape` access from multiple threads unsound.
+
+impl Shape {
+	/// Internal constructor: wrap an inner pointer with an empty colormap.
+	pub(crate) fn from_inner(inner: cxx::UniquePtr<ffi::TopoDS_Shape>) -> Shape {
+		Shape {
+			inner,
+			#[cfg(feature = "color")]
+			colormap: std::collections::HashMap::new(),
+		}
+	}
+}
 
 // ==================== Constructors ====================
 
@@ -60,7 +97,7 @@ impl Shape {
 		if inner.is_null() {
 			return Err(Error::StepReadFailed);
 		}
-		Ok(Shape { inner })
+		Ok(Shape::from_inner(inner))
 	}
 
 	/// Read a shape from a BRep binary format stream.
@@ -73,7 +110,7 @@ impl Shape {
 		if inner.is_null() {
 			return Err(Error::BrepReadFailed);
 		}
-		Ok(Shape { inner })
+		Ok(Shape::from_inner(inner))
 	}
 
 	/// Write this shape in STEP format to a stream.
@@ -112,7 +149,7 @@ impl Shape {
 		if inner.is_null() {
 			return Err(Error::BrepReadFailed);
 		}
-		Ok(Shape { inner })
+		Ok(Shape::from_inner(inner))
 	}
 
 	/// Write this shape in BRep text format to a stream.
@@ -133,9 +170,6 @@ impl Shape {
 	/// The solid fills the half-space on the side **where the normal points**.
 	/// When used with `shape.intersect(&half_space)`, the portion on the
 	/// `plane_normal` side is retained.
-	///
-	/// The reference point is placed opposite to the normal direction,
-	/// so the solid represents the space in the normal's direction.
 	pub fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Shape {
 		let inner = ffi::make_half_space(
 			plane_origin.x,
@@ -145,7 +179,7 @@ impl Shape {
 			plane_normal.y,
 			plane_normal.z,
 		);
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 
 	/// Create a box from two opposite corner points.
@@ -156,7 +190,7 @@ impl Shape {
 		let inner = ffi::make_box(
 			corner_1.x, corner_1.y, corner_1.z, corner_2.x, corner_2.y, corner_2.z,
 		);
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 
 	/// Create a cylinder.
@@ -167,7 +201,7 @@ impl Shape {
 	/// - `h`: height along the axis
 	pub fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Shape {
 		let inner = ffi::make_cylinder(p.x, p.y, p.z, dir.x, dir.y, dir.z, r, h);
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 
 	/// Create an empty compound shape.
@@ -176,7 +210,7 @@ impl Shape {
 	/// a null shape, because null shapes cause boolean operations to fail.
 	pub fn empty() -> Shape {
 		let inner = ffi::make_empty();
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 
 	/// Create an independent deep copy of this shape.
@@ -185,11 +219,36 @@ impl Shape {
 	/// no internal `Handle<Geom_XXX>` references with the original.
 	pub fn deep_copy(&self) -> Shape {
 		let inner = ffi::deep_copy(&self.inner);
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 }
 
 // ==================== Boolean Operations ====================
+
+/// Merge two colormap remapping tables into a result colormap.
+///
+/// `from_x` is a flat array of `[post_id, src_id, ...]` pairs.
+/// Looks up `src_id` in `colormap_x`; if found, inserts `post_id → color`.
+#[cfg(feature = "color")]
+fn merge_colormaps(
+	from_a: Vec<u64>,
+	from_b: Vec<u64>,
+	colormap_a: &std::collections::HashMap<TShapeId, Rgb>,
+	colormap_b: &std::collections::HashMap<TShapeId, Rgb>,
+) -> std::collections::HashMap<TShapeId, Rgb> {
+	let mut result = std::collections::HashMap::new();
+	for pair in from_a.chunks(2) {
+		if let Some(&color) = colormap_a.get(&TShapeId(pair[1])) {
+			result.insert(TShapeId(pair[0]), color);
+		}
+	}
+	for pair in from_b.chunks(2) {
+		if let Some(&color) = colormap_b.get(&TShapeId(pair[1])) {
+			result.insert(TShapeId(pair[0]), color);
+		}
+	}
+	result
+}
 
 impl Shape {
 	/// Boolean union (fuse) with another shape.
@@ -206,9 +265,24 @@ impl Shape {
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
+		#[cfg(feature = "color")]
+		let colormap = merge_colormaps(
+			ffi::boolean_shape_from_a(&r),
+			ffi::boolean_shape_from_b(&r),
+			&self.colormap,
+			&other.colormap,
+		);
 		Ok(BooleanShape {
-			shape: Shape { inner: ffi::boolean_shape_shape(&r) },
-			new_faces: Shape { inner: ffi::boolean_shape_new_faces(&r) },
+			shape: Shape {
+				inner: ffi::boolean_shape_shape(&r),
+				#[cfg(feature = "color")]
+				colormap,
+			},
+			new_faces: Shape {
+				inner: ffi::boolean_shape_new_faces(&r),
+				#[cfg(feature = "color")]
+				colormap: std::collections::HashMap::new(),
+			},
 		})
 	}
 
@@ -222,9 +296,24 @@ impl Shape {
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
+		#[cfg(feature = "color")]
+		let colormap = merge_colormaps(
+			ffi::boolean_shape_from_a(&r),
+			ffi::boolean_shape_from_b(&r),
+			&self.colormap,
+			&other.colormap,
+		);
 		Ok(BooleanShape {
-			shape: Shape { inner: ffi::boolean_shape_shape(&r) },
-			new_faces: Shape { inner: ffi::boolean_shape_new_faces(&r) },
+			shape: Shape {
+				inner: ffi::boolean_shape_shape(&r),
+				#[cfg(feature = "color")]
+				colormap,
+			},
+			new_faces: Shape {
+				inner: ffi::boolean_shape_new_faces(&r),
+				#[cfg(feature = "color")]
+				colormap: std::collections::HashMap::new(),
+			},
 		})
 	}
 
@@ -239,9 +328,24 @@ impl Shape {
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
+		#[cfg(feature = "color")]
+		let colormap = merge_colormaps(
+			ffi::boolean_shape_from_a(&r),
+			ffi::boolean_shape_from_b(&r),
+			&self.colormap,
+			&other.colormap,
+		);
 		Ok(BooleanShape {
-			shape: Shape { inner: ffi::boolean_shape_shape(&r) },
-			new_faces: Shape { inner: ffi::boolean_shape_new_faces(&r) },
+			shape: Shape {
+				inner: ffi::boolean_shape_shape(&r),
+				#[cfg(feature = "color")]
+				colormap,
+			},
+			new_faces: Shape {
+				inner: ffi::boolean_shape_new_faces(&r),
+				#[cfg(feature = "color")]
+				colormap: std::collections::HashMap::new(),
+			},
 		})
 	}
 }
@@ -258,7 +362,7 @@ impl Shape {
 		if inner.is_null() {
 			return Err(Error::CleanFailed);
 		}
-		Ok(Shape { inner })
+		Ok(Shape::from_inner(inner))
 	}
 
 	/// Create a new shape translated by the given vector.
@@ -269,7 +373,7 @@ impl Shape {
 	/// created by boolean operations.
 	pub fn translated(&self, translation: DVec3) -> Shape {
 		let inner = ffi::translate_shape(&self.inner, translation.x, translation.y, translation.z);
-		Shape { inner }
+		Shape::from_inner(inner)
 	}
 
 	/// Set a global translation on this shape (in-place mutation).

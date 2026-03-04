@@ -54,6 +54,8 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <cstdint>
+#include <unordered_map>
 
 namespace chijin {
 
@@ -209,10 +211,11 @@ std::unique_ptr<TopoDS_Shape> make_half_space(
     BRepBuilderAPI_MakeFace face_maker(plane);
     TopoDS_Face face = face_maker.Face();
 
-    // Reference point is on the OPPOSITE side of the normal.
-    // This means the solid fills the half-space WHERE the normal points.
+    // Reference point is on the SAME side as the normal.
+    // BRepPrimAPI_MakeHalfSpace fills the ref_point side,
+    // so the solid occupies the half-space where the normal points.
     double len = std::sqrt(nx*nx + ny*ny + nz*nz);
-    gp_Pnt ref_point(ox - nx/len, oy - ny/len, oz - nz/len);
+    gp_Pnt ref_point(ox + nx/len, oy + ny/len, oz + nz/len);
 
     BRepPrimAPI_MakeHalfSpace maker(face, ref_point);
     return std::make_unique<TopoDS_Shape>(maker.Solid());
@@ -277,6 +280,12 @@ std::unique_ptr<TopoDS_Shape> deep_copy(const TopoDS_Shape& shape) {
 //   inside the shape operand.  OCCT records this as Modified(tool_face) because
 //   the face still represents the same plane — it just has smaller bounds.
 //   Generated(tool_face) returns empty because no wholly NEW face was created.
+//
+// from_a / from_b (修正案2):
+//   For each face in src, collect_relay_mapping builds a map from the
+//   pre-copy TShape* of the result face to the TShape* of the original src face.
+//   After BRepBuilderAPI_Copy, copier.ModifiedShape() maps pre→post copy.
+//   The combined mapping (src → pre → post) is stored as flat [post_id, src_id] pairs.
 
 // Helper: collect cross-section faces produced at the tool boundary.
 // Calls Modified() on every face of the tool and collects results.
@@ -303,6 +312,53 @@ static TopoDS_Shape collect_generated_faces(
     return result;
 }
 
+// Helper: build relay map  pre_copy_result_tshape* → src_tshape*
+// Called before BRepBuilderAPI_Copy, while op history is alive.
+static void collect_relay_mapping(
+    BRepAlgoAPI_BooleanOperation& op,
+    const TopoDS_Shape& src,
+    std::unordered_map<uint64_t, uint64_t>& relay)
+{
+    for (TopExp_Explorer ex(src, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Shape& sf = ex.Current();
+        uint64_t src_id = reinterpret_cast<uint64_t>(sf.TShape().get());
+        if (op.IsDeleted(sf)) continue;
+        const TopTools_ListOfShape& mods = op.Modified(sf);
+        if (mods.IsEmpty()) {
+            // Face is unchanged: its TShape* appears as-is in op.Shape().
+            relay[src_id] = src_id;
+        } else {
+            for (TopTools_ListOfShape::Iterator it(mods); it.More(); it.Next()) {
+                uint64_t pre_id = reinterpret_cast<uint64_t>(it.Value().TShape().get());
+                relay[pre_id] = src_id;
+            }
+        }
+    }
+}
+
+// Helper: after BRepBuilderAPI_Copy, match pre/post faces by their index in
+// TopTools_IndexedMapOfShape (BRepBuilderAPI_Copy preserves traversal order).
+// Emit [post_id, src_id] pairs into `out` for every face tracked in `relay`.
+static void emit_from_pairs(
+    const TopoDS_Shape& pre_shape,
+    const TopoDS_Shape& post_shape,
+    const std::unordered_map<uint64_t, uint64_t>& relay,
+    std::vector<uint64_t>& out)
+{
+    TopTools_IndexedMapOfShape pre_map, post_map;
+    TopExp::MapShapes(pre_shape, TopAbs_FACE, pre_map);
+    TopExp::MapShapes(post_shape, TopAbs_FACE, post_map);
+    // pre_map and post_map have the same size because the copy preserves topology.
+    for (int i = 1; i <= pre_map.Size(); ++i) {
+        uint64_t pre_id = reinterpret_cast<uint64_t>(pre_map(i).TShape().get());
+        auto it = relay.find(pre_id);
+        if (it == relay.end()) continue;
+        uint64_t post_id = reinterpret_cast<uint64_t>(post_map(i).TShape().get());
+        out.push_back(post_id);
+        out.push_back(it->second);
+    }
+}
+
 std::unique_ptr<BooleanShape> boolean_fuse(
     const TopoDS_Shape& a, const TopoDS_Shape& b)
 {
@@ -310,14 +366,22 @@ std::unique_ptr<BooleanShape> boolean_fuse(
         BRepAlgoAPI_Fuse fuse(a, b);
         fuse.Build();
         if (!fuse.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(fuse, a, relay_a);
+        collect_relay_mapping(fuse, b, relay_b);
+
         // union has no tool boundary — new_faces is empty
         BRep_Builder builder;
         TopoDS_Compound empty;
         builder.MakeCompound(empty);
+
         BRepBuilderAPI_Copy copier(fuse.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = empty;
+        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -331,11 +395,18 @@ std::unique_ptr<BooleanShape> boolean_cut(
         BRepAlgoAPI_Cut cut(a, b);
         cut.Build();
         if (!cut.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(cut, a, relay_a);
+        collect_relay_mapping(cut, b, relay_b);
+
         TopoDS_Shape new_faces = collect_generated_faces(cut, b);
         BRepBuilderAPI_Copy copier(cut.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = new_faces;
+        emit_from_pairs(cut.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(cut.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -349,11 +420,18 @@ std::unique_ptr<BooleanShape> boolean_common(
         BRepAlgoAPI_Common common(a, b);
         common.Build();
         if (!common.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(common, a, relay_a);
+        collect_relay_mapping(common, b, relay_b);
+
         TopoDS_Shape new_faces = collect_generated_faces(common, b);
         BRepBuilderAPI_Copy copier(common.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = new_faces;
+        emit_from_pairs(common.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(common.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -366,6 +444,18 @@ std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r) {
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r) {
     return std::make_unique<TopoDS_Shape>(r.new_faces);
+}
+
+rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : r.from_a) v.push_back(x);
+    return v;
+}
+
+rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : r.from_b) v.push_back(x);
+    return v;
 }
 
 // ==================== Shape Methods ====================
@@ -553,6 +643,10 @@ std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explor
 }
 
 // ==================== Face Methods ====================
+
+uint64_t face_tshape_id(const TopoDS_Face& face) {
+    return reinterpret_cast<uint64_t>(face.TShape().get());
+}
 
 void face_center_of_mass(const TopoDS_Face& face,
     double& cx, double& cy, double& cz)
