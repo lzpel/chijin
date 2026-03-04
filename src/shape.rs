@@ -144,6 +144,146 @@ impl Shape {
 		}
 	}
 
+	/// Read a shape (with colors) from the CHJC binary format.
+	///
+	/// Format: magic `b"CHJC"` + version `1` + color section + BRep section.
+	/// Face colors are keyed by `TopExp_Explorer` traversal index, which is
+	/// stable across BRep serialization round-trips.
+	///
+	/// # Errors
+	/// Returns [`Error::BrepReadFailed`] if the magic, version, or BRep data
+	/// is invalid.
+	#[cfg(feature = "color")]
+	pub fn read_brep_color(reader: &mut impl Read) -> Result<Shape, Error> {
+		// ① header
+		let mut magic = [0u8; 4];
+		reader
+			.read_exact(&mut magic)
+			.map_err(|_| Error::BrepReadFailed)?;
+		if &magic != b"CHJC" {
+			return Err(Error::BrepReadFailed);
+		}
+		let mut ver = [0u8; 1];
+		reader
+			.read_exact(&mut ver)
+			.map_err(|_| Error::BrepReadFailed)?;
+		if ver[0] != 1 {
+			return Err(Error::BrepReadFailed);
+		}
+
+		// ② color entries
+		let mut buf4 = [0u8; 4];
+		reader
+			.read_exact(&mut buf4)
+			.map_err(|_| Error::BrepReadFailed)?;
+		let color_count = u32::from_le_bytes(buf4) as usize;
+		let mut entries: Vec<(u32, f32, f32, f32)> = Vec::with_capacity(color_count);
+		for _ in 0..color_count {
+			let mut e = [0u8; 16];
+			reader
+				.read_exact(&mut e)
+				.map_err(|_| Error::BrepReadFailed)?;
+			let idx = u32::from_le_bytes(e[0..4].try_into().unwrap());
+			let r = f32::from_le_bytes(e[4..8].try_into().unwrap());
+			let g = f32::from_le_bytes(e[8..12].try_into().unwrap());
+			let b = f32::from_le_bytes(e[12..16].try_into().unwrap());
+			entries.push((idx, r, g, b));
+		}
+
+		// ③ BRep data
+		// brep_len は書き込み側の対称性のために存在するが、BRep は最終セクションなので
+		// reader の残りバイトがそのまま BRep データ。直接 read_brep_bin_stream に渡す。
+		let mut buf8 = [0u8; 8];
+		reader
+			.read_exact(&mut buf8)
+			.map_err(|_| Error::BrepReadFailed)?;
+		let mut rust_reader = RustReader::from_ref(reader);
+		let inner = ffi::read_brep_bin_stream(&mut rust_reader);
+		if inner.is_null() {
+			return Err(Error::BrepReadFailed);
+		}
+
+		// ④ face index → TShapeId
+		let index_to_id: Vec<TShapeId> =
+			FaceIterator::new(ffi::explore_faces(&inner))
+				.map(|f| f.tshape_id())
+				.collect();
+
+		// ⑤ colormap
+		let colormap = entries
+			.into_iter()
+			.filter_map(|(idx, r, g, b)| {
+				index_to_id
+					.get(idx as usize)
+					.map(|&id| (id, Rgb { r, g, b }))
+			})
+			.collect();
+
+		Ok(Shape { inner, colormap })
+	}
+
+	/// Write this shape (with colors) to the CHJC binary format.
+	///
+	/// Format: magic `b"CHJC"` + version `1` + color section + BRep section.
+	///
+	/// # Errors
+	/// Returns [`Error::BrepWriteFailed`] if writing fails.
+	#[cfg(feature = "color")]
+	pub fn write_brep_color(&self, writer: &mut impl Write) -> Result<(), Error> {
+		// ① BRep をバッファに書き出す
+		let mut brep_buf = Vec::new();
+		self.write_brep_bin(&mut brep_buf)?;
+
+		// ② TShapeId → face_index の逆引きマップ
+		let id_to_index: std::collections::HashMap<TShapeId, u32> =
+			FaceIterator::new(ffi::explore_faces(&self.inner))
+				.enumerate()
+				.map(|(i, f)| (f.tshape_id(), i as u32))
+				.collect();
+
+		// ③ colormap → (face_index, r, g, b) エントリ（決定論的出力のためソート）
+		let mut entries: Vec<(u32, f32, f32, f32)> = self
+			.colormap
+			.iter()
+			.filter_map(|(id, rgb)| {
+				id_to_index.get(id).map(|&idx| (idx, rgb.r, rgb.g, rgb.b))
+			})
+			.collect();
+		entries.sort_by_key(|e| e.0);
+
+		// ④ 書き出し
+		writer
+			.write_all(b"CHJC")
+			.map_err(|_| Error::BrepWriteFailed)?;
+		writer
+			.write_all(&[1u8])
+			.map_err(|_| Error::BrepWriteFailed)?;
+		writer
+			.write_all(&(entries.len() as u32).to_le_bytes())
+			.map_err(|_| Error::BrepWriteFailed)?;
+		for (idx, r, g, b) in &entries {
+			writer
+				.write_all(&idx.to_le_bytes())
+				.map_err(|_| Error::BrepWriteFailed)?;
+			writer
+				.write_all(&r.to_le_bytes())
+				.map_err(|_| Error::BrepWriteFailed)?;
+			writer
+				.write_all(&g.to_le_bytes())
+				.map_err(|_| Error::BrepWriteFailed)?;
+			writer
+				.write_all(&b.to_le_bytes())
+				.map_err(|_| Error::BrepWriteFailed)?;
+		}
+		writer
+			.write_all(&(brep_buf.len() as u64).to_le_bytes())
+			.map_err(|_| Error::BrepWriteFailed)?;
+		writer
+			.write_all(&brep_buf)
+			.map_err(|_| Error::BrepWriteFailed)?;
+		Ok(())
+	}
+
 	/// Read a shape from a BRep binary format stream.
 	///
 	/// # Errors
