@@ -14,4 +14,6 @@ pub struct Mesh {
     pub normals: Vec<DVec3>,
     /// Triangle indices (groups of 3, referencing into `vertices`).
     pub indices: Vec<usize>,
+    /// Per-triangle face ID (`TopoDS_TShape*` address). Length equals `indices.len() / 3`.
+    pub face_ids: Vec<u64>,
 }

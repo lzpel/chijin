@@ -583,6 +583,7 @@ MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance) {
 
         // Indices
         bool reversed = (face.Orientation() == TopAbs_REVERSED);
+        uint64_t face_id = reinterpret_cast<uint64_t>(face.TShape().get());
         for (int i = 1; i <= nb_triangles; i++) {
             const Poly_Triangle& tri = triangulation->Triangle(i);
 
@@ -599,6 +600,7 @@ MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance) {
                 result.indices.push_back(global_vertex_offset + n2 - 1);
                 result.indices.push_back(global_vertex_offset + n3 - 1);
             }
+            result.face_tshape_ids.push_back(face_id);
         }
 
         global_vertex_offset += nb_nodes;

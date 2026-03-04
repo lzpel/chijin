@@ -711,12 +711,14 @@ impl Shape {
 			.collect();
 
 		let indices: Vec<usize> = data.indices.iter().map(|&i| i as usize).collect();
+		let face_ids = data.face_tshape_ids;
 
 		Ok(Mesh {
 			vertices,
 			uvs,
 			normals,
 			indices,
+			face_ids,
 		})
 	}
 

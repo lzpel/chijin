@@ -5,10 +5,11 @@ use crate::stream::{RustReader, RustWriter};
 mod ffi_bridge {
 	// Shared struct for mesh data returned from C++
 	struct MeshData {
-		vertices: Vec<f64>, // flat xyz
-		uvs: Vec<f64>,      // flat uv
-		normals: Vec<f64>,  // flat xyz
+		vertices: Vec<f64>,         // flat xyz
+		uvs: Vec<f64>,              // flat uv
+		normals: Vec<f64>,          // flat xyz
 		indices: Vec<u32>,
+		face_tshape_ids: Vec<u64>,  // per-triangle TShape* address
 		success: bool,
 	}
 
