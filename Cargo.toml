@@ -1,6 +1,6 @@
 [package]
 name = "chijin"
-version = "0.3.1"
+version = "0.2.1"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE (OCC 7.9)"
 license = "MIT"
@@ -13,8 +13,6 @@ default = ["bundled"]
 bundled = []
 # Use a system-installed OCCT via the OCCT_ROOT environment variable
 prebuilt = []
-# Enable TShapeId, Rgb, and colormap on Shape for face-level color tracking
-color = []
 
 [dependencies]
 cxx = "1"

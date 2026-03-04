@@ -2,6 +2,31 @@ use std::env;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// Required OCC toolkit libraries to link against (OCCT 7.8+ / 7.9.x naming).
+/// In OCCT 7.8+: TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into
+/// TKDESTEP/TKBin/TKShHealing respectively.
+const OCC_LIBS: &[&str] = &[
+	"TKernel",
+	"TKMath",
+	"TKBRep",
+	"TKTopAlgo",
+	"TKPrim",
+	"TKBO",
+	"TKBool",
+	"TKShHealing", // includes former TKShapeUpgrade
+	"TKMesh",
+	"TKGeomBase",
+	"TKGeomAlgo",
+	"TKG3d",
+	"TKG2d",
+	"TKBin", // was TKBinTools
+	"TKXSBase",
+	"TKDE",        // DE framework base (OCCT 7.8+)
+	"TKDECascade", // DE cascade bridge (OCCT 7.8+)
+	"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
+	"TKService",
+];
+
 fn main() {
 	if env::var("DOCS_RS").is_ok() {
 		return;
@@ -18,53 +43,10 @@ fn main() {
 		panic!("Either 'bundled' or 'prebuilt' feature must be enabled");
 	};
 
-	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
-}
-
-fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
-	// Required OCC toolkit libraries to link against (OCCT 7.8+ / 7.9.x naming).
-	// In OCCT 7.8+: TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into
-	// TKDESTEP/TKBin/TKShHealing respectively.
-	let occ_libs = &[
-		"TKernel",
-		"TKMath",
-		"TKBRep",
-		"TKTopAlgo",
-		"TKPrim",
-		"TKBO",
-		"TKBool",
-		"TKShHealing", // includes former TKShapeUpgrade
-		"TKMesh",
-		"TKGeomBase",
-		"TKGeomAlgo",
-		"TKG3d",
-		"TKG2d",
-		"TKBin",       // was TKBinTools
-		"TKXSBase",
-		"TKDE",        // DE framework base (OCCT 7.8+)
-		"TKDECascade", // DE cascade bridge (OCCT 7.8+)
-		"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
-		"TKService",
-	];
-
 	// Link OCC libraries
 	println!("cargo:rustc-link-search=native={}", occt_lib_dir.display());
-	for lib in occ_libs {
+	for lib in OCC_LIBS {
 		println!("cargo:rustc-link-lib=static={}", lib);
-	}
-
-	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
-	// In OCCT 7.9.3, library layout (verified by nm):
-	//   TKLCAF   — TDocStd_Document, TDocStd_Application (NewDocument / Close)
-	//   TKXCAF   — XCAFApp_Application, XCAFDoc_ColorTool, XCAFDoc_ShapeTool,
-	//              XCAFDoc_DocumentTool
-	//   TKCAF    — TNaming_NamedShape, TNaming_Builder (needed by TKXCAF's XCAFDoc)
-	//   TKCDF    — CDM_Document, CDM_Application (needed by TKLCAF's TDocStd_Document)
-	//   TKDESTEP — STEPCAFControl_Reader / Writer (already in OCC_LIBS above)
-	if color {
-		for lib in &["TKLCAF", "TKXCAF", "TKCAF", "TKCDF"] {
-			println!("cargo:rustc-link-lib=static={}", lib);
-		}
 	}
 
 	// Safety-net: suppress any residual duplicate-symbol errors when linking
@@ -77,31 +59,17 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	// Standard_Macro.hxx forcibly undefs OCCT_UWP unless WINAPI_FAMILY_APP is set,
 	// so the dependency cannot be removed via compiler flags alone.
 	// Rust passes -nodefaultlibs, bypassing GCC's spec that normally adds -ladvapi32.
-	//
-	// Additional Windows system libs required by OCCT static libs:
-	//   ole32         — Image_AlienPixMap uses CoInitializeEx / CoCreateInstance /
-	//                   CreateStreamOnHGlobal / GetHGlobalFromStream (WIC image I/O)
-	//   windowscodecs — GUID_WICPixelFormat* / CLSID_WICImagingFactory data symbols
 	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
 		println!("cargo:rustc-link-arg=-ladvapi32");
-		if color {
-			println!("cargo:rustc-link-arg=-lole32");
-			println!("cargo:rustc-link-arg=-lwindowscodecs");
-		}
 	}
 
 	// Build cxx bridge + C++ wrapper
 	let mut build = cxx_build::bridge("src/ffi.rs");
 	build
 		.file("cpp/wrapper.cpp")
-		.include(occt_include)
+		.include(&occt_include)
 		.std("c++17")
 		.define("_USE_MATH_DEFINES", None);
-
-	// Define CHIJIN_COLOR for C++ when the "color" feature is enabled.
-	if color {
-		build.define("CHIJIN_COLOR", None);
-	}
 
 	// On MinGW (Windows GNU toolchain), GCC at -O0 emits inline C++ methods
 	// (from Standard_ErrorHandler.hxx) as strong (non-COMDAT) symbols in wrapper.o.

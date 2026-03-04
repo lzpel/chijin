@@ -29,8 +29,7 @@ fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Result<Shape, Error> {
 /// intersect の BooleanShape::new_faces から切断面を直接取得するため、
 /// 法線・重心による heuristic フィルタを使いません。
 fn stretch_vector(shape: &Shape, origin: DVec3, delta: DVec3) -> Result<Shape, Error> {
-    // Negate so the solid fills the -delta side; intersect then yields part_neg.
-    let half = Shape::half_space(origin, -delta.normalize());
+    let half = Shape::half_space(origin, delta.normalize());
 
     let intersect_result = shape.intersect(&half)?;
     let part_neg = intersect_result.shape;

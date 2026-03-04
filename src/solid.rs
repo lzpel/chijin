@@ -14,10 +14,6 @@ impl Solid {
 
 impl From<Solid> for crate::Shape {
 	fn from(solid: Solid) -> crate::Shape {
-		crate::Shape {
-			inner: solid.inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
+		crate::Shape { inner: solid.inner }
 	}
 }

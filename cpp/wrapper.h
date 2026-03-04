@@ -9,10 +9,8 @@
 #include <TopoDS_Edge.hxx>
 #include <TopExp_Explorer.hxx>
 
-#include <cstdint>
 #include <streambuf>
 #include <memory>
-#include <vector>
 
 namespace chijin {
 
@@ -100,16 +98,10 @@ std::unique_ptr<TopoDS_Shape> deep_copy(const TopoDS_Shape& shape);
 /// Result of a boolean operation: the output shape plus any faces
 /// generated at the tool boundary (cut cross-sections for cut/common;
 /// empty compound for fuse).
-///
-/// from_a / from_b encode face-origin pairs as flat arrays:
-///   [post_copy_tshape_id, source_tshape_id, ...]
-/// Used by the Rust `color` feature to remap colormaps after the operation.
 class BooleanShape {
 public:
     TopoDS_Shape shape;
     TopoDS_Shape new_faces;
-    std::vector<uint64_t> from_a;  // pairs: [post_id, src_a_id, ...]
-    std::vector<uint64_t> from_b;  // pairs: [post_id, src_b_id, ...]
 };
 
 std::unique_ptr<BooleanShape> boolean_fuse(
@@ -121,8 +113,6 @@ std::unique_ptr<BooleanShape> boolean_common(
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r);
 std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r);
-rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r);
-rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r);
 
 // ==================== Shape Methods ====================
 
@@ -163,57 +153,3 @@ ApproxPoints edge_approximation_segments_ex(
     const TopoDS_Edge& edge, double angular, double chord);
 
 } // namespace chijin
-
-#ifdef CHIJIN_COLOR
-
-namespace chijin {
-
-// ==================== Colored STEP I/O ====================
-
-/// Result of read_step_color_stream.
-/// shape  — the geometry compound.
-/// ids    — TShape* addresses of colored faces (parallel to r/g/b).
-/// r/g/b  — face color components in OCC native space (0.0–1.0).
-class ColoredStepData {
-public:
-    TopoDS_Shape shape;
-    std::vector<uint64_t> ids;
-    std::vector<float>    r, g, b;
-};
-
-std::unique_ptr<ColoredStepData> read_step_color_stream(RustReader& reader);
-std::unique_ptr<TopoDS_Shape>    colored_step_shape(const ColoredStepData& d);
-rust::Vec<uint64_t>              colored_step_ids(const ColoredStepData& d);
-rust::Vec<float>                 colored_step_colors_r(const ColoredStepData& d);
-rust::Vec<float>                 colored_step_colors_g(const ColoredStepData& d);
-rust::Vec<float>                 colored_step_colors_b(const ColoredStepData& d);
-
-bool write_step_color_stream(
-    const TopoDS_Shape&         shape,
-    rust::Slice<const uint64_t> ids,
-    rust::Slice<const float>    cr,
-    rust::Slice<const float>    cg,
-    rust::Slice<const float>    cb,
-    RustWriter&                 writer);
-
-// ==================== Clean with face-origin mapping ====================
-
-/// Result of clean_shape_full: carries face-origin mapping for color remapping.
-/// mapping is a flat array of [new_tshape_id, old_tshape_id, ...] pairs.
-class CleanShape {
-public:
-    TopoDS_Shape shape;
-    std::vector<uint64_t> mapping; // pairs: [new_id, old_id, ...]
-};
-
-std::unique_ptr<CleanShape> clean_shape_full(const TopoDS_Shape& shape);
-std::unique_ptr<TopoDS_Shape> clean_shape_get(const CleanShape& r);
-rust::Vec<uint64_t> clean_shape_mapping(const CleanShape& r);
-
-// ==================== Face Methods (color only) ====================
-
-uint64_t face_tshape_id(const TopoDS_Face& face);
-
-} // namespace chijin
-
-#endif // CHIJIN_COLOR
