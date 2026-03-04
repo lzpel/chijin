@@ -13,6 +13,8 @@ default = ["bundled"]
 bundled = []
 # Use a system-installed OCCT via the OCCT_ROOT environment variable
 prebuilt = []
+# Enable TShapeId, Rgb, and colormap on Shape for face-level color tracking
+color = []
 
 [dependencies]
 cxx = "1"

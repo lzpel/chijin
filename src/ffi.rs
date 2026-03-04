@@ -90,10 +90,49 @@ mod ffi_bridge {
 
 		fn boolean_shape_shape(r: &BooleanShape) -> UniquePtr<TopoDS_Shape>;
 		fn boolean_shape_new_faces(r: &BooleanShape) -> UniquePtr<TopoDS_Shape>;
+		fn boolean_shape_from_a(r: &BooleanShape) -> Vec<u64>;
+		fn boolean_shape_from_b(r: &BooleanShape) -> Vec<u64>;
+
+		// ==================== Colored STEP I/O (color feature only) ====================
+
+		#[cfg(feature = "color")]
+		type ColoredStepData;
+
+		#[cfg(feature = "color")]
+		fn read_step_color_stream(reader: &mut RustReader) -> UniquePtr<ColoredStepData>;
+		#[cfg(feature = "color")]
+		fn colored_step_shape(d: &ColoredStepData) -> UniquePtr<TopoDS_Shape>;
+		#[cfg(feature = "color")]
+		fn colored_step_ids(d: &ColoredStepData) -> Vec<u64>;
+		#[cfg(feature = "color")]
+		fn colored_step_colors_r(d: &ColoredStepData) -> Vec<f32>;
+		#[cfg(feature = "color")]
+		fn colored_step_colors_g(d: &ColoredStepData) -> Vec<f32>;
+		#[cfg(feature = "color")]
+		fn colored_step_colors_b(d: &ColoredStepData) -> Vec<f32>;
+
+		#[cfg(feature = "color")]
+		fn write_step_color_stream(
+			shape: &TopoDS_Shape,
+			ids: &[u64],
+			cr: &[f32],
+			cg: &[f32],
+			cb: &[f32],
+			writer: &mut RustWriter,
+		) -> bool;
 
 		// ==================== Shape Methods ====================
 
 		fn clean_shape(shape: &TopoDS_Shape) -> UniquePtr<TopoDS_Shape>;
+
+		#[cfg(feature = "color")]
+		type CleanShape;
+		#[cfg(feature = "color")]
+		fn clean_shape_full(shape: &TopoDS_Shape) -> UniquePtr<CleanShape>;
+		#[cfg(feature = "color")]
+		fn clean_shape_get(r: &CleanShape) -> UniquePtr<TopoDS_Shape>;
+		#[cfg(feature = "color")]
+		fn clean_shape_mapping(r: &CleanShape) -> Vec<u64>;
 
 		fn translate_shape(
 			shape: &TopoDS_Shape,
@@ -122,6 +161,8 @@ mod ffi_bridge {
 
 		// ==================== Face Methods ====================
 
+		#[cfg(feature = "color")]
+		fn face_tshape_id(face: &TopoDS_Face) -> u64;
 		fn face_center_of_mass(face: &TopoDS_Face, cx: &mut f64, cy: &mut f64, cz: &mut f64);
 		fn face_normal_at_center(face: &TopoDS_Face, nx: &mut f64, ny: &mut f64, nz: &mut f64);
 		fn face_extrude(face: &TopoDS_Face, dx: f64, dy: f64, dz: f64) -> UniquePtr<TopoDS_Shape>;
@@ -157,3 +198,7 @@ unsafe impl Send for TopoDS_Face {}
 unsafe impl Send for TopoDS_Edge {}
 unsafe impl Send for TopExp_Explorer {}
 unsafe impl Send for BooleanShape {}
+#[cfg(feature = "color")]
+unsafe impl Send for CleanShape {}
+#[cfg(feature = "color")]
+unsafe impl Send for ColoredStepData {}

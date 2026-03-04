@@ -21,6 +21,7 @@
 #include <BRepAlgoAPI_Common.hxx>
 
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <BRepTools_History.hxx>
 
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
@@ -54,6 +55,9 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <cstdint>
+#include <unordered_map>
+#include <array>
 
 namespace chijin {
 
@@ -209,10 +213,11 @@ std::unique_ptr<TopoDS_Shape> make_half_space(
     BRepBuilderAPI_MakeFace face_maker(plane);
     TopoDS_Face face = face_maker.Face();
 
-    // Reference point is on the OPPOSITE side of the normal.
-    // This means the solid fills the half-space WHERE the normal points.
+    // Reference point is on the SAME side as the normal.
+    // BRepPrimAPI_MakeHalfSpace fills the ref_point side,
+    // so the solid occupies the half-space where the normal points.
     double len = std::sqrt(nx*nx + ny*ny + nz*nz);
-    gp_Pnt ref_point(ox - nx/len, oy - ny/len, oz - nz/len);
+    gp_Pnt ref_point(ox + nx/len, oy + ny/len, oz + nz/len);
 
     BRepPrimAPI_MakeHalfSpace maker(face, ref_point);
     return std::make_unique<TopoDS_Shape>(maker.Solid());
@@ -277,6 +282,12 @@ std::unique_ptr<TopoDS_Shape> deep_copy(const TopoDS_Shape& shape) {
 //   inside the shape operand.  OCCT records this as Modified(tool_face) because
 //   the face still represents the same plane — it just has smaller bounds.
 //   Generated(tool_face) returns empty because no wholly NEW face was created.
+//
+// from_a / from_b (修正案2):
+//   For each face in src, collect_relay_mapping builds a map from the
+//   pre-copy TShape* of the result face to the TShape* of the original src face.
+//   After BRepBuilderAPI_Copy, copier.ModifiedShape() maps pre→post copy.
+//   The combined mapping (src → pre → post) is stored as flat [post_id, src_id] pairs.
 
 // Helper: collect cross-section faces produced at the tool boundary.
 // Calls Modified() on every face of the tool and collects results.
@@ -303,6 +314,53 @@ static TopoDS_Shape collect_generated_faces(
     return result;
 }
 
+// Helper: build relay map  pre_copy_result_tshape* → src_tshape*
+// Called before BRepBuilderAPI_Copy, while op history is alive.
+static void collect_relay_mapping(
+    BRepAlgoAPI_BooleanOperation& op,
+    const TopoDS_Shape& src,
+    std::unordered_map<uint64_t, uint64_t>& relay)
+{
+    for (TopExp_Explorer ex(src, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Shape& sf = ex.Current();
+        uint64_t src_id = reinterpret_cast<uint64_t>(sf.TShape().get());
+        if (op.IsDeleted(sf)) continue;
+        const TopTools_ListOfShape& mods = op.Modified(sf);
+        if (mods.IsEmpty()) {
+            // Face is unchanged: its TShape* appears as-is in op.Shape().
+            relay[src_id] = src_id;
+        } else {
+            for (TopTools_ListOfShape::Iterator it(mods); it.More(); it.Next()) {
+                uint64_t pre_id = reinterpret_cast<uint64_t>(it.Value().TShape().get());
+                relay[pre_id] = src_id;
+            }
+        }
+    }
+}
+
+// Helper: after BRepBuilderAPI_Copy, match pre/post faces by their index in
+// TopTools_IndexedMapOfShape (BRepBuilderAPI_Copy preserves traversal order).
+// Emit [post_id, src_id] pairs into `out` for every face tracked in `relay`.
+static void emit_from_pairs(
+    const TopoDS_Shape& pre_shape,
+    const TopoDS_Shape& post_shape,
+    const std::unordered_map<uint64_t, uint64_t>& relay,
+    std::vector<uint64_t>& out)
+{
+    TopTools_IndexedMapOfShape pre_map, post_map;
+    TopExp::MapShapes(pre_shape, TopAbs_FACE, pre_map);
+    TopExp::MapShapes(post_shape, TopAbs_FACE, post_map);
+    // pre_map and post_map have the same size because the copy preserves topology.
+    for (int i = 1; i <= pre_map.Size(); ++i) {
+        uint64_t pre_id = reinterpret_cast<uint64_t>(pre_map(i).TShape().get());
+        auto it = relay.find(pre_id);
+        if (it == relay.end()) continue;
+        uint64_t post_id = reinterpret_cast<uint64_t>(post_map(i).TShape().get());
+        out.push_back(post_id);
+        out.push_back(it->second);
+    }
+}
+
 std::unique_ptr<BooleanShape> boolean_fuse(
     const TopoDS_Shape& a, const TopoDS_Shape& b)
 {
@@ -310,14 +368,22 @@ std::unique_ptr<BooleanShape> boolean_fuse(
         BRepAlgoAPI_Fuse fuse(a, b);
         fuse.Build();
         if (!fuse.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(fuse, a, relay_a);
+        collect_relay_mapping(fuse, b, relay_b);
+
         // union has no tool boundary — new_faces is empty
         BRep_Builder builder;
         TopoDS_Compound empty;
         builder.MakeCompound(empty);
+
         BRepBuilderAPI_Copy copier(fuse.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = empty;
+        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -331,11 +397,18 @@ std::unique_ptr<BooleanShape> boolean_cut(
         BRepAlgoAPI_Cut cut(a, b);
         cut.Build();
         if (!cut.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(cut, a, relay_a);
+        collect_relay_mapping(cut, b, relay_b);
+
         TopoDS_Shape new_faces = collect_generated_faces(cut, b);
         BRepBuilderAPI_Copy copier(cut.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = new_faces;
+        emit_from_pairs(cut.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(cut.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -349,11 +422,18 @@ std::unique_ptr<BooleanShape> boolean_common(
         BRepAlgoAPI_Common common(a, b);
         common.Build();
         if (!common.IsDone()) return nullptr;
+
+        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
+        collect_relay_mapping(common, a, relay_a);
+        collect_relay_mapping(common, b, relay_b);
+
         TopoDS_Shape new_faces = collect_generated_faces(common, b);
         BRepBuilderAPI_Copy copier(common.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
         r->new_faces = new_faces;
+        emit_from_pairs(common.Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(common.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -368,6 +448,18 @@ std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r) {
     return std::make_unique<TopoDS_Shape>(r.new_faces);
 }
 
+rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : r.from_a) v.push_back(x);
+    return v;
+}
+
+rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : r.from_b) v.push_back(x);
+    return v;
+}
+
 // ==================== Shape Methods ====================
 
 std::unique_ptr<TopoDS_Shape> clean_shape(const TopoDS_Shape& shape) {
@@ -379,6 +471,50 @@ std::unique_ptr<TopoDS_Shape> clean_shape(const TopoDS_Shape& shape) {
     } catch (const Standard_Failure&) {
         return nullptr;
     }
+}
+
+std::unique_ptr<CleanShape> clean_shape_full(const TopoDS_Shape& shape) {
+    try {
+        ShapeUpgrade_UnifySameDomain unifier(shape, Standard_True, Standard_True, Standard_True);
+        unifier.AllowInternalEdges(Standard_False);
+        unifier.Build();
+
+        auto r = std::make_unique<CleanShape>();
+        r->shape = unifier.Shape();
+
+        Handle(BRepTools_History) history = unifier.History();
+        if (!history.IsNull()) {
+            for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+                const TopoDS_Shape& old_face = ex.Current();
+                uint64_t old_id = reinterpret_cast<uint64_t>(old_face.TShape().get());
+                if (history->IsRemoved(old_face)) continue;
+                const TopTools_ListOfShape& mods = history->Modified(old_face);
+                if (mods.IsEmpty()) {
+                    // Unchanged: TShape* is the same in the result.
+                    r->mapping.push_back(old_id);
+                    r->mapping.push_back(old_id);
+                } else {
+                    // Merged: use only the first resulting face (first-found wins).
+                    uint64_t new_id = reinterpret_cast<uint64_t>(mods.First().TShape().get());
+                    r->mapping.push_back(new_id);
+                    r->mapping.push_back(old_id);
+                }
+            }
+        }
+        return r;
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<TopoDS_Shape> clean_shape_get(const CleanShape& r) {
+    return std::make_unique<TopoDS_Shape>(r.shape);
+}
+
+rust::Vec<uint64_t> clean_shape_mapping(const CleanShape& r) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : r.mapping) v.push_back(x);
+    return v;
 }
 
 std::unique_ptr<TopoDS_Shape> translate_shape(
@@ -554,6 +690,10 @@ std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explor
 
 // ==================== Face Methods ====================
 
+uint64_t face_tshape_id(const TopoDS_Face& face) {
+    return reinterpret_cast<uint64_t>(face.TShape().get());
+}
+
 void face_center_of_mass(const TopoDS_Face& face,
     double& cx, double& cy, double& cz)
 {
@@ -673,3 +813,189 @@ bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer) {
 }
 
 } // namespace chijin
+
+#ifdef CHIJIN_COLOR
+
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <STEPCAFControl_Reader.hxx>
+#include <STEPCAFControl_Writer.hxx>
+#include <TDocStd_Document.hxx>
+#include <TDF_ChildIterator.hxx>
+#include <Quantity_Color.hxx>
+
+namespace chijin {
+
+// Traverse every label in the XDE document and record face-level colors.
+// Uses TDF_ChildIterator with allLevels=true for a flat, efficient walk.
+static void collect_face_colors(
+    const Handle(TDocStd_Document)& doc,
+    const Handle(XCAFDoc_ColorTool)& colorTool,
+    std::unordered_map<uint64_t, std::array<float, 3>>& colorMap)
+{
+    for (TDF_ChildIterator it(doc->Main(), Standard_True); it.More(); it.Next()) {
+        const TDF_Label& label = it.Value();
+        if (!XCAFDoc_ShapeTool::IsShape(label)) continue;
+
+        TopoDS_Shape s = XCAFDoc_ShapeTool::GetShape(label);
+        if (s.IsNull() || s.ShapeType() != TopAbs_FACE) continue;
+
+        Quantity_Color color;
+        bool ok = colorTool->GetColor(label, XCAFDoc_ColorSurf, color);
+        if (!ok) ok = colorTool->GetColor(label, XCAFDoc_ColorGen, color);
+        if (!ok) continue;
+
+        uint64_t id = reinterpret_cast<uint64_t>(s.TShape().get());
+        colorMap[id] = {(float)color.Red(), (float)color.Green(), (float)color.Blue()};
+    }
+}
+
+std::unique_ptr<ColoredStepData> read_step_color_stream(RustReader& reader) {
+    try {
+        // Create XDE document directly — avoids XCAFApp_Application which
+        // pulls in visualization libs (TKXCAFPrs/TKTPrsStd) built with
+        // BUILD_MODULE_Visualization=OFF.  Handle<> ref-counts ownership.
+        Handle(TDocStd_Document) doc = new TDocStd_Document("XmlXCAF");
+
+        STEPCAFControl_Reader cafreader;
+        cafreader.SetColorMode(Standard_True);
+
+        RustReadStreambuf sbuf(reader);
+        std::istream is(&sbuf);
+        if (cafreader.ReadStream("stream", is) != IFSelect_RetDone) {
+            return nullptr;
+        }
+        if (!cafreader.Transfer(doc)) {
+            return nullptr;
+        }
+
+        Handle(XCAFDoc_ShapeTool) shapeTool =
+            XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+        Handle(XCAFDoc_ColorTool) colorTool =
+            XCAFDoc_DocumentTool::ColorTool(doc->Main());
+
+        // Collect all free shapes into a compound.
+        TDF_LabelSequence roots;
+        shapeTool->GetFreeShapes(roots);
+
+        BRep_Builder builder;
+        TopoDS_Compound compound;
+        builder.MakeCompound(compound);
+        for (int i = 1; i <= roots.Length(); i++) {
+            builder.Add(compound, shapeTool->GetShape(roots.Value(i)));
+        }
+
+        // Build TShape* → color map from the XDE document labels.
+        std::unordered_map<uint64_t, std::array<float, 3>> colorMap;
+        collect_face_colors(doc, colorTool, colorMap);
+
+        auto result = std::make_unique<ColoredStepData>();
+        result->shape = compound;
+
+        // Emit colors for each face that has a color entry.
+        for (TopExp_Explorer ex(compound, TopAbs_FACE); ex.More(); ex.Next()) {
+            uint64_t id =
+                reinterpret_cast<uint64_t>(ex.Current().TShape().get());
+            auto it = colorMap.find(id);
+            if (it == colorMap.end()) continue;
+            result->ids.push_back(id);
+            result->r.push_back(it->second[0]);
+            result->g.push_back(it->second[1]);
+            result->b.push_back(it->second[2]);
+        }
+
+        return result;
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<TopoDS_Shape> colored_step_shape(const ColoredStepData& d) {
+    return std::make_unique<TopoDS_Shape>(d.shape);
+}
+
+rust::Vec<uint64_t> colored_step_ids(const ColoredStepData& d) {
+    rust::Vec<uint64_t> v;
+    for (uint64_t x : d.ids) v.push_back(x);
+    return v;
+}
+
+rust::Vec<float> colored_step_colors_r(const ColoredStepData& d) {
+    rust::Vec<float> v;
+    for (float x : d.r) v.push_back(x);
+    return v;
+}
+
+rust::Vec<float> colored_step_colors_g(const ColoredStepData& d) {
+    rust::Vec<float> v;
+    for (float x : d.g) v.push_back(x);
+    return v;
+}
+
+rust::Vec<float> colored_step_colors_b(const ColoredStepData& d) {
+    rust::Vec<float> v;
+    for (float x : d.b) v.push_back(x);
+    return v;
+}
+
+bool write_step_color_stream(
+    const TopoDS_Shape&         shape,
+    rust::Slice<const uint64_t> ids,
+    rust::Slice<const float>    cr,
+    rust::Slice<const float>    cg,
+    rust::Slice<const float>    cb,
+    RustWriter&                 writer)
+{
+    try {
+        Handle(TDocStd_Document) doc = new TDocStd_Document("XmlXCAF");
+
+        Handle(XCAFDoc_ShapeTool) shapeTool =
+            XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+        Handle(XCAFDoc_ColorTool) colorTool =
+            XCAFDoc_DocumentTool::ColorTool(doc->Main());
+
+        // Register the root shape.
+        TDF_Label rootLabel = shapeTool->AddShape(shape, Standard_False);
+
+        // Build TShape* → color lookup from the Rust-supplied arrays.
+        std::unordered_map<uint64_t, std::array<float, 3>> colorLookup;
+        for (size_t i = 0; i < ids.size(); i++) {
+            colorLookup[ids[i]] = {cr[i], cg[i], cb[i]};
+        }
+
+        // For each colored face, find/create its sub-shape label and set color.
+        for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            const TopoDS_Shape& face = ex.Current();
+            uint64_t id = reinterpret_cast<uint64_t>(face.TShape().get());
+            auto it = colorLookup.find(id);
+            if (it == colorLookup.end()) continue;
+
+            TDF_Label faceLabel;
+            if (!shapeTool->FindSubShape(rootLabel, face, faceLabel)) {
+                faceLabel = shapeTool->AddSubShape(rootLabel, face);
+            }
+
+            const auto& c = it->second;
+            Quantity_Color color(c[0], c[1], c[2], Quantity_TOC_sRGB);
+            colorTool->SetColor(faceLabel, color, XCAFDoc_ColorSurf);
+        }
+
+        // Transfer XDE doc to STEP model and write to stream.
+        STEPCAFControl_Writer cafwriter;
+        cafwriter.SetColorMode(Standard_True);
+        if (!cafwriter.Transfer(doc)) {
+            return false;
+        }
+
+        RustWriteStreambuf sbuf(writer);
+        std::ostream os(&sbuf);
+        return cafwriter.ChangeWriter().WriteStream(os) == IFSelect_RetDone;
+    } catch (const Standard_Failure&) {
+        return false;
+    }
+}
+
+} // namespace chijin
+
+#endif // CHIJIN_COLOR
