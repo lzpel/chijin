@@ -39,15 +39,15 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		"TKGeomAlgo",
 		"TKG3d",
 		"TKG2d",
-		"TKBin",       // was TKBinTools
+		"TKBin", // was TKBinTools
 		"TKXSBase",
 		"TKDE",        // DE framework base (OCCT 7.8+)
 		"TKDECascade", // DE cascade bridge (OCCT 7.8+)
 		"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
-		// TKService is NOT linked here: it contains Image_AlienPixMap (WIC image I/O)
-		// which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
-		// the base API.  TKService is added below only when "color" is enabled because
-		// TKXCAF references Graphic3d_* symbols that live in TKService.
+		               // TKService is NOT linked here: it contains Image_AlienPixMap (WIC image I/O)
+		               // which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
+		               // the base API.  TKService is added below only when "color" is enabled because
+		               // TKXCAF references Graphic3d_* symbols that live in TKService.
 	];
 
 	// Link OCC libraries
@@ -94,6 +94,10 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		// Use rustc-link-lib (not rustc-link-arg) so Cargo translates correctly
 		// for both toolchains: MSVC gets advapi32.lib, GNU gets -ladvapi32.
 		println!("cargo:rustc-link-lib=advapi32");
+		// OSD_signal.cxx (TKernel) uses MessageBoxA / MessageBeep on MSVC Windows
+		// (#if !defined(__MINGW32__) && !defined(__CYGWIN32__) block).
+		// MinGW links user32 implicitly; MSVC requires explicit declaration.
+		println!("cargo:rustc-link-lib=user32");
 	}
 
 	// Build cxx bridge + C++ wrapper
@@ -226,7 +230,7 @@ fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, Path
 			.define("USE_RAPIDJSON", "OFF")
 			.define("USE_DRACO", "OFF")
 			.define("USE_TK", "OFF")
-			.define("USE_TCL", "OFF")                                                                                                   
+			.define("USE_TCL", "OFF")
 			.define("USE_XLIB", "OFF")
 			.define("USE_OPENGL", "OFF")
 			.define("USE_GLES2", "OFF")
@@ -333,110 +337,161 @@ fn use_system_occt() -> (PathBuf, PathBuf) {
 ///    XCAFPrs_Texture which inherits from Graphic3d_Texture2D (TKService).
 ///    The only caller was FillAspect(), which is now empty.
 fn patch_occt_sources(source_dir: &Path) {
-	patch_remove_includes_and_stub_methods(
-		&source_dir.join("src/XCAFDoc/XCAFDoc_VisMaterial.cxx"),
-		&[
-			"Graphic3d_Aspects.hxx",
-			"Graphic3d_MaterialAspect.hxx",
-			"XCAFPrs_Texture.hxx",
-		],
-		&[
-			"XCAFDoc_VisMaterial::FillMaterialAspect",
-			"XCAFDoc_VisMaterial::FillAspect",
-			// ConvertToPbrMaterial / ConvertToCommonMaterial use Graphic3d_PBRMaterial
-			// (defined in Graphic3d_MaterialAspect.hxx which we removed above).
-			"XCAFDoc_VisMaterial::ConvertToPbrMaterial",
-			"XCAFDoc_VisMaterial::ConvertToCommonMaterial",
-		],
-	);
-
-	let texture_cxx = source_dir.join("src/XCAFPrs/XCAFPrs_Texture.cxx");
-	if texture_cxx.exists() {
-		std::fs::write(&texture_cxx, "// Stubbed: TKService not built\n")
-			.expect("Failed to patch XCAFPrs_Texture.cxx");
-		eprintln!("Patched XCAFPrs_Texture.cxx");
-	}
+	// ボディのみスタブ化: #include・シグネチャを残し、メソッド本体だけを空にする。
+	stub_out_methods(&source_dir.join("src/XCAFDoc/XCAFDoc_VisMaterial.cxx"), true);
+	// ファイルごと空化: イニシャライザリストでベースクラスを参照するため
+	// ボディスタブでは TKService 依存を断ち切れない。
+	stub_out_methods(&source_dir.join("src/XCAFPrs/XCAFPrs_Texture.cxx"), false);
 }
 
-/// Read `path`, strip #include lines whose filename matches any entry in
-/// `includes_to_remove`, empty the bodies of functions whose qualified name
-/// matches any entry in `methods_to_stub`, then write back.
-fn patch_remove_includes_and_stub_methods(
-	path: &Path,
-	includes_to_remove: &[&str],
-	methods_to_stub: &[&str],
-) {
+/// `path` の C++ ソースファイルを無力化する。
+///
+/// # 引数
+/// - `keep_signatures` — `true`: `#include` とシグネチャを残し、トップレベルの
+///   メソッドボディだけを空スタブに置換する。シグネチャの型参照が必要な場合に使う。
+///   `false`: ファイルを空にする (冒頭コメントのみ残す)。イニシャライザリストで
+///   ベースクラスを参照する等、ボディスタブでは依存を断ち切れない場合に使う。
+///
+/// ボディスタブ時の規則:
+/// - `void` 戻り値 / コンストラクタ / デストラクタ → `{}`
+/// - それ以外 → `{ return {}; }` (値初期化)
+///
+/// # 注意
+/// `keep_signatures: true` はトップレベルに `namespace {}` や `extern "C" {}`
+/// があるファイルには使えない。`.cxx` 実装ファイル専用。
+fn stub_out_methods(path: &Path, keep_signatures: bool) {
 	if !path.exists() {
 		return;
 	}
-	let content = std::fs::read_to_string(path).expect("Failed to read file for patching");
 
-	// Remove matching #include lines.
-	let patched: String = content
-		.lines()
-		.filter(|line| {
-			let t = line.trim();
-			if !t.starts_with("#include") {
-				return true;
-			}
-			!includes_to_remove.iter().any(|pat| t.contains(pat))
+	// 冒頭にスタブ化の記録コメントを生成する。
+	let timestamp = std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|d| {
+			let secs = d.as_secs();
+			let (h, mi, s) = (secs / 3600 % 24, secs / 60 % 60, secs % 60);
+			format!("{:02}:{:02}:{:02} UTC", h, mi, s)
 		})
-		.collect::<Vec<_>>()
-		.join("\n") + "\n";
+		.unwrap_or_else(|_| "unknown".to_string());
+	let description = if keep_signatures {
+		"all method bodies replaced with empty stubs"
+	} else {
+		"file emptied"
+	};
+	let header = format!(
+		"// Stubbed by chijin build.rs: {}.\n\
+		 // Stubbed at: {}\n",
+		description, timestamp
+	);
 
-	// Empty bodies of each listed method.
-	let patched = methods_to_stub
-		.iter()
-		.fold(patched, |s, m| empty_method_body(&s, m));
+	let patched = if keep_signatures {
+		let content = std::fs::read_to_string(path).expect("Failed to read file for stubbing");
+		// トップレベルのブレースブロックをすべてスタブ化する。
+		header + &stub_all_top_level_bodies(&content)
+	} else {
+		// ファイルを空にする (冒頭コメントのみ)。
+		header
+	};
 
-	std::fs::write(path, patched).expect("Failed to write patched file");
-	eprintln!("Patched {}", path.file_name().unwrap().to_string_lossy());
+	std::fs::write(path, patched).expect("Failed to write stubbed file");
+	eprintln!("Stubbed {}", path.file_name().unwrap().to_string_lossy());
 }
 
-/// Find the first definition of `method_name` in `content` and replace its
-/// brace-delimited body `{ … }` with `{}`.  Returns the (possibly unchanged)
-/// string.  Uses brace counting so nested braces inside the body are handled
-/// correctly; string/character literals are intentionally ignored because OCCT
-/// source doesn't embed `{`/`}` inside string literals in these methods.
-fn empty_method_body(content: &str, method_name: &str) -> String {
-	let Some(name_pos) = content.find(method_name) else {
-		return content.to_string();
-	};
-
-	// Detect return type: look at the text between the nearest preceding newline
-	// and the method name.  If "void" appears there, an empty body `{}` is valid;
-	// otherwise use `{ return {}; }` to value-initialise the return type.
-	let sig_start = content[..name_pos].rfind('\n').map(|p| p + 1).unwrap_or(0);
-	let stub_body = if content[sig_start..name_pos].contains("void") {
-		"{}"
-	} else {
-		"{ return {}; }"
-	};
-
-	let after_name = &content[name_pos..];
-	let Some(brace_offset) = after_name.find('{') else {
-		return content.to_string();
-	};
-	let brace_start = name_pos + brace_offset;
-
+/// `content` 内のトップレベル (ブレース深さ 0) にある `{ … }` ブロックをすべて
+/// `{}` または `{ return {}; }` に置換して返す。
+fn stub_all_top_level_bodies(content: &str) -> String {
 	let bytes = content.as_bytes();
+	let mut result = String::new();
 	let mut depth = 0usize;
-	let mut i = brace_start;
+	let mut i = 0;
+	let mut last_end = 0;
+
 	while i < bytes.len() {
 		match bytes[i] {
+			b'{' if depth == 0 => {
+				// トップレベルブロック開始: 直前のシグネチャで戻り値型を判定する。
+				let prefix = &content[last_end..i];
+				let stub_body = if is_void_return(prefix) {
+					"{}"
+				} else {
+					"{ return {}; }"
+				};
+
+				// ブレースカウントでブロック終端を探す。
+				depth = 1;
+				i += 1;
+				while i < bytes.len() && depth > 0 {
+					match bytes[i] {
+						b'{' => depth += 1,
+						b'}' => depth -= 1,
+						_ => {}
+					}
+					i += 1;
+				}
+				// i は閉じ '}' の次を指している。
+				result.push_str(prefix);
+				result.push_str(stub_body);
+				last_end = i;
+				continue;
+			}
 			b'{' => depth += 1,
 			b'}' => {
-				depth -= 1;
-				if depth == 0 {
-					return format!("{}{}{}",
-						&content[..brace_start],
-						stub_body,
-						&content[i + 1..]);
+				if depth > 0 {
+					depth -= 1;
 				}
 			}
 			_ => {}
 		}
 		i += 1;
 	}
-	content.to_string()
+	result.push_str(&content[last_end..]);
+	result
+}
+
+/// シグネチャ文字列から、ボディを `{}` で置換すべきか判定する。
+///
+/// 以下のいずれかに該当すれば `true` (空ボディ `{}`):
+/// 1. 戻り値型が `void` — シグネチャ中に識別子 "void" がある
+/// 2. デストラクタ — シグネチャに `::~` が含まれる
+/// 3. コンストラクタ — `ClassName::ClassName(` のように `::` 前後の識別子が同一
+///
+/// いずれも該当しなければ `false` → `{ return {}; }` で値初期化する。
+fn is_void_return(prefix: &str) -> bool {
+	// 直前の定義の終端 (';' か '}') 以降のシグネチャ部分だけを見る。
+	let sig = prefix
+		.rfind(|c| c == ';' || c == '}')
+		.map(|p| &prefix[p + 1..])
+		.unwrap_or(prefix);
+
+	// 1. void 戻り値型
+	if sig
+		.split(|c: char| !c.is_alphanumeric() && c != '_')
+		.any(|w| w == "void")
+	{
+		return true;
+	}
+
+	// 2. デストラクタ: ::~ が含まれる
+	if sig.contains("::~") {
+		return true;
+	}
+
+	// 3. コンストラクタ: ClassName::ClassName( のパターン
+	//    '(' の直前までを見て、最後の '::' を境に前後の識別子を比較する。
+	if let Some(paren) = sig.find('(') {
+		let before_paren = sig[..paren].trim_end();
+		if let Some(dc) = before_paren.rfind("::") {
+			let method_name = before_paren[dc + 2..].trim();
+			let class_name = before_paren[..dc]
+				.split(|c: char| !c.is_alphanumeric() && c != '_')
+				.filter(|s| !s.is_empty())
+				.last()
+				.unwrap_or("");
+			if !method_name.is_empty() && method_name == class_name {
+				return true;
+			}
+		}
+	}
+
+	false
 }
