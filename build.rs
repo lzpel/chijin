@@ -74,7 +74,10 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	// Safety-net: suppress any residual duplicate-symbol errors when linking
 	// against OCCT static libraries on MinGW.  The primary fix is the
 	// OCC_CONVERT_SIGNALS define added below to the cxx_build step.
-	println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+	// Guard to GNU only: -Wl,... is GCC/ld syntax and is invalid on MSVC link.exe.
+	if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
+		println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+	}
 
 	// TKernel's OSD_WNT.cxx registers a static initialiser (Init_OSD_WNT) that
 	// calls advapi32 functions (AllocateAndInitializeSid etc.) at program startup.
@@ -88,7 +91,9 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	//   windowscodecs — GUID_WICPixelFormat* / CLSID_WICImagingFactory data symbols
 	//                   (pulled in transitively via TKService → Image_AlienPixMap)
 	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-		println!("cargo:rustc-link-arg=-ladvapi32");
+		// Use rustc-link-lib (not rustc-link-arg) so Cargo translates correctly
+		// for both toolchains: MSVC gets advapi32.lib, GNU gets -ladvapi32.
+		println!("cargo:rustc-link-lib=advapi32");
 	}
 
 	// Build cxx bridge + C++ wrapper
