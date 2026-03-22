@@ -835,6 +835,44 @@ impl Shape {
 		ffi::shape_volume(&self.inner)
 	}
 
+	/// Project this shape and return an SVG string with filled faces and edge lines.
+	///
+	/// Face fills use the triangulated mesh projected onto a 2D plane, Z-sorted
+	/// with the painter's algorithm. Edge lines use `HLRBRep_Algo` (exact hidden
+	/// line removal). The SVG uses `viewBox` only (no `width`/`height`) for
+	/// responsive sizing.
+	///
+	/// - `direction`: camera direction — where the camera is, looking toward origin
+	///   (e.g. `DVec3::Z` for top-down)
+	/// - `tolerance`: chord deflection for polyline/mesh approximation
+	///
+	/// With the `color` feature, face colors from `colormap` are applied.
+	/// Without it, all faces are filled with a default light gray.
+	pub fn to_svg(&self, direction: DVec3, tolerance: f64) -> Result<String, Error> {
+		// Merge coplanar faces to remove boolean seam edges
+		let cleaned = self.clean()?;
+
+		let edge_data = ffi::project_shape_hlr(
+			&cleaned.inner,
+			direction.x, direction.y, direction.z,
+			tolerance,
+		);
+		if !edge_data.success {
+			return Err(Error::SvgExportFailed);
+		}
+
+		// Build mesh for face fills
+		let mesh = cleaned.mesh_with_tolerance(tolerance)?;
+		let face_triangles = project_and_sort_triangles(
+			&mesh,
+			direction,
+			#[cfg(feature = "color")]
+			&cleaned.colormap,
+		);
+
+		Ok(build_svg(&edge_data, &face_triangles))
+	}
+
 	/// Assign the same color to every face in this shape.
 	///
 	/// Collects all face [`TShapeId`]s first to avoid a borrow conflict
@@ -846,4 +884,204 @@ impl Shape {
 			self.colormap.insert(id, color);
 		}
 	}
+}
+
+// ==================== SVG helpers ====================
+
+/// A projected triangle ready for SVG rendering.
+struct SvgTriangle {
+	/// 2D vertices (already projected)
+	pts: [(f64, f64); 3],
+	/// Depth for Z-sorting (larger = farther from camera)
+	depth: f64,
+	/// Fill color as "rgb(R,G,B)" or a default
+	fill: String,
+}
+
+/// Replicate OCCT `gp_Ax2(origin, dir)` orthonormal basis construction.
+/// Returns (x_dir, y_dir) matching what HLR uses for its 2D projection plane.
+fn occt_ax2_basis(dir: DVec3) -> (DVec3, DVec3) {
+	let (a, b, c) = (dir.x, dir.y, dir.z);
+	let (a_abs, b_abs, c_abs) = (a.abs(), b.abs(), c.abs());
+
+	let perp = if b_abs <= a_abs && b_abs <= c_abs {
+		if a_abs > c_abs { DVec3::new(-c, 0.0, a) } else { DVec3::new(c, 0.0, -a) }
+	} else if a_abs <= b_abs && a_abs <= c_abs {
+		if b_abs > c_abs { DVec3::new(0.0, -c, b) } else { DVec3::new(0.0, c, -b) }
+	} else {
+		if a_abs > b_abs { DVec3::new(-b, a, 0.0) } else { DVec3::new(b, -a, 0.0) }
+	};
+
+	let x_dir = perp.normalize();
+	let y_dir = dir.cross(x_dir);
+	(x_dir, y_dir)
+}
+
+/// Project mesh triangles onto a 2D plane and sort back-to-front.
+fn project_and_sort_triangles(
+	mesh: &crate::mesh::Mesh,
+	direction: DVec3,
+	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Rgb>,
+) -> Vec<SvgTriangle> {
+	let dir = direction.normalize();
+
+	// Use the same basis as OCCT HLRAlgo_Projector(gp_Ax2(origin, dir))
+	let (u, v) = occt_ax2_basis(dir);
+
+	let tri_count = mesh.indices.len() / 3;
+	let mut triangles = Vec::with_capacity(tri_count);
+
+	for ti in 0..tri_count {
+		let i0 = mesh.indices[ti * 3];
+		let i1 = mesh.indices[ti * 3 + 1];
+		let i2 = mesh.indices[ti * 3 + 2];
+
+		let v0 = mesh.vertices[i0];
+		let v1 = mesh.vertices[i1];
+		let v2 = mesh.vertices[i2];
+
+		// Back-face culling: camera is at +dir, so visible faces point toward +dir
+		let avg_normal = (mesh.normals[i0] + mesh.normals[i1] + mesh.normals[i2]) / 3.0;
+		if avg_normal.dot(dir) < 0.0 {
+			continue;
+		}
+
+		// Project to 2D
+		let p0 = (v0.dot(u), v0.dot(v));
+		let p1 = (v1.dot(u), v1.dot(v));
+		let p2 = (v2.dot(u), v2.dot(v));
+
+		// Depth = average distance along viewing direction
+		let depth = (v0.dot(dir) + v1.dot(dir) + v2.dot(dir)) / 3.0;
+
+		// Fill color
+		#[cfg(feature = "color")]
+		let fill = {
+			let face_id = TShapeId(mesh.face_ids[ti]);
+			if let Some(c) = colormap.get(&face_id) {
+				format!(
+					"rgb({},{},{})",
+					(c.r * 255.0) as u8,
+					(c.g * 255.0) as u8,
+					(c.b * 255.0) as u8
+				)
+			} else {
+				"#ddd".to_string()
+			}
+		};
+		#[cfg(not(feature = "color"))]
+		let fill = "#ddd".to_string();
+
+		triangles.push(SvgTriangle {
+			pts: [p0, p1, p2],
+			depth,
+			fill,
+		});
+	}
+
+	// Painter's algorithm: draw far triangles first (camera at +dir, so smaller depth = farther)
+	triangles.sort_by(|a, b| a.depth.partial_cmp(&b.depth).unwrap_or(std::cmp::Ordering::Equal));
+	triangles
+}
+
+fn polylines_to_svg(
+	svg: &mut String,
+	coords: &[f64],
+	counts: &[u32],
+	stroke: &str,
+	dash: &str,
+) {
+	let mut offset = 0usize;
+	for &count in counts {
+		let n = count as usize;
+		svg.push_str("<polyline points=\"");
+		for i in 0..n {
+			let x = coords[(offset + i) * 2];
+			let y = -coords[(offset + i) * 2 + 1]; // flip Y for SVG
+			if i > 0 {
+				svg.push(' ');
+			}
+			svg.push_str(&format!("{x:.4},{y:.4}"));
+		}
+		svg.push_str("\" fill=\"none\" stroke=\"");
+		svg.push_str(stroke);
+		svg.push('"');
+		if !dash.is_empty() {
+			svg.push_str(" stroke-dasharray=\"");
+			svg.push_str(dash);
+			svg.push('"');
+		}
+		svg.push_str("/>\n");
+		offset += n;
+	}
+}
+
+fn build_svg(edge_data: &ffi::SvgEdgeData, triangles: &[SvgTriangle]) -> String {
+	// Expand bounding box to include mesh triangles
+	let mut min_x = edge_data.min_x;
+	let mut min_y = edge_data.min_y;
+	let mut max_x = edge_data.max_x;
+	let mut max_y = edge_data.max_y;
+	for tri in triangles {
+		for &(x, y) in &tri.pts {
+			if x < min_x { min_x = x; }
+			if x > max_x { max_x = x; }
+			if y < min_y { min_y = y; }
+			if y > max_y { max_y = y; }
+		}
+	}
+
+	let margin_frac = 0.05;
+	let w = max_x - min_x;
+	let h = max_y - min_y;
+	let margin = if w > h { w } else { h } * margin_frac;
+	let vx = min_x - margin;
+	let vy = -(max_y + margin); // SVG Y is flipped: -max becomes top
+	let vw = w + margin * 2.0;
+	let vh = h + margin * 2.0;
+
+	// stroke-width relative to viewBox size
+	let sw = (if w > h { w } else { h }) * 0.003;
+	let dash_len = sw * 3.0;
+
+	let mut svg = String::with_capacity(4096 + triangles.len() * 120);
+	svg.push_str(&format!(
+		"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{vx:.4} {vy:.4} {vw:.4} {vh:.4}\" \
+		 stroke-width=\"{sw:.4}\">\n"
+	));
+
+	// Face fills (painter's algorithm, back-to-front)
+	for tri in triangles {
+		let [(x0, y0), (x1, y1), (x2, y2)] = tri.pts;
+		// Flip Y: SVG Y-down, projection Y-up
+		let y0 = -y0;
+		let y1 = -y1;
+		let y2 = -y2;
+		svg.push_str(&format!(
+			"<polygon points=\"{x0:.4},{y0:.4} {x1:.4},{y1:.4} {x2:.4},{y2:.4}\" \
+			 fill=\"{}\" stroke=\"none\"/>\n",
+			tri.fill
+		));
+	}
+
+	// Visible edges (solid black)
+	polylines_to_svg(
+		&mut svg,
+		&edge_data.visible_coords,
+		&edge_data.visible_counts,
+		"black",
+		"",
+	);
+
+	// Hidden edges (dashed gray)
+	polylines_to_svg(
+		&mut svg,
+		&edge_data.hidden_coords,
+		&edge_data.hidden_counts,
+		"#999",
+		&format!("{dash_len:.4},{dash_len:.4}"),
+	);
+
+	svg.push_str("</svg>\n");
+	svg
 }

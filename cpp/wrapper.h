@@ -30,6 +30,7 @@ struct RustWriter;
 // Forward-declare shared structs (defined by cxx in ffi.rs.h)
 struct MeshData;
 struct ApproxPoints;
+struct SvgEdgeData;
 
 // ==================== Streambuf bridges ====================
 
@@ -186,6 +187,13 @@ ApproxPoints edge_approximation_segments_ex(
 // ==================== Face Methods ====================
 
 uint64_t face_tshape_id(const TopoDS_Face& face);
+
+// ==================== SVG / HLR Projection ====================
+
+SvgEdgeData project_shape_hlr(
+    const TopoDS_Shape& shape,
+    double dx, double dy, double dz,
+    double tolerance);
 
 } // namespace chijin
 

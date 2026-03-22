@@ -26,6 +26,10 @@
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 
+#include <HLRBRep_Algo.hxx>
+#include <HLRBRep_HLRToShape.hxx>
+#include <HLRAlgo_Projector.hxx>
+
 #include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -887,6 +891,96 @@ bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer) {
         return false;
     }
     return step_writer.WriteStream(os) == IFSelect_RetDone;
+}
+
+// ==================== SVG / HLR Projection ====================
+
+static void collect_edges_2d(
+    const TopoDS_Shape& compound,
+    double tolerance,
+    rust::Vec<double>& coords,
+    rust::Vec<uint32_t>& counts,
+    double& min_x, double& min_y, double& max_x, double& max_y)
+{
+    if (compound.IsNull()) return;
+    for (TopExp_Explorer ex(compound, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Edge& edge = TopoDS::Edge(ex.Current());
+        try {
+            BRepAdaptor_Curve curve(edge);
+            GCPnts_TangentialDeflection approx(curve, tolerance, tolerance);
+            int nb = approx.NbPoints();
+            if (nb < 2) continue;
+            counts.push_back(static_cast<uint32_t>(nb));
+            for (int i = 1; i <= nb; i++) {
+                gp_Pnt p = approx.Value(i);
+                double x = p.X();
+                double y = p.Y();
+                coords.push_back(x);
+                coords.push_back(y);
+                if (x < min_x) min_x = x;
+                if (x > max_x) max_x = x;
+                if (y < min_y) min_y = y;
+                if (y > max_y) max_y = y;
+            }
+        } catch (const Standard_Failure&) {
+            // skip degenerate edges
+        }
+    }
+}
+
+SvgEdgeData project_shape_hlr(
+    const TopoDS_Shape& shape,
+    double dx, double dy, double dz,
+    double tolerance)
+{
+    SvgEdgeData result;
+    result.min_x = result.min_y = 1e30;
+    result.max_x = result.max_y = -1e30;
+    result.success = false;
+
+    try {
+        // Set up projector (parallel projection)
+        gp_Ax2 ax2(gp_Pnt(0, 0, 0), gp_Dir(dx, dy, dz));
+        HLRAlgo_Projector projector(ax2);
+
+        Handle(HLRBRep_Algo) hlr = new HLRBRep_Algo();
+        hlr->Add(shape);
+        hlr->Projector(projector);
+        hlr->Update();
+        hlr->Hide();
+
+        HLRBRep_HLRToShape hlrToShape(hlr);
+
+        // Visible edges: sharp + outline + smooth
+        TopoDS_Shape vSharp = hlrToShape.VCompound();
+        TopoDS_Shape vOutline = hlrToShape.OutLineVCompound();
+        TopoDS_Shape vSmooth = hlrToShape.Rg1LineVCompound();
+
+        collect_edges_2d(vSharp, tolerance, result.visible_coords, result.visible_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+        collect_edges_2d(vOutline, tolerance, result.visible_coords, result.visible_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+        collect_edges_2d(vSmooth, tolerance, result.visible_coords, result.visible_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+
+        // Hidden edges: sharp + outline + smooth
+        TopoDS_Shape hSharp = hlrToShape.HCompound();
+        TopoDS_Shape hOutline = hlrToShape.OutLineHCompound();
+        TopoDS_Shape hSmooth = hlrToShape.Rg1LineHCompound();
+
+        collect_edges_2d(hSharp, tolerance, result.hidden_coords, result.hidden_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+        collect_edges_2d(hOutline, tolerance, result.hidden_coords, result.hidden_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+        collect_edges_2d(hSmooth, tolerance, result.hidden_coords, result.hidden_counts,
+            result.min_x, result.min_y, result.max_x, result.max_y);
+
+        result.success = true;
+    } catch (const Standard_Failure&) {
+        result.success = false;
+    }
+
+    return result;
 }
 
 } // namespace chijin

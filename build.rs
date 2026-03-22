@@ -44,6 +44,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		"TKDE",        // DE framework base (OCCT 7.8+)
 		"TKDECascade", // DE cascade bridge (OCCT 7.8+)
 		"TKOffset",    // BRepOffsetAPI_MakePipeShell (helix sweep)
+		"TKHLR",       // HLRBRep_Algo (hidden line removal for SVG export)
 		"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
 		               // TKService is NOT linked here: it contains Image_AlienPixMap (WIC image I/O)
 		               // which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
