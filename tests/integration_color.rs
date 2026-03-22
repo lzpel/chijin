@@ -67,11 +67,11 @@ fn colored_box_intersect_z_positive_half_space() {
 
     // ── Topology checks ──────────────────────────────────────────────────────
     // The closed solid has 6 faces: top + 4 trimmed sides + z=0 cross-section.
-    // new_faces is an additional copy of the z=0 face for downstream use.
+    // is_tool_face identifies the cross-section face(s) from the tool (half-space).
     let shape_face_count = result.shape.faces().count();
-    let new_face_count = result.new_faces.faces().count();
+    let tool_face_count = result.shape.faces().filter(|f| result.is_tool_face(f)).count();
     assert_eq!(shape_face_count, 6, "result.shape should have 6 faces (top + 4 sides + cut)");
-    assert_eq!(new_face_count, 1, "result.new_faces should have 1 cross-section face");
+    assert_eq!(tool_face_count, 1, "should have 1 tool (cross-section) face");
 
     // ── Colormap size ────────────────────────────────────────────────────────
     // 5 faces from the original box carry a color; the z=0 cut face (from half_space,
@@ -81,11 +81,13 @@ fn colored_box_intersect_z_positive_half_space() {
         5,
         "5 faces (top + 4 trimmed sides) should carry a color; cut face has none"
     );
-    assert_eq!(
-        result.new_faces.colormap.len(),
-        0,
-        "the new cross-section face should have no color"
-    );
+    // Tool faces should have no color (half-space has empty colormap).
+    for f in result.shape.faces().filter(|f| result.is_tool_face(f)) {
+        assert!(
+            !result.shape.colormap.contains_key(&f.tshape_id()),
+            "tool face should have no color"
+        );
+    }
 
     // ── Top face (normal ≈ +Z) should be red ─────────────────────────────────
     let top = result
