@@ -19,6 +19,19 @@ mod ffi_bridge {
 		count: u32,
 	}
 
+	// Shared struct for HLR projected edges (SVG export)
+	struct SvgEdgeData {
+		visible_coords: Vec<f64>,  // flat x,y pairs
+		visible_counts: Vec<u32>,  // point count per polyline
+		hidden_coords: Vec<f64>,
+		hidden_counts: Vec<u32>,
+		min_x: f64,
+		min_y: f64,
+		max_x: f64,
+		max_y: f64,
+		success: bool,
+	}
+
 	// Expose Rust stream types to C++ for streambuf callbacks
 	extern "Rust" {
 		type RustReader;
@@ -209,6 +222,14 @@ mod ffi_bridge {
 			angular: f64,
 			chord: f64,
 		) -> ApproxPoints;
+
+		// ==================== SVG / HLR Projection ====================
+
+		fn project_shape_hlr(
+			shape: &TopoDS_Shape,
+			dx: f64, dy: f64, dz: f64,
+			tolerance: f64,
+		) -> SvgEdgeData;
 	}
 }
 

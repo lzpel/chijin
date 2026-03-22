@@ -44,4 +44,8 @@ pub enum Error {
     /// Face creation from polygon points failed (non-planar or degenerate points).
     #[error("Invalid polygon")]
     InvalidPolygon,
+
+    /// SVG export (HLR projection) failed.
+    #[error("SVG export failed")]
+    SvgExportFailed,
 }
