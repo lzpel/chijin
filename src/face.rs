@@ -38,9 +38,8 @@ impl Face {
 
 	/// Return the `TShapeId` (underlying `TopoDS_TShape*` address) of this face.
 	///
-	/// Use this to look up or set entries in `Shape::colormap`.
-	/// Only available when compiled with `--features color`.
-	#[cfg(feature = "color")]
+	/// Use this to look up or set entries in `Shape::colormap`,
+	/// or to match faces against [`BooleanShape::new_face_ids`].
 	pub fn tshape_id(&self) -> crate::shape::TShapeId {
 		crate::shape::TShapeId(ffi::face_tshape_id(&self.inner))
 	}

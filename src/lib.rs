@@ -36,5 +36,6 @@ pub use iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
 pub use mesh::Mesh;
 pub use shape::{BooleanShape, Shape};
 pub use solid::Solid;
+pub use shape::TShapeId;
 #[cfg(feature = "color")]
-pub use shape::{Rgb, TShapeId};
+pub use shape::Rgb;

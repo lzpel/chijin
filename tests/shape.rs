@@ -136,6 +136,34 @@ fn test_into_solids_empty() {
 	assert!(solids.is_empty());
 }
 
+// ==================== is_tool_face / is_shape_face (B fully inside A) ====================
+
+#[test]
+fn test_new_faces_subtract_b_inside_a() {
+	// small_box が big_box に完全に収まる → small の 6 面はすべて Modified されない
+	// 旧実装（collect_generated_faces）では Modified() が空 → tool faces = 0
+	// 新実装（from_b post_ids）では unchanged 面も from_b に入る → tool faces = 6
+	let big   = Shape::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0));
+	let small = Shape::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0));
+	let result = big.subtract(&small).unwrap();
+	assert_eq!(result.shape.faces().filter(|f| result.is_tool_face(f)).count(), 6,
+		"subtract with B fully inside A: tool faces should be all 6 inner walls");
+}
+
+#[test]
+fn test_new_faces_intersect_b_inside_a() {
+	// intersect(big, small) の結果は small そのもの
+	// small の 6 面はすべて unchanged → tool faces = 結果の全フェイス = 6
+	let big   = Shape::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0));
+	let small = Shape::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0));
+	let result = big.intersect(&small).unwrap();
+	let tool_count = result.shape.faces().filter(|f| result.is_tool_face(f)).count();
+	assert_eq!(tool_count, 6,
+		"intersect with B fully inside A: tool faces should equal all faces of result");
+	assert_eq!(result.shape.faces().count(), tool_count,
+		"intersect with B fully inside A: tool faces should cover all result faces");
+}
+
 // ==================== contains ====================
 
 #[test]

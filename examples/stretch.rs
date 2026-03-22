@@ -6,16 +6,14 @@
 //!
 //! 出力: out/stretched.brep (BRep テキスト形式)
 
-use chijin::{Error, Shape};
+use chijin::{BooleanShape, Error, Shape};
 use glam::DVec3;
 use std::path::Path;
 
-/// 切断面フェイスの Compound を delta 方向に押し出してフィラーを作ります。
-/// BooleanShape::new_faces から直接フェイスを受け取るため、
-/// heuristic による法線・重心フィルタは不要です。
-fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Result<Shape, Error> {
+/// ツール側フェイスだけを delta 方向に押し出してフィラーを作ります。
+fn extrude_tool_faces(result: &BooleanShape, delta: DVec3) -> Result<Shape, Error> {
     let mut filler: Option<Shape> = None;
-    for face in cut_faces.faces() {
+    for face in result.shape.faces().filter(|f| result.is_tool_face(f)) {
         let extruded = Shape::from(face.extrude(delta)?);
         filler = Some(match filler {
             None => extruded,
@@ -26,18 +24,17 @@ fn extrude_faces(cut_faces: &Shape, delta: DVec3) -> Result<Shape, Error> {
 }
 
 /// 指定された座標とベクトルで形状を分割し、片方を平行移動させた後、隙間を押し出し形状で埋めることで引き伸ばしを行います。
-/// intersect の BooleanShape::new_faces から切断面を直接取得するため、
+/// intersect の BooleanShape::is_tool_face から切断面を直接取得するため、
 /// 法線・重心による heuristic フィルタを使いません。
 fn stretch_vector(shape: &Shape, origin: DVec3, delta: DVec3) -> Result<Shape, Error> {
     // Negate so the solid fills the -delta side; intersect then yields part_neg.
     let half = Shape::half_space(origin, -delta.normalize());
 
     let intersect_result = shape.intersect(&half)?;
-    let part_neg = intersect_result.shape;
-    let cut_faces = intersect_result.new_faces;
     let part_pos = Shape::from(shape.subtract(&half)?).translated(delta);
 
-    let filler = extrude_faces(&cut_faces, delta)?;
+    let filler = extrude_tool_faces(&intersect_result, delta)?;
+    let part_neg = intersect_result.shape;
     let combined = Shape::from(part_neg.union(&filler)?);
     combined.union(&part_pos).map(Shape::from)
 }

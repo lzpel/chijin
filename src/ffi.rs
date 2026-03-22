@@ -91,7 +91,6 @@ mod ffi_bridge {
 		fn boolean_common(a: &TopoDS_Shape, b: &TopoDS_Shape) -> UniquePtr<BooleanShape>;
 
 		fn boolean_shape_shape(r: &BooleanShape) -> UniquePtr<TopoDS_Shape>;
-		fn boolean_shape_new_faces(r: &BooleanShape) -> UniquePtr<TopoDS_Shape>;
 		fn boolean_shape_from_a(r: &BooleanShape) -> Vec<u64>;
 		fn boolean_shape_from_b(r: &BooleanShape) -> Vec<u64>;
 
@@ -183,7 +182,6 @@ mod ffi_bridge {
 
 		// ==================== Face Methods ====================
 
-		#[cfg(feature = "color")]
 		fn face_tshape_id(face: &TopoDS_Face) -> u64;
 		fn face_from_polygon(coords: &[f64]) -> UniquePtr<TopoDS_Face>;
 		fn face_center_of_mass(face: &TopoDS_Face, cx: &mut f64, cy: &mut f64, cz: &mut f64);

@@ -98,17 +98,14 @@ std::unique_ptr<TopoDS_Shape> shallow_copy(const TopoDS_Shape& shape);
 
 // ==================== Boolean Operations ====================
 
-/// Result of a boolean operation: the output shape plus any faces
-/// generated at the tool boundary (cut cross-sections for cut/common;
-/// empty compound for fuse).
+/// Result of a boolean operation.
 ///
 /// from_a / from_b encode face-origin pairs as flat arrays:
 ///   [post_copy_tshape_id, source_tshape_id, ...]
-/// Used by the Rust `color` feature to remap colormaps after the operation.
+/// Used to remap colormaps and derive new_face_ids on the Rust side.
 class BooleanShape {
 public:
     TopoDS_Shape shape;
-    TopoDS_Shape new_faces;
     std::vector<uint64_t> from_a;  // pairs: [post_id, src_a_id, ...]
     std::vector<uint64_t> from_b;  // pairs: [post_id, src_b_id, ...]
 };
@@ -121,7 +118,6 @@ std::unique_ptr<BooleanShape> boolean_common(
     const TopoDS_Shape& a, const TopoDS_Shape& b);
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r);
-std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r);
 rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r);
 rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r);
 
@@ -183,6 +179,10 @@ ApproxPoints edge_approximation_segments(
 ApproxPoints edge_approximation_segments_ex(
     const TopoDS_Edge& edge, double angular, double chord);
 
+// ==================== Face Methods ====================
+
+uint64_t face_tshape_id(const TopoDS_Face& face);
+
 } // namespace chijin
 
 #ifdef CHIJIN_COLOR
@@ -230,10 +230,6 @@ public:
 std::unique_ptr<CleanShape> clean_shape_full(const TopoDS_Shape& shape);
 std::unique_ptr<TopoDS_Shape> clean_shape_get(const CleanShape& r);
 rust::Vec<uint64_t> clean_shape_mapping(const CleanShape& r);
-
-// ==================== Face Methods (color only) ====================
-
-uint64_t face_tshape_id(const TopoDS_Face& face);
 
 } // namespace chijin
 

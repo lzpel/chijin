@@ -61,6 +61,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 
 namespace chijin {
@@ -312,31 +313,6 @@ void compound_add(TopoDS_Shape& compound, const TopoDS_Shape& child) {
 //   After BRepBuilderAPI_Copy, copier.ModifiedShape() maps pre→post copy.
 //   The combined mapping (src → pre → post) is stored as flat [post_id, src_id] pairs.
 
-// Helper: collect cross-section faces produced at the tool boundary.
-// Calls Modified() on every face of the tool and collects results.
-static TopoDS_Shape collect_generated_faces(
-    BRepAlgoAPI_BooleanOperation& op, const TopoDS_Shape& tool)
-{
-    BRep_Builder builder;
-    TopoDS_Compound raw;
-    builder.MakeCompound(raw);
-    for (TopExp_Explorer ex(tool, TopAbs_FACE); ex.More(); ex.Next()) {
-        for (const TopoDS_Shape& s : op.Modified(ex.Current())) {
-            builder.Add(raw, s);
-        }
-    }
-
-    // Deep-copy each face individually so it is independent of the operator.
-    BRep_Builder builder2;
-    TopoDS_Compound result;
-    builder2.MakeCompound(result);
-    for (TopExp_Explorer ex(raw, TopAbs_FACE); ex.More(); ex.Next()) {
-        BRepBuilderAPI_Copy fc(ex.Current(), Standard_True, Standard_False);
-        builder2.Add(result, fc.Shape());
-    }
-    return result;
-}
-
 // Helper: build relay map  pre_copy_result_tshape* → src_tshape*
 // Called before BRepBuilderAPI_Copy, while op history is alive.
 static void collect_relay_mapping(
@@ -396,15 +372,9 @@ std::unique_ptr<BooleanShape> boolean_fuse(
         collect_relay_mapping(fuse, a, relay_a);
         collect_relay_mapping(fuse, b, relay_b);
 
-        // union has no tool boundary — new_faces is empty
-        BRep_Builder builder;
-        TopoDS_Compound empty;
-        builder.MakeCompound(empty);
-
         BRepBuilderAPI_Copy copier(fuse.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
-        r->new_faces = empty;
         emit_from_pairs(fuse.Shape(), copier.Shape(), relay_a, r->from_a);
         emit_from_pairs(fuse.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
@@ -425,11 +395,9 @@ std::unique_ptr<BooleanShape> boolean_cut(
         collect_relay_mapping(cut, a, relay_a);
         collect_relay_mapping(cut, b, relay_b);
 
-        TopoDS_Shape new_faces = collect_generated_faces(cut, b);
         BRepBuilderAPI_Copy copier(cut.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
-        r->new_faces = new_faces;
         emit_from_pairs(cut.Shape(), copier.Shape(), relay_a, r->from_a);
         emit_from_pairs(cut.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
@@ -450,11 +418,9 @@ std::unique_ptr<BooleanShape> boolean_common(
         collect_relay_mapping(common, a, relay_a);
         collect_relay_mapping(common, b, relay_b);
 
-        TopoDS_Shape new_faces = collect_generated_faces(common, b);
         BRepBuilderAPI_Copy copier(common.Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
-        r->new_faces = new_faces;
         emit_from_pairs(common.Shape(), copier.Shape(), relay_a, r->from_a);
         emit_from_pairs(common.Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
@@ -465,10 +431,6 @@ std::unique_ptr<BooleanShape> boolean_common(
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r) {
     return std::make_unique<TopoDS_Shape>(r.shape);
-}
-
-std::unique_ptr<TopoDS_Shape> boolean_shape_new_faces(const BooleanShape& r) {
-    return std::make_unique<TopoDS_Shape>(r.new_faces);
 }
 
 rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r) {
