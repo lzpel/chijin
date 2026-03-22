@@ -171,6 +171,10 @@ std::unique_ptr<TopoDS_Shape> face_revolve(const TopoDS_Face& face,
     double ox, double oy, double oz,
     double dx, double dy, double dz,
     double angle);
+std::unique_ptr<TopoDS_Shape> face_helix(const TopoDS_Face& face,
+    double ox, double oy, double oz,
+    double dx, double dy, double dz,
+    double pitch, double turns, bool align_to_spine);
 
 // ==================== Edge Methods ====================
 

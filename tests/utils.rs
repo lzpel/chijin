@@ -1,5 +1,5 @@
 use chijin::{
-	utils::{revolve_section, stretch_vector},
+	utils::{helix_section, revolve_section, stretch_vector},
 	Error, Shape,
 };
 use glam::DVec3;
@@ -149,6 +149,43 @@ fn test_revolve_section_volume() {
 
 	let expected = std::f64::consts::PI * 10.0f64.powi(2) * 10.0;
 	assert!((v - expected).abs() < 1.0, "expected volume ≈ {expected:.2}, got {v}");
+}
+
+// ==================== helix_section ====================
+
+#[test]
+fn test_helix_section_volume() {
+	let shape = test_box();
+	// y=5 の平面（法線=Y）で切断し、Z 軸周りにヘリカルスイープ。
+	// 断面は x:0..10, z:0..10 の矩形（面積=100）。
+	// helix_section は align_to_spine=false（断面の向き保持）。
+	// Frenet フレームにより回転方向には追従するが初期補正なしのため、
+	// 体積 ≈ 2πR × A (回転体のパップス公式) = 2π×5×100 ≈ 3141.59。
+	let result = helix_section(
+		&shape,
+		dvec3(0.0, 5.0, 0.0),
+		dvec3(0.0, 0.0, 1.0),
+		dvec3(0.0, 1.0, 0.0),
+		20.0,
+		1.0,
+	)
+	.unwrap();
+	let v = result.volume();
+
+	std::fs::create_dir_all("out").unwrap();
+	let mut file = std::fs::File::create("out/helix_section.step").unwrap();
+	result.write_step(&mut file).expect("STEP write failed");
+
+	let radius = 5.0;
+	let area = 100.0;
+	let expected = 2.0 * std::f64::consts::PI * radius * area;
+	let tolerance = expected * 0.01;
+
+	println!("helix_section volume: {v:.2}, expected (Pappus revolve): {expected:.2}");
+	assert!(
+		(v - expected).abs() < tolerance,
+		"volume check: expected ≈ {expected:.2}, got {v:.2}"
+	);
 }
 
 // ==================== stretch (lambda360box) ====================

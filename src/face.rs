@@ -105,4 +105,37 @@ impl Face {
 		}
 		Ok(Solid::new(shape))
 	}
+
+	/// Sweep this face along a helical path to create a solid.
+	///
+	/// The helix radius is automatically computed as the distance from the
+	/// face's centre of mass to the axis. The face is moved to the spine
+	/// start by `BRepOffsetAPI_MakePipeShell`.
+	///
+	/// - `axis_origin`: a point on the helix axis
+	/// - `axis_direction`: direction of the helix axis (normalised by OCCT)
+	/// - `pitch`: height per revolution
+	/// - `turns`: number of full revolutions (e.g. `1.0` for one full turn)
+	/// - `align_to_spine`: if `true`, the profile is rotated to be perpendicular
+	///   to the spine tangent (pipe-sweep); if `false`, the profile keeps its
+	///   original orientation (preserves cross-section shape)
+	pub fn helix(
+		&self,
+		axis_origin: DVec3,
+		axis_direction: DVec3,
+		pitch: f64,
+		turns: f64,
+		align_to_spine: bool,
+	) -> Result<Solid, Error> {
+		let shape = ffi::face_helix(
+			&self.inner,
+			axis_origin.x, axis_origin.y, axis_origin.z,
+			axis_direction.x, axis_direction.y, axis_direction.z,
+			pitch, turns, align_to_spine,
+		);
+		if shape.is_null() {
+			return Err(Error::HelixFailed);
+		}
+		Ok(Solid::new(shape))
+	}
 }

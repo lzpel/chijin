@@ -45,6 +45,36 @@ pub fn revolve_section(
 	Ok(result.unwrap_or_else(Shape::empty))
 }
 
+/// `origin` を含み `plane_normal` が法線の平面で `shape` を切断し、
+/// その断面を `origin` を通る `axis_dir` 軸周りにヘリカルスイープした形状を返す。
+///
+/// # パラメータ
+/// - `pitch`: 一周あたりの高さ
+/// - `turns`: 回転数（1.0 = 1周）
+///
+/// ヘリックス半径は各断面フェイスの重心から軸までの距離で自動算出。
+pub fn helix_section(
+	shape: &Shape,
+	origin: DVec3,
+	axis_direction: DVec3,
+	plane_normal: DVec3,
+	pitch: f64,
+	turns: f64,
+) -> Result<Shape, Error> {
+	let half = Shape::half_space(origin, -plane_normal.normalize());
+	let intersect_result = shape.intersect(&half)?;
+
+	let mut result: Option<Shape> = None;
+	for face in intersect_result.shape.faces().filter(|f| intersect_result.is_tool_face(f)) {
+		let swept = Shape::from(face.helix(origin, axis_direction, pitch, turns, false)?);
+		result = Some(match result {
+			None => swept,
+			Some(r) => Shape::from(r.union(&swept)?),
+		});
+	}
+	Ok(result.unwrap_or_else(Shape::empty))
+}
+
 /// 指定された座標とベクトルで形状を分割し、片方を平行移動させた後、隙間を押し出し形状で埋めることで引き伸ばしを行います。
 /// intersect の BooleanShape::is_tool_face から切断面を直接取得するため、
 /// 法線・重心による heuristic フィルタを使いません。

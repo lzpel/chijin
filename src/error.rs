@@ -37,6 +37,10 @@ pub enum Error {
     #[error("Revolve failed")]
     RevolveFailed,
 
+    /// Helix sweep (MakePipeShell) failed in OCCT.
+    #[error("Helix failed")]
+    HelixFailed,
+
     /// Face creation from polygon points failed (non-planar or degenerate points).
     #[error("Invalid polygon")]
     InvalidPolygon,

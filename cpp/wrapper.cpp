@@ -16,7 +16,15 @@
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom2d_Line.hxx>
+#include <BRepTools.hxx>
+#include <BRepLib.hxx>
 #include <gp_Ax1.hxx>
+#include <gp_Ax2.hxx>
 
 #include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -774,6 +782,61 @@ std::unique_ptr<TopoDS_Shape> face_revolve(const TopoDS_Face& face,
         BRepPrimAPI_MakeRevol maker(face, axis, angle);
         if (!maker.IsDone()) return nullptr;
         return std::make_unique<TopoDS_Shape>(maker.Shape());
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<TopoDS_Shape> face_helix(const TopoDS_Face& face,
+    double ox, double oy, double oz,
+    double dx, double dy, double dz,
+    double pitch, double turns, bool align_to_spine)
+{
+    try {
+        // Compute radius from face centroid to axis
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        gp_Pnt centroid = props.CentreOfMass();
+
+        gp_Pnt origin(ox, oy, oz);
+        gp_Dir dir(dx, dy, dz);
+        gp_Lin axis_line(origin, dir);
+        double radius = axis_line.Distance(centroid);
+        if (radius < Precision::Confusion()) return nullptr;
+
+        // Build helix spine on a cylindrical surface
+        gp_Ax2 ax2(origin, dir);
+        Handle(Geom_CylindricalSurface) cylinder =
+            new Geom_CylindricalSurface(ax2, radius);
+
+        double total_angle = turns * 2.0 * M_PI;
+        double height = pitch * turns;
+        gp_Pnt2d line_origin(0.0, 0.0);
+        gp_Dir2d line_dir(total_angle, height);
+        Handle(Geom2d_Line) line2d = new Geom2d_Line(line_origin, line_dir);
+
+        double param_end = std::sqrt(total_angle * total_angle + height * height);
+
+        BRepBuilderAPI_MakeEdge edgeMaker(line2d, cylinder, 0.0, param_end);
+        if (!edgeMaker.IsDone()) return nullptr;
+        TopoDS_Edge edge = edgeMaker.Edge();
+        BRepLib::BuildCurve3d(edge);
+
+        BRepBuilderAPI_MakeWire wireMaker(edge);
+        if (!wireMaker.IsDone()) return nullptr;
+        TopoDS_Wire spine = wireMaker.Wire();
+
+        // Sweep profile along spine using MakePipeShell (Frenet trihedron)
+        TopoDS_Wire profile = BRepTools::OuterWire(face);
+        BRepOffsetAPI_MakePipeShell pipeShell(spine);
+        pipeShell.SetMode(Standard_True); // Frenet trihedron
+        Standard_Boolean correction = align_to_spine ? Standard_True : Standard_False;
+        pipeShell.Add(profile, Standard_True, correction);
+        pipeShell.Build();
+        if (!pipeShell.IsDone()) return nullptr;
+        pipeShell.MakeSolid();
+
+        return std::make_unique<TopoDS_Shape>(pipeShell.Shape());
     } catch (const Standard_Failure&) {
         return nullptr;
     }

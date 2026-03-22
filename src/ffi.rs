@@ -193,6 +193,13 @@ mod ffi_bridge {
 			dx: f64, dy: f64, dz: f64,
 			angle: f64,
 		) -> UniquePtr<TopoDS_Shape>;
+		fn face_helix(
+			face: &TopoDS_Face,
+			ox: f64, oy: f64, oz: f64,
+			dx: f64, dy: f64, dz: f64,
+			pitch: f64, turns: f64,
+			align_to_spine: bool,
+		) -> UniquePtr<TopoDS_Shape>;
 
 		// ==================== Edge Methods ====================
 
