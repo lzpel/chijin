@@ -169,6 +169,7 @@ mod ffi_bridge {
 		) -> UniquePtr<TopoDS_Shape>;
 
 		fn shape_is_null(shape: &TopoDS_Shape) -> bool;
+		fn shape_is_solid(shape: &TopoDS_Shape) -> bool;
 		fn shape_shell_count(shape: &TopoDS_Shape) -> u32;
 		fn shape_volume(shape: &TopoDS_Shape) -> f64;
 		fn shape_contains_point(shape: &TopoDS_Shape, x: f64, y: f64, z: f64) -> bool;

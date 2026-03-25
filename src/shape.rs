@@ -2,20 +2,14 @@ use crate::error::Error;
 use crate::ffi;
 use crate::iterators::{EdgeIterator, FaceIterator};
 use crate::mesh::Mesh;
-use crate::stream::{RustReader, RustWriter};
+use crate::solid::Solid;
 use glam::{DVec2, DVec3};
-use std::io::{Read, Write};
 
 // ==================== Color types ====================
 
-/// Identifier for a `TopoDS_TShape` object (pointer address).
-///
-/// Used as the key in `Shape::colormap` and in [`BooleanShape::new_face_ids`].
-/// Valid as long as the owning `Shape` is alive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TShapeId(pub u64);
 
-/// RGB color with components in `0.0..=1.0`.
 #[cfg(feature = "color")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgb {
@@ -24,496 +18,54 @@ pub struct Rgb {
 	pub b: f32,
 }
 
-// ==================== BooleanShape ====================
+// ==================== Internal helpers ====================
 
-/// Result of a boolean operation.
-///
-/// Use [`is_tool_face`](BooleanShape::is_tool_face) /
-/// [`is_shape_face`](BooleanShape::is_shape_face) to classify faces of `shape`
-/// by which operand they originated from.
-///
-/// Use [`From<BooleanShape> for Shape`] (`.into()`) when only the shape is needed.
-pub struct BooleanShape {
-	pub shape: Shape,
-	from_a: Vec<u64>,
-	from_b: Vec<u64>,
-}
-
-impl BooleanShape {
-	/// Returns `true` if `face` originated from the `other` (tool) operand.
-	///
-	/// For `subtract` and `intersect` these are the cross-section / interface faces.
-	///
-	/// Implemented as a linear scan over `from_b`. post_ids are TShape* of the
-	/// copied result, which never overlap with src_ids (original input pointers),
-	/// so a flat `.contains()` on the interleaved `[post_id, src_id, ...]` array
-	/// is correct.
-	pub fn is_tool_face(&self, face: &crate::face::Face) -> bool {
-		self.from_b.contains(&face.tshape_id().0)
+/// Assemble solids into a TopoDS_Compound.
+pub(crate) fn to_compound(solids: &[Solid]) -> cxx::UniquePtr<ffi::TopoDS_Shape> {
+	let mut compound = ffi::make_empty();
+	for s in solids {
+		ffi::compound_add(compound.pin_mut(), s.inner());
 	}
-
-	/// Returns `true` if `face` originated from `self` (the base shape operand).
-	pub fn is_shape_face(&self, face: &crate::face::Face) -> bool {
-		self.from_a.contains(&face.tshape_id().0)
-	}
+	compound
 }
 
-impl From<BooleanShape> for Shape {
-	fn from(r: BooleanShape) -> Shape {
-		r.shape
-	}
-}
-
-// ==================== Shape ====================
-
-/// A topological shape wrapping `TopoDS_Shape`.
-///
-/// This is the central type in Chijin. Shapes can represent solids, compounds,
-/// faces, edges, or any other topology supported by OpenCASCADE.
-pub struct Shape {
-	pub(crate) inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
-	/// Face-level color map. Key is [`TShapeId`] (the `TopoDS_TShape*` address).
-	/// Only available when compiled with `--features color`.
-	#[cfg(feature = "color")]
-	pub colormap: std::collections::HashMap<TShapeId, Rgb>,
-}
-
-// `Shape` is `Send` because `UniquePtr<TopoDS_Shape>` is `Send`
-// (see ffi.rs — `unsafe impl Send for TopoDS_Shape`).
-// `Sync` is intentionally NOT implemented: OCC Handle<> ref-counts are
-// non-atomic, making concurrent `&Shape` access from multiple threads unsound.
-
-
-// ==================== Constructors ====================
-
-impl Shape {
-	/// Read a shape from a STEP format stream.
-	///
-	/// Accepts any `impl Read` (file, network stream, `&[u8]`, etc.).
-	/// Data is streamed chunk-by-chunk via a C++ `std::streambuf` bridge —
-	/// the entire content is never buffered in memory.
-	///
-	/// # Bug 2 fix
-	/// The `STEPControl_Reader` is leaked in the C++ layer to prevent
-	/// `STATUS_ACCESS_VIOLATION` on process exit.
-	///
-	/// # Errors
-	/// Returns [`Error::StepReadFailed`] if the data cannot be parsed.
-	pub fn read_step(reader: &mut impl Read) -> Result<Shape, Error> {
-		let mut rust_reader = RustReader::from_ref(reader);
-		let inner = ffi::read_step_stream(&mut rust_reader);
-		if inner.is_null() {
-			return Err(Error::StepReadFailed);
-		}
-		Ok(Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
+/// Decompose a compound TopoDS_Shape into Vec<Solid>.
+pub(crate) fn decompose(
+	compound: &ffi::TopoDS_Shape,
+	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Rgb>,
+) -> Vec<Solid> {
+	let solid_shapes = ffi::decompose_into_solids(compound);
+	solid_shapes
+		.iter()
+		.map(|s| {
+			let inner = ffi::shallow_copy(s);
+			Solid::new(
+				inner,
+				#[cfg(feature = "color")]
+				colormap.clone(),
+			)
 		})
+		.collect()
+}
+
+/// Merge colormaps from all solids.
+#[cfg(feature = "color")]
+pub(crate) fn merge_all_colormaps(solids: &[Solid]) -> std::collections::HashMap<TShapeId, Rgb> {
+	let mut merged = std::collections::HashMap::new();
+	for s in solids {
+		merged.extend(s.colormap().iter().map(|(&k, &v)| (k, v)));
 	}
-
-	/// Read a STEP file and populate `colormap` with face colors found in the file.
-	///
-	/// Uses `STEPCAFControl_Reader` (XDE) which reads `STYLED_ITEM` / `COLOUR_RGB`
-	/// records.  Faces without a color entry are simply absent from `colormap`.
-	///
-	/// # Errors
-	/// Returns [`Error::StepReadFailed`] if the data cannot be parsed.
-	#[cfg(feature = "color")]
-	pub fn read_step_with_colors(reader: &mut impl Read) -> Result<Shape, Error> {
-		let mut rust_reader = RustReader::from_ref(reader);
-		let d = ffi::read_step_color_stream(&mut rust_reader);
-		if d.is_null() {
-			return Err(Error::StepReadFailed);
-		}
-		let inner = ffi::colored_step_shape(&d);
-		if inner.is_null() {
-			return Err(Error::StepReadFailed);
-		}
-		let ids = ffi::colored_step_ids(&d);
-		let r = ffi::colored_step_colors_r(&d);
-		let g = ffi::colored_step_colors_g(&d);
-		let b = ffi::colored_step_colors_b(&d);
-		let mut colormap = std::collections::HashMap::new();
-		for i in 0..ids.len() {
-			colormap.insert(TShapeId(ids[i]), Rgb { r: r[i], g: g[i], b: b[i] });
-		}
-		Ok(Shape { inner, colormap })
-	}
-
-	/// Write this shape in STEP format, embedding face colors from `colormap`.
-	///
-	/// Uses `STEPCAFControl_Writer` (XDE) to emit `STYLED_ITEM` / `COLOUR_RGB`
-	/// records for every face present in `colormap`.
-	///
-	/// # Errors
-	/// Returns [`Error::StepWriteFailed`] if writing fails.
-	#[cfg(feature = "color")]
-	pub fn write_step_with_colors(&self, writer: &mut impl Write) -> Result<(), Error> {
-		let ids: Vec<u64> = self.colormap.keys().map(|k| k.0).collect();
-		let r: Vec<f32> = ids.iter().map(|&id| self.colormap[&TShapeId(id)].r).collect();
-		let g: Vec<f32> = ids.iter().map(|&id| self.colormap[&TShapeId(id)].g).collect();
-		let b: Vec<f32> = ids.iter().map(|&id| self.colormap[&TShapeId(id)].b).collect();
-		let mut rust_writer = RustWriter::from_ref(writer);
-		if ffi::write_step_color_stream(&self.inner, &ids, &r, &g, &b, &mut rust_writer) {
-			Ok(())
-		} else {
-			Err(Error::StepWriteFailed)
-		}
-	}
-
-	/// Read a shape (with colors) from the CHJC binary format.
-	///
-	/// Format: magic `b"CHJC"` + version `1` + color section + BRep section.
-	/// Face colors are keyed by `TopExp_Explorer` traversal index, which is
-	/// stable across BRep serialization round-trips.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepReadFailed`] if the magic, version, or BRep data
-	/// is invalid.
-	#[cfg(feature = "color")]
-	pub fn read_brep_color(reader: &mut impl Read) -> Result<Shape, Error> {
-		// ① header
-		let mut magic = [0u8; 4];
-		reader
-			.read_exact(&mut magic)
-			.map_err(|_| Error::BrepReadFailed)?;
-		if &magic != b"CHJC" {
-			return Err(Error::BrepReadFailed);
-		}
-		let mut ver = [0u8; 1];
-		reader
-			.read_exact(&mut ver)
-			.map_err(|_| Error::BrepReadFailed)?;
-		if ver[0] != 1 {
-			return Err(Error::BrepReadFailed);
-		}
-
-		// ② color entries
-		let mut buf4 = [0u8; 4];
-		reader
-			.read_exact(&mut buf4)
-			.map_err(|_| Error::BrepReadFailed)?;
-		let color_count = u32::from_le_bytes(buf4) as usize;
-		let mut entries: Vec<(u32, f32, f32, f32)> = Vec::with_capacity(color_count);
-		for _ in 0..color_count {
-			let mut e = [0u8; 16];
-			reader
-				.read_exact(&mut e)
-				.map_err(|_| Error::BrepReadFailed)?;
-			let idx = u32::from_le_bytes(e[0..4].try_into().unwrap());
-			let r = f32::from_le_bytes(e[4..8].try_into().unwrap());
-			let g = f32::from_le_bytes(e[8..12].try_into().unwrap());
-			let b = f32::from_le_bytes(e[12..16].try_into().unwrap());
-			entries.push((idx, r, g, b));
-		}
-
-		// ③ BRep data
-		// brep_len は書き込み側の対称性のために存在するが、BRep は最終セクションなので
-		// reader の残りバイトがそのまま BRep データ。直接 read_brep_bin_stream に渡す。
-		let mut buf8 = [0u8; 8];
-		reader
-			.read_exact(&mut buf8)
-			.map_err(|_| Error::BrepReadFailed)?;
-		let mut rust_reader = RustReader::from_ref(reader);
-		let inner = ffi::read_brep_bin_stream(&mut rust_reader);
-		if inner.is_null() {
-			return Err(Error::BrepReadFailed);
-		}
-
-		// ④ face index → TShapeId
-		let index_to_id: Vec<TShapeId> =
-			FaceIterator::new(ffi::explore_faces(&inner))
-				.map(|f| f.tshape_id())
-				.collect();
-
-		// ⑤ colormap
-		let colormap = entries
-			.into_iter()
-			.filter_map(|(idx, r, g, b)| {
-				index_to_id
-					.get(idx as usize)
-					.map(|&id| (id, Rgb { r, g, b }))
-			})
-			.collect();
-
-		Ok(Shape { inner, colormap })
-	}
-
-	/// Write this shape (with colors) to the CHJC binary format.
-	///
-	/// Format: magic `b"CHJC"` + version `1` + color section + BRep section.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepWriteFailed`] if writing fails.
-	#[cfg(feature = "color")]
-	pub fn write_brep_color(&self, writer: &mut impl Write) -> Result<(), Error> {
-		// ① BRep をバッファに書き出す
-		let mut brep_buf = Vec::new();
-		self.write_brep_bin(&mut brep_buf)?;
-
-		// ② TShapeId → face_index の逆引きマップ
-		let id_to_index: std::collections::HashMap<TShapeId, u32> =
-			FaceIterator::new(ffi::explore_faces(&self.inner))
-				.enumerate()
-				.map(|(i, f)| (f.tshape_id(), i as u32))
-				.collect();
-
-		// ③ colormap → (face_index, r, g, b) エントリ（決定論的出力のためソート）
-		let mut entries: Vec<(u32, f32, f32, f32)> = self
-			.colormap
-			.iter()
-			.filter_map(|(id, rgb)| {
-				id_to_index.get(id).map(|&idx| (idx, rgb.r, rgb.g, rgb.b))
-			})
-			.collect();
-		entries.sort_by_key(|e| e.0);
-
-		// ④ 書き出し
-		writer
-			.write_all(b"CHJC")
-			.map_err(|_| Error::BrepWriteFailed)?;
-		writer
-			.write_all(&[1u8])
-			.map_err(|_| Error::BrepWriteFailed)?;
-		writer
-			.write_all(&(entries.len() as u32).to_le_bytes())
-			.map_err(|_| Error::BrepWriteFailed)?;
-		for (idx, r, g, b) in &entries {
-			writer
-				.write_all(&idx.to_le_bytes())
-				.map_err(|_| Error::BrepWriteFailed)?;
-			writer
-				.write_all(&r.to_le_bytes())
-				.map_err(|_| Error::BrepWriteFailed)?;
-			writer
-				.write_all(&g.to_le_bytes())
-				.map_err(|_| Error::BrepWriteFailed)?;
-			writer
-				.write_all(&b.to_le_bytes())
-				.map_err(|_| Error::BrepWriteFailed)?;
-		}
-		writer
-			.write_all(&(brep_buf.len() as u64).to_le_bytes())
-			.map_err(|_| Error::BrepWriteFailed)?;
-		writer
-			.write_all(&brep_buf)
-			.map_err(|_| Error::BrepWriteFailed)?;
-		Ok(())
-	}
-
-	/// Read a shape from a BRep binary format stream.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepReadFailed`] if the data cannot be parsed.
-	pub fn read_brep_bin(reader: &mut impl Read) -> Result<Shape, Error> {
-		let mut rust_reader = RustReader::from_ref(reader);
-		let inner = ffi::read_brep_bin_stream(&mut rust_reader);
-		if inner.is_null() {
-			return Err(Error::BrepReadFailed);
-		}
-		Ok(Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		})
-	}
-
-	/// Write this shape in STEP format to a stream.
-	///
-	/// # Errors
-	/// Returns [`Error::StepWriteFailed`] if writing fails.
-	pub fn write_step(&self, writer: &mut impl Write) -> Result<(), Error> {
-		let mut rust_writer = RustWriter::from_ref(writer);
-		if ffi::write_step_stream(&self.inner, &mut rust_writer) {
-			Ok(())
-		} else {
-			Err(Error::StepWriteFailed)
-		}
-	}
-
-	/// Write this shape in BRep binary format to a stream.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepWriteFailed`] if writing fails.
-	pub fn write_brep_bin(&self, writer: &mut impl Write) -> Result<(), Error> {
-		let mut rust_writer = RustWriter::from_ref(writer);
-		if ffi::write_brep_bin_stream(&self.inner, &mut rust_writer) {
-			Ok(())
-		} else {
-			Err(Error::BrepWriteFailed)
-		}
-	}
-
-	/// Read a shape from a BRep text format stream.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepReadFailed`] if the data cannot be parsed.
-	pub fn read_brep_text(reader: &mut impl Read) -> Result<Shape, Error> {
-		let mut rust_reader = RustReader::from_ref(reader);
-		let inner = ffi::read_brep_text_stream(&mut rust_reader);
-		if inner.is_null() {
-			return Err(Error::BrepReadFailed);
-		}
-		Ok(Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		})
-	}
-
-	/// Write this shape in BRep text format to a stream.
-	///
-	/// # Errors
-	/// Returns [`Error::BrepWriteFailed`] if writing fails.
-	pub fn write_brep_text(&self, writer: &mut impl Write) -> Result<(), Error> {
-		let mut rust_writer = RustWriter::from_ref(writer);
-		if ffi::write_brep_text_stream(&self.inner, &mut rust_writer) {
-			Ok(())
-		} else {
-			Err(Error::BrepWriteFailed)
-		}
-	}
-
-	/// Create a half-space solid.
-	///
-	/// The solid fills the half-space on the side **where the normal points**.
-	/// When used with `shape.intersect(&half_space)`, the portion on the
-	/// `plane_normal` side is retained.
-	pub fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Shape {
-		let inner = ffi::make_half_space(
-			plane_origin.x,
-			plane_origin.y,
-			plane_origin.z,
-			plane_normal.x,
-			plane_normal.y,
-			plane_normal.z,
-		);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
-	}
-
-	/// Create a box from two opposite corner points.
-	///
-	/// The corners are normalized internally (min/max), so the order
-	/// of the points does not matter.
-	pub fn box_from_corners(corner_1: DVec3, corner_2: DVec3) -> Shape {
-		let inner = ffi::make_box(
-			corner_1.x, corner_1.y, corner_1.z, corner_2.x, corner_2.y, corner_2.z,
-		);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
-	}
-
-	/// Create a cylinder.
-	///
-	/// - `p`: center of the base circle
-	/// - `r`: radius
-	/// - `dir`: axis direction
-	/// - `h`: height along the axis
-	pub fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Shape {
-		let inner = ffi::make_cylinder(p.x, p.y, p.z, dir.x, dir.y, dir.z, r, h);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
-	}
-
-	/// Create an empty compound shape.
-	///
-	/// Uses `TopoDS_Compound` + `BRep_Builder::MakeCompound` instead of
-	/// a null shape, because null shapes cause boolean operations to fail.
-	pub fn empty() -> Shape {
-		let inner = ffi::make_empty();
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
-	}
-
-	/// Decompose this compound into its constituent solids.
-	///
-	/// Consumes `self` and returns a `Vec<Shape>`, one per `TopAbs_SOLID`
-	/// found by `TopExp_Explorer`. The returned shapes share the same
-	/// underlying B-Rep geometry via reference-counted handles (no deep copy).
-	/// Returns an empty `Vec` if the shape contains no solids.
-	pub fn into_solids(self) -> Vec<Shape> {
-		let solids = ffi::decompose_into_solids(&self.inner);
-		solids
-			.iter()
-			.map(|s| {
-				let inner = ffi::shallow_copy(s);
-				Shape {
-					inner,
-					#[cfg(feature = "color")]
-					colormap: self.colormap.clone(),
-				}
-			})
-			.collect()
-	}
-
-	/// Build a compound shape from a collection of shapes.
-	///
-	/// Uses `BRep_Builder::Add` to assemble shapes into a `TopoDS_Compound`.
-	/// Only lightweight handle copies are performed (no deep copy).
-	pub fn from_solids(solids: Vec<Shape>) -> Shape {
-		let mut compound = ffi::make_empty();
-		#[cfg(feature = "color")]
-		let mut colormap = std::collections::HashMap::new();
-		for s in &solids {
-			ffi::compound_add(compound.pin_mut(), &s.inner);
-			#[cfg(feature = "color")]
-			colormap.extend(s.colormap.iter().map(|(&k, &v)| (k, v)));
-		}
-		Shape {
-			inner: compound,
-			#[cfg(feature = "color")]
-			colormap,
-		}
-	}
-
-	/// Create an independent deep copy of this shape.
-	///
-	/// Uses `BRepBuilderAPI_Copy` to create a complete copy that shares
-	/// no internal `Handle<Geom_XXX>` references with the original.
-	pub fn deep_copy(&self) -> Shape {
-		let inner = ffi::deep_copy(&self.inner);
-		#[cfg(feature = "color")]
-		{
-			let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-			return Shape { inner, colormap };
-		}
-		#[cfg(not(feature = "color"))]
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		}
-	}
+	merged
 }
 
 // ==================== Color helpers ====================
 
-/// Remap a colormap by matching old and new faces by traversal order.
-///
-/// Used for topology-preserving operations (translate, deep_copy) where
-/// `BRepBuilderAPI_Transform`/`Copy` keeps faces in the same `TopExp_Explorer`
-/// order.  Each old face maps 1-to-1 to the new face at the same index.
 #[cfg(feature = "color")]
-fn remap_colormap_by_order(
+pub(crate) fn remap_colormap_by_order(
 	old_inner: &ffi::TopoDS_Shape,
 	new_inner: &ffi::TopoDS_Shape,
 	old_colormap: &std::collections::HashMap<TShapeId, Rgb>,
 ) -> std::collections::HashMap<TShapeId, Rgb> {
-	use crate::iterators::FaceIterator;
 	let mut colormap = std::collections::HashMap::new();
 	let old_faces = FaceIterator::new(ffi::explore_faces(old_inner));
 	let new_faces = FaceIterator::new(ffi::explore_faces(new_inner));
@@ -525,12 +77,6 @@ fn remap_colormap_by_order(
 	colormap
 }
 
-// ==================== Boolean Operations ====================
-
-/// Merge two colormap remapping tables into a result colormap.
-///
-/// `from_x` is a flat array of `[post_id, src_id, ...]` pairs.
-/// Looks up `src_id` in `colormap_x`; if found, inserts `post_id → color`.
 #[cfg(feature = "color")]
 fn merge_colormaps(
 	from_a: &[u64],
@@ -552,308 +98,192 @@ fn merge_colormaps(
 	result
 }
 
-impl Shape {
-	/// Boolean union (fuse) with another shape.
-	///
-	/// Returns a [`BooleanShape`] whose `new_faces` is an empty compound
-	/// (union has no tool boundary that generates new faces).
-	///
-	/// # Bug 1 fix
-	/// The result is automatically deep-copied in the C++ layer via
-	/// `BRepBuilderAPI_Copy` to prevent `STATUS_HEAP_CORRUPTION`
-	/// when shapes are dropped in any order.
-	pub fn union(&self, other: &Shape) -> Result<BooleanShape, Error> {
-		let r = ffi::boolean_fuse(&self.inner, &other.inner);
-		if r.is_null() {
-			return Err(Error::BooleanOperationFailed);
-		}
-		self.build_boolean_shape(r, other)
+// ==================== BooleanShape ====================
+
+/// Result of a boolean operation.
+pub struct BooleanShape {
+	pub solids: Vec<Solid>,
+	from_a: Vec<u64>,
+	from_b: Vec<u64>,
+}
+
+impl BooleanShape {
+	/// Returns `true` if `face` originated from the `other` (tool) operand.
+	pub fn is_tool_face(&self, face: &crate::face::Face) -> bool {
+		self.from_b.contains(&face.tshape_id().0)
 	}
 
-	/// Boolean subtraction (cut) with another shape.
-	///
-	/// Use [`BooleanShape::is_tool_face`] to identify the cross-section faces
-	/// generated at the tool boundary.
-	///
-	/// See [`union`](Self::union) for details on automatic deep-copy.
-	pub fn subtract(&self, other: &Shape) -> Result<BooleanShape, Error> {
-		let r = ffi::boolean_cut(&self.inner, &other.inner);
-		if r.is_null() {
-			return Err(Error::BooleanOperationFailed);
-		}
-		self.build_boolean_shape(r, other)
-	}
-
-	/// Boolean intersection (common) with another shape.
-	///
-	/// Use [`BooleanShape::is_tool_face`] to identify the cross-section faces
-	/// generated at the tool boundary.
-	///
-	/// See [`union`](Self::union) for details on automatic deep-copy.
-	pub fn intersect(&self, other: &Shape) -> Result<BooleanShape, Error> {
-		let r = ffi::boolean_common(&self.inner, &other.inner);
-		if r.is_null() {
-			return Err(Error::BooleanOperationFailed);
-		}
-		self.build_boolean_shape(r, other)
-	}
-
-	fn build_boolean_shape(
-		&self,
-		r: cxx::UniquePtr<ffi::BooleanShape>,
-		#[cfg_attr(not(feature = "color"), allow(unused_variables))]
-		other: &Shape,
-	) -> Result<BooleanShape, Error> {
-		let from_a = ffi::boolean_shape_from_a(&r);
-		let from_b = ffi::boolean_shape_from_b(&r);
-		#[cfg(feature = "color")]
-		let colormap = merge_colormaps(&from_a, &from_b, &self.colormap, &other.colormap);
-		Ok(BooleanShape {
-			shape: Shape {
-				inner: ffi::boolean_shape_shape(&r),
-				#[cfg(feature = "color")]
-				colormap,
-			},
-			from_a,
-			from_b,
-		})
+	/// Returns `true` if `face` originated from `self` (the base shape operand).
+	pub fn is_shape_face(&self, face: &crate::face::Face) -> bool {
+		self.from_a.contains(&face.tshape_id().0)
 	}
 }
 
-// ==================== Shape Methods ====================
+impl From<BooleanShape> for Vec<Solid> {
+	fn from(r: BooleanShape) -> Vec<Solid> {
+		r.solids
+	}
+}
 
-impl Shape {
-	/// Clean the shape by unifying same-domain faces, edges, and vertices.
-	///
-	/// Uses `ShapeUpgrade_UnifySameDomain` to remove redundant topology
-	/// created by boolean operations.
-	pub fn clean(&self) -> Result<Shape, Error> {
-		#[cfg(feature = "color")]
-		{
-			let r = ffi::clean_shape_full(&self.inner);
-			if r.is_null() {
-				return Err(Error::CleanFailed);
-			}
-			let inner = ffi::clean_shape_get(&r);
-			if inner.is_null() {
-				return Err(Error::CleanFailed);
-			}
-			let mapping = ffi::clean_shape_mapping(&r);
-			let mut colormap = std::collections::HashMap::new();
-			for pair in mapping.chunks(2) {
-				let new_id = TShapeId(pair[0]);
-				let old_id = TShapeId(pair[1]);
-				if let Some(&color) = self.colormap.get(&old_id) {
-					// First-found wins when multiple old faces merge into one.
-					colormap.entry(new_id).or_insert(color);
-				}
-			}
-			return Ok(Shape { inner, colormap });
+// ==================== Shape trait ====================
+
+/// Trait for operations on `[Solid]`.
+///
+/// Import this trait to use methods on `Vec<Solid>` / `&[Solid]`:
+/// ```
+/// use chijin::Shape;
+/// ```
+pub trait Shape {
+	// --- Boolean ---
+	fn union(&self, other: &[Solid]) -> Result<BooleanShape, Error>;
+	fn subtract(&self, other: &[Solid]) -> Result<BooleanShape, Error>;
+	fn intersect(&self, other: &[Solid]) -> Result<BooleanShape, Error>;
+
+	// --- Transforms ---
+	fn translated(&self, translation: DVec3) -> Vec<Solid>;
+	fn rotated(&self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Vec<Solid>;
+	fn scaled(&self, center: DVec3, factor: f64) -> Vec<Solid>;
+	fn clean(&self) -> Result<Vec<Solid>, Error>;
+
+	// --- Aggregate queries ---
+	fn volume(&self) -> f64;
+	fn contains(&self, point: DVec3) -> bool;
+	fn is_null(&self) -> bool;
+	fn shell_count(&self) -> u32;
+
+	// --- Topology / rendering ---
+	fn faces(&self) -> FaceIterator;
+	fn edges(&self) -> EdgeIterator;
+	fn mesh_with_tolerance(&self, tol: f64) -> Result<Mesh, Error>;
+	fn to_svg(&self, direction: DVec3, tolerance: f64) -> Result<String, Error>;
+
+	// --- Color ---
+	#[cfg(feature = "color")]
+	fn paint(&mut self, color: Rgb);
+}
+
+// ==================== impl Shape for [Solid] ====================
+
+impl Shape for [Solid] {
+	// --- Boolean ---
+
+	fn union(&self, other: &[Solid]) -> Result<BooleanShape, Error> {
+		let c_self = to_compound(self);
+		let c_other = to_compound(other);
+		let r = ffi::boolean_fuse(&c_self, &c_other);
+		if r.is_null() {
+			return Err(Error::BooleanOperationFailed);
 		}
-		#[cfg(not(feature = "color"))]
-		{
-			let inner = ffi::clean_shape(&self.inner);
-			if inner.is_null() {
-				return Err(Error::CleanFailed);
-			}
-			Ok(Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap: std::collections::HashMap::new(),
-		})
-		}
+		build_boolean_result(
+			r,
+			self,
+			other,
+		)
 	}
 
-	/// Create a new shape translated by the given vector.
-	///
-	/// # Bug 5 fix
-	/// Uses `BRepBuilderAPI_Transform` which properly propagates the
-	/// transformation to all sub-shapes, including those in compounds
-	/// created by boolean operations.
-	pub fn translated(&self, translation: DVec3) -> Shape {
-		let inner = ffi::translate_shape(&self.inner, translation.x, translation.y, translation.z);
-		#[cfg(feature = "color")]
-		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap,
+	fn subtract(&self, other: &[Solid]) -> Result<BooleanShape, Error> {
+		let c_self = to_compound(self);
+		let c_other = to_compound(other);
+		let r = ffi::boolean_cut(&c_self, &c_other);
+		if r.is_null() {
+			return Err(Error::BooleanOperationFailed);
 		}
+		build_boolean_result(
+			r,
+			self,
+			other,
+		)
 	}
 
-	/// Create a new shape rotated around an axis.
-	///
-	/// Uses `BRepBuilderAPI_Transform` with `gp_Trsf::SetRotation`.
-	///
-	/// - `axis_origin`: a point on the rotation axis
-	/// - `axis_direction`: direction of the rotation axis
-	/// - `angle`: rotation angle in radians
-	pub fn rotated(&self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Shape {
-		let inner = ffi::rotate_shape(
-			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
-			angle,
-		);
-		#[cfg(feature = "color")]
-		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap,
+	fn intersect(&self, other: &[Solid]) -> Result<BooleanShape, Error> {
+		let c_self = to_compound(self);
+		let c_other = to_compound(other);
+		let r = ffi::boolean_common(&c_self, &c_other);
+		if r.is_null() {
+			return Err(Error::BooleanOperationFailed);
 		}
+		build_boolean_result(
+			r,
+			self,
+			other,
+		)
 	}
 
-	/// Create a new shape uniformly scaled around a center point.
-	///
-	/// Uses `BRepBuilderAPI_Transform` with `gp_Trsf::SetScale`.
-	/// Only uniform scaling (same factor for all axes) is supported.
-	///
-	/// - `center`: center of scaling
-	/// - `factor`: scale factor
-	pub fn scaled(&self, center: DVec3, factor: f64) -> Shape {
-		let inner = ffi::scale_shape(
-			&self.inner,
-			center.x, center.y, center.z,
-			factor,
-		);
-		#[cfg(feature = "color")]
-		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-		Shape {
-			inner,
-			#[cfg(feature = "color")]
-			colormap,
-		}
+	// --- Transforms ---
+
+	fn translated(&self, translation: DVec3) -> Vec<Solid> {
+		self.iter().map(|s| s.translated(translation)).collect()
 	}
 
-	/// Set a global translation on this shape (in-place mutation).
-	///
-	/// **Warning**: With `propagate=false`, this only updates the root shape's
-	/// `TopLoc_Location` and does **not** affect sub-shapes in compounds.
-	/// Prefer [`translated`](Self::translated) for compound shapes.
-	pub fn set_global_translation(&mut self, translation: DVec3) {
-		// Replace self with a translated copy for correctness
-		let translated =
-			ffi::translate_shape(&self.inner, translation.x, translation.y, translation.z);
-		self.inner = translated;
+	fn rotated(&self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Vec<Solid> {
+		self.iter().map(|s| s.rotated(axis_origin, axis_direction, angle)).collect()
 	}
 
-	/// Mesh this shape with the given linear deflection tolerance.
-	///
-	/// # Bug 3 fix
-	/// The normals array now has exactly the same length as the vertices
-	/// array (previous binding had an off-by-one error).
-	///
-	/// # Errors
-	/// Returns [`Error::TriangulationFailed`] if meshing fails.
-	pub fn mesh_with_tolerance(&self, tol: f64) -> Result<Mesh, Error> {
-		let data = ffi::mesh_shape(&self.inner, tol);
+	fn scaled(&self, center: DVec3, factor: f64) -> Vec<Solid> {
+		self.iter().map(|s| s.scaled(center, factor)).collect()
+	}
+
+	fn clean(&self) -> Result<Vec<Solid>, Error> {
+		self.iter().map(|s| s.clean()).collect()
+	}
+
+	// --- Aggregate queries ---
+
+	fn volume(&self) -> f64 {
+		self.iter().map(|s| s.volume()).sum()
+	}
+
+	fn contains(&self, point: DVec3) -> bool {
+		self.iter().any(|s| s.contains(point))
+	}
+
+	fn is_null(&self) -> bool {
+		self.is_empty() || self.iter().all(|s| s.is_null())
+	}
+
+	fn shell_count(&self) -> u32 {
+		self.iter().map(|s| s.shell_count()).sum()
+	}
+
+	// --- Topology / rendering ---
+
+	fn faces(&self) -> FaceIterator {
+		let compound = to_compound(self);
+		FaceIterator::new(ffi::explore_faces(&compound))
+	}
+
+	fn edges(&self) -> EdgeIterator {
+		let compound = to_compound(self);
+		EdgeIterator::new(ffi::explore_edges(&compound))
+	}
+
+	fn mesh_with_tolerance(&self, tol: f64) -> Result<Mesh, Error> {
+		let compound = to_compound(self);
+		let data = ffi::mesh_shape(&compound, tol);
 		if !data.success {
 			return Err(Error::TriangulationFailed);
 		}
-
 		let vertex_count = data.vertices.len() / 3;
-
 		let vertices: Vec<DVec3> = (0..vertex_count)
-			.map(|i| {
-				DVec3::new(
-					data.vertices[i * 3],
-					data.vertices[i * 3 + 1],
-					data.vertices[i * 3 + 2],
-				)
-			})
+			.map(|i| DVec3::new(data.vertices[i * 3], data.vertices[i * 3 + 1], data.vertices[i * 3 + 2]))
 			.collect();
-
 		let uvs: Vec<DVec2> = (0..vertex_count)
 			.map(|i| DVec2::new(data.uvs[i * 2], data.uvs[i * 2 + 1]))
 			.collect();
-
 		let normals: Vec<DVec3> = (0..vertex_count)
-			.map(|i| {
-				DVec3::new(
-					data.normals[i * 3],
-					data.normals[i * 3 + 1],
-					data.normals[i * 3 + 2],
-				)
-			})
+			.map(|i| DVec3::new(data.normals[i * 3], data.normals[i * 3 + 1], data.normals[i * 3 + 2]))
 			.collect();
-
 		let indices: Vec<usize> = data.indices.iter().map(|&i| i as usize).collect();
 		let face_ids = data.face_tshape_ids;
-
-		Ok(Mesh {
-			vertices,
-			uvs,
-			normals,
-			indices,
-			face_ids,
-		})
+		Ok(Mesh { vertices, uvs, normals, indices, face_ids })
 	}
 
-	/// Iterate over all faces in this shape.
-	pub fn faces(&self) -> FaceIterator {
-		let explorer = ffi::explore_faces(&self.inner);
-		FaceIterator::new(explorer)
-	}
-
-	/// Iterate over all edges in this shape.
-	pub fn edges(&self) -> EdgeIterator {
-		let explorer = ffi::explore_edges(&self.inner);
-		EdgeIterator::new(explorer)
-	}
-
-	/// Check if this shape is null.
-	pub fn is_null(&self) -> bool {
-		ffi::shape_is_null(&self.inner)
-	}
-
-	/// Count the number of shells in this shape.
-	///
-	/// Uses `TopExp_Explorer` with `TopAbs_SHELL`, which recursively
-	/// traverses the entire shape tree. Returns 1 for a single solid,
-	/// and N for a compound of N solids.
-	pub fn shell_count(&self) -> u32 {
-		ffi::shape_shell_count(&self.inner)
-	}
-
-	/// Check if a point is inside this solid shape.
-	///
-	/// Uses `BRepClass3d_SolidClassifier` with tolerance `1e-6`.
-	/// Returns `true` only for points strictly inside (`TopAbs_IN`),
-	/// not on the boundary. Designed for solid shapes; behavior is
-	/// undefined for open shells, faces, or edges.
-	pub fn contains(&self, point: DVec3) -> bool {
-		ffi::shape_contains_point(&self.inner, point.x, point.y, point.z)
-	}
-
-	/// Compute the volume of this shape.
-	///
-	/// Uses `BRepGProp::VolumeProperties`. Returns 0 for non-solid shapes
-	/// (faces, edges, compounds without volume). May return a negative value
-	/// if the shape orientation is reversed.
-	pub fn volume(&self) -> f64 {
-		ffi::shape_volume(&self.inner)
-	}
-
-	/// Project this shape and return an SVG string with filled faces and edge lines.
-	///
-	/// Face fills use the triangulated mesh projected onto a 2D plane, Z-sorted
-	/// with the painter's algorithm. Edge lines use `HLRBRep_Algo` (exact hidden
-	/// line removal). The SVG uses `viewBox` only (no `width`/`height`) for
-	/// responsive sizing.
-	///
-	/// - `direction`: camera direction — where the camera is, looking toward origin
-	///   (e.g. `DVec3::Z` for top-down)
-	/// - `tolerance`: chord deflection for polyline/mesh approximation
-	///
-	/// With the `color` feature, face colors from `colormap` are applied.
-	/// Without it, all faces are filled with a default light gray.
-	pub fn to_svg(&self, direction: DVec3, tolerance: f64) -> Result<String, Error> {
-		// Merge coplanar faces to remove boolean seam edges
-		let cleaned = self.clean()?;
+	fn to_svg(&self, direction: DVec3, tolerance: f64) -> Result<String, Error> {
+		let cleaned: Vec<Solid> = self.clean()?;
+		let compound = to_compound(&cleaned);
 
 		let edge_data = ffi::project_shape_hlr(
-			&cleaned.inner,
+			&compound,
 			direction.x, direction.y, direction.z,
 			tolerance,
 		);
@@ -861,45 +291,64 @@ impl Shape {
 			return Err(Error::SvgExportFailed);
 		}
 
-		// Build mesh for face fills
 		let mesh = cleaned.mesh_with_tolerance(tolerance)?;
 		let face_triangles = project_and_sort_triangles(
 			&mesh,
 			direction,
 			#[cfg(feature = "color")]
-			&cleaned.colormap,
+			&merge_all_colormaps(&cleaned),
 		);
 
 		Ok(build_svg(&edge_data, &face_triangles))
 	}
 
-	/// Assign the same color to every face in this shape.
-	///
-	/// Collects all face [`TShapeId`]s first to avoid a borrow conflict
-	/// between the face iterator and the mutable `colormap`.
+	// --- Color ---
+
 	#[cfg(feature = "color")]
-	pub fn paint(&mut self, color: Rgb) {
-		let ids: Vec<TShapeId> = self.faces().map(|f| f.tshape_id()).collect();
-		for id in ids {
-			self.colormap.insert(id, color);
+	fn paint(&mut self, color: Rgb) {
+		for s in self.iter_mut() {
+			s.paint(color);
 		}
 	}
 }
 
+// ==================== Boolean helper ====================
+
+fn build_boolean_result(
+	r: cxx::UniquePtr<ffi::BooleanShape>,
+	self_solids: &[Solid],
+	other_solids: &[Solid],
+) -> Result<BooleanShape, Error> {
+	let from_a = ffi::boolean_shape_from_a(&r);
+	let from_b = ffi::boolean_shape_from_b(&r);
+	let inner = ffi::boolean_shape_shape(&r);
+
+	#[cfg(feature = "color")]
+	let colormap = {
+		let colormap_a = merge_all_colormaps(self_solids);
+		let colormap_b = merge_all_colormaps(other_solids);
+		merge_colormaps(&from_a, &from_b, &colormap_a, &colormap_b)
+	};
+	#[cfg(not(feature = "color"))]
+	let _ = (self_solids, other_solids);
+
+	let solids = decompose(
+		&inner,
+		#[cfg(feature = "color")]
+		&colormap,
+	);
+
+	Ok(BooleanShape { solids, from_a, from_b })
+}
+
 // ==================== SVG helpers ====================
 
-/// A projected triangle ready for SVG rendering.
 struct SvgTriangle {
-	/// 2D vertices (already projected)
 	pts: [(f64, f64); 3],
-	/// Depth for Z-sorting (larger = farther from camera)
 	depth: f64,
-	/// Fill color as "rgb(R,G,B)" or a default
 	fill: String,
 }
 
-/// Replicate OCCT `gp_Ax2(origin, dir)` orthonormal basis construction.
-/// Returns (x_dir, y_dir) matching what HLR uses for its 2D projection plane.
 fn occt_ax2_basis(dir: DVec3) -> (DVec3, DVec3) {
 	let (a, b, c) = (dir.x, dir.y, dir.z);
 	let (a_abs, b_abs, c_abs) = (a.abs(), b.abs(), c.abs());
@@ -917,15 +366,12 @@ fn occt_ax2_basis(dir: DVec3) -> (DVec3, DVec3) {
 	(x_dir, y_dir)
 }
 
-/// Project mesh triangles onto a 2D plane and sort back-to-front.
 fn project_and_sort_triangles(
-	mesh: &crate::mesh::Mesh,
+	mesh: &Mesh,
 	direction: DVec3,
 	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Rgb>,
 ) -> Vec<SvgTriangle> {
 	let dir = direction.normalize();
-
-	// Use the same basis as OCCT HLRAlgo_Projector(gp_Ax2(origin, dir))
 	let (u, v) = occt_ax2_basis(dir);
 
 	let tri_count = mesh.indices.len() / 3;
@@ -940,31 +386,22 @@ fn project_and_sort_triangles(
 		let v1 = mesh.vertices[i1];
 		let v2 = mesh.vertices[i2];
 
-		// Back-face culling: camera is at +dir, so visible faces point toward +dir
 		let avg_normal = (mesh.normals[i0] + mesh.normals[i1] + mesh.normals[i2]) / 3.0;
 		if avg_normal.dot(dir) < 0.0 {
 			continue;
 		}
 
-		// Project to 2D
 		let p0 = (v0.dot(u), v0.dot(v));
 		let p1 = (v1.dot(u), v1.dot(v));
 		let p2 = (v2.dot(u), v2.dot(v));
 
-		// Depth = average distance along viewing direction
 		let depth = (v0.dot(dir) + v1.dot(dir) + v2.dot(dir)) / 3.0;
 
-		// Fill color
 		#[cfg(feature = "color")]
 		let fill = {
 			let face_id = TShapeId(mesh.face_ids[ti]);
 			if let Some(c) = colormap.get(&face_id) {
-				format!(
-					"rgb({},{},{})",
-					(c.r * 255.0) as u8,
-					(c.g * 255.0) as u8,
-					(c.b * 255.0) as u8
-				)
+				format!("rgb({},{},{})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8)
 			} else {
 				"#ddd".to_string()
 			}
@@ -972,35 +409,22 @@ fn project_and_sort_triangles(
 		#[cfg(not(feature = "color"))]
 		let fill = "#ddd".to_string();
 
-		triangles.push(SvgTriangle {
-			pts: [p0, p1, p2],
-			depth,
-			fill,
-		});
+		triangles.push(SvgTriangle { pts: [p0, p1, p2], depth, fill });
 	}
 
-	// Painter's algorithm: draw far triangles first (camera at +dir, so smaller depth = farther)
 	triangles.sort_by(|a, b| a.depth.partial_cmp(&b.depth).unwrap_or(std::cmp::Ordering::Equal));
 	triangles
 }
 
-fn polylines_to_svg(
-	svg: &mut String,
-	coords: &[f64],
-	counts: &[u32],
-	stroke: &str,
-	dash: &str,
-) {
+fn polylines_to_svg(svg: &mut String, coords: &[f64], counts: &[u32], stroke: &str, dash: &str) {
 	let mut offset = 0usize;
 	for &count in counts {
 		let n = count as usize;
 		svg.push_str("<polyline points=\"");
 		for i in 0..n {
 			let x = coords[(offset + i) * 2];
-			let y = -coords[(offset + i) * 2 + 1]; // flip Y for SVG
-			if i > 0 {
-				svg.push(' ');
-			}
+			let y = -coords[(offset + i) * 2 + 1];
+			if i > 0 { svg.push(' '); }
 			svg.push_str(&format!("{x:.4},{y:.4}"));
 		}
 		svg.push_str("\" fill=\"none\" stroke=\"");
@@ -1017,7 +441,6 @@ fn polylines_to_svg(
 }
 
 fn build_svg(edge_data: &ffi::SvgEdgeData, triangles: &[SvgTriangle]) -> String {
-	// Expand bounding box to include mesh triangles
 	let mut min_x = edge_data.min_x;
 	let mut min_y = edge_data.min_y;
 	let mut max_x = edge_data.max_x;
@@ -1036,11 +459,9 @@ fn build_svg(edge_data: &ffi::SvgEdgeData, triangles: &[SvgTriangle]) -> String 
 	let h = max_y - min_y;
 	let margin = if w > h { w } else { h } * margin_frac;
 	let vx = min_x - margin;
-	let vy = -(max_y + margin); // SVG Y is flipped: -max becomes top
+	let vy = -(max_y + margin);
 	let vw = w + margin * 2.0;
 	let vh = h + margin * 2.0;
-
-	// stroke-width relative to viewBox size
 	let sw = (if w > h { w } else { h }) * 0.003;
 	let dash_len = sw * 3.0;
 
@@ -1050,10 +471,8 @@ fn build_svg(edge_data: &ffi::SvgEdgeData, triangles: &[SvgTriangle]) -> String 
 		 stroke-width=\"{sw:.4}\">\n"
 	));
 
-	// Face fills (painter's algorithm, back-to-front)
 	for tri in triangles {
 		let [(x0, y0), (x1, y1), (x2, y2)] = tri.pts;
-		// Flip Y: SVG Y-down, projection Y-up
 		let y0 = -y0;
 		let y1 = -y1;
 		let y2 = -y2;
@@ -1064,16 +483,7 @@ fn build_svg(edge_data: &ffi::SvgEdgeData, triangles: &[SvgTriangle]) -> String 
 		));
 	}
 
-	// Visible edges (solid black)
-	polylines_to_svg(
-		&mut svg,
-		&edge_data.visible_coords,
-		&edge_data.visible_counts,
-		"black",
-		"",
-	);
-
-	// Hidden edges (dashed gray)
+	polylines_to_svg(&mut svg, &edge_data.visible_coords, &edge_data.visible_counts, "black", "");
 	polylines_to_svg(
 		&mut svg,
 		&edge_data.hidden_coords,

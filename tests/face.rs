@@ -1,4 +1,4 @@
-use chijin::{Face, Shape};
+use chijin::{Face, Shape, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -7,7 +7,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 #[test]
 fn test_face_iteration() {
-	let shape = Shape::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0));
+	let shape: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
 	let faces: Vec<_> = shape.faces().collect();
 	assert_eq!(faces.len(), 6);
 	for face in &faces {
@@ -41,7 +41,7 @@ fn test_face_extrude() {
 	])
 	.unwrap();
 	let solid = face.extrude(dvec3(0.0, 1.0, 0.0)).unwrap();
-	let shape: Shape = solid.into();
+	let shape: Vec<Solid> = vec![solid];
 	assert_eq!(shape.shell_count(), 1);
 }
 
@@ -59,7 +59,7 @@ fn test_face_revolve() {
 	let solid = face
 		.revolve(DVec3::ZERO, dvec3(0.0, 0.0, 1.0), std::f64::consts::TAU)
 		.unwrap();
-	let shape: Shape = solid.into();
+	let shape: Vec<Solid> = vec![solid];
 	assert_eq!(shape.shell_count(), 1);
 }
 
@@ -80,10 +80,10 @@ fn test_face_helix_pappus() {
 	let solid = face
 		.helix(DVec3::ZERO, dvec3(0.0, 0.0, 1.0), 10.0, 1.0, true)
 		.unwrap();
-	let shape: Shape = solid.into();
+	let shape: Vec<Solid> = vec![solid];
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_test.step").unwrap();
-	shape.write_step(&mut file).expect("STEP write failed");
+	chijin::write_step(&shape, &mut file).expect("STEP write failed");
 
 	let v = shape.volume();
 	println!("helix volume: {v:.4}");

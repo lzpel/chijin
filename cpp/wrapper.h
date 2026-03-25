@@ -137,6 +137,7 @@ std::unique_ptr<TopoDS_Shape> scale_shape(
     double cx, double cy, double cz,
     double factor);
 bool shape_is_null(const TopoDS_Shape& shape);
+bool shape_is_solid(const TopoDS_Shape& shape);
 uint32_t shape_shell_count(const TopoDS_Shape& shape);
 double shape_volume(const TopoDS_Shape& shape);
 bool shape_contains_point(const TopoDS_Shape& shape, double x, double y, double z);

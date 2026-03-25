@@ -1,4 +1,4 @@
-use chijin::Shape;
+use chijin::{Shape, Solid};
 #[cfg(feature = "color")]
 use chijin::{Rgb, TShapeId};
 use glam::DVec3;
@@ -9,7 +9,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 #[test]
 fn test_svg_box_isometric() {
-	let shape = Shape::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0));
+	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
 	let svg = shape
 		.to_svg(dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
 		.unwrap();
@@ -31,7 +31,7 @@ fn test_svg_box_isometric() {
 
 #[test]
 fn test_svg_box_top_down() {
-	let shape = Shape::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0));
+	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
 	let svg = shape.to_svg(DVec3::Z, 0.1).unwrap();
 
 	assert!(svg.starts_with("<svg"));
@@ -43,7 +43,7 @@ fn test_svg_box_top_down() {
 
 #[test]
 fn test_svg_cylinder() {
-	let shape = Shape::cylinder(DVec3::ZERO, 5.0, DVec3::Z, 10.0);
+	let shape: Vec<Solid> = vec![Solid::cylinder(DVec3::ZERO, 5.0, DVec3::Z, 10.0)];
 	let svg = shape
 		.to_svg(dvec3(1.0, 0.5, 0.3).normalize(), 0.1)
 		.unwrap();
@@ -57,9 +57,9 @@ fn test_svg_cylinder() {
 #[test]
 fn test_svg_has_hidden_lines() {
 	// Two boxes: the back one should have hidden edges
-	let a = Shape::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0));
-	let b = Shape::box_from_corners(dvec3(5.0, 5.0, 0.0), dvec3(15.0, 15.0, 10.0));
-	let shape: Shape = a.union(&b).unwrap().into();
+	let a: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
+	let b: Vec<Solid> = vec![Solid::box_from_corners(dvec3(5.0, 5.0, 0.0), dvec3(15.0, 15.0, 10.0))];
+	let shape: Vec<Solid> = a.union(&b).unwrap().into();
 	let svg = shape
 		.to_svg(dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
 		.unwrap();
@@ -73,7 +73,7 @@ fn test_svg_has_hidden_lines() {
 #[test]
 #[cfg(feature = "color")]
 fn test_svg_colored_box() {
-	let mut shape = Shape::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0));
+	let mut shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
 
 	// Assign a distinct color to each face based on its normal
 	let palette: &[(DVec3, Rgb)] = &[
@@ -91,7 +91,7 @@ fn test_svg_colored_box() {
 	for (id, normal) in &id_normal {
 		for (dir, color) in palette {
 			if normal.dot(*dir) > 0.9 {
-				shape.colormap.insert(*id, *color);
+				shape[0].colormap_mut().insert(*id, *color);
 				break;
 			}
 		}

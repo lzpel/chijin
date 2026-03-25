@@ -1,6 +1,6 @@
 use chijin::{
 	utils::{helix_section, revolve_section, stretch_vector},
-	Error, Shape,
+	Error, Shape, Solid,
 };
 use glam::DVec3;
 use std::panic::{self, AssertUnwindSafe};
@@ -10,26 +10,26 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 	DVec3::new(x, y, z)
 }
 
-fn test_box() -> Shape {
-	Shape::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))
+fn test_box() -> Vec<Solid> {
+	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
 }
 
 /// テスト用のベース形状として、外部のSTEPファイルを読み込みます。
-fn lambda360box() -> Shape {
+fn lambda360box() -> Vec<Solid> {
 	let mut file = std::fs::File::open(
 		"steps/LAMBDA360-BOX-d6cb2eb2d6e0d802095ea1eda691cf9a3e9bf3394301a0d148f53e55f0f97951.step",
 	)
 	.expect("Failed to open step file");
-	Shape::read_step(&mut file).expect("Failed to read step file")
+	chijin::read_step(&mut file).expect("Failed to read step file")
 }
 
 /// 形状をX, Y, Zの各軸方向に順番に引き伸ばします。
-fn stretch(shape: &Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Shape, Error> {
+fn stretch(shape: &[Solid], cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Vec<Solid>, Error> {
 	let eps = 1e-10;
 	let origin = DVec3::new(cx, cy, cz);
 
 	let x;
-	let after_x: &Shape = if dx > eps {
+	let after_x: &[Solid] = if dx > eps {
 		x = stretch_vector(shape, origin, DVec3::new(dx, 0.0, 0.0))?;
 		&x
 	} else {
@@ -37,7 +37,7 @@ fn stretch(shape: &Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) 
 	};
 
 	let y;
-	let after_y: &Shape = if dy > eps {
+	let after_y: &[Solid] = if dy > eps {
 		y = stretch_vector(after_x, origin, DVec3::new(0.0, dy, 0.0))?;
 		&y
 	} else {
@@ -45,7 +45,7 @@ fn stretch(shape: &Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) 
 	};
 
 	let z;
-	let after_z: &Shape = if dz > eps {
+	let after_z: &[Solid] = if dz > eps {
 		z = stretch_vector(after_y, origin, DVec3::new(0.0, 0.0, dz))?;
 		&z
 	} else {
@@ -57,14 +57,14 @@ fn stretch(shape: &Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) 
 
 /// 形状の引き伸ばし処理をパニックキャッチ付きで安全に実行し、結果を返します。
 fn stretch_ok(
-	shape: &Shape,
+	shape: &[Solid],
 	cx: f64,
 	cy: f64,
 	cz: f64,
 	dx: f64,
 	dy: f64,
 	dz: f64,
-) -> Result<Shape, String> {
+) -> Result<Vec<Solid>, String> {
 	let result = panic::catch_unwind(AssertUnwindSafe(|| stretch(shape, cx, cy, cz, dx, dy, dz)));
 	match result {
 		Ok(Ok(s)) => Ok(s),
@@ -100,11 +100,11 @@ impl Lcg {
 }
 
 /// 形状を `out/<name>.step` に書き出し、頂点数・三角形数を標準出力に表示します。
-fn write_step(shape: &Shape, name: &str) {
+fn write_step(shape: &[Solid], name: &str) {
 	std::fs::create_dir_all("out").unwrap();
 	let path = format!("out/{name}.step");
 	let mut file = std::fs::File::create(&path).unwrap();
-	shape.write_step(&mut file).expect("STEP write failed");
+	chijin::write_step(shape, &mut file).expect("STEP write failed");
 	let mesh = shape.mesh_with_tolerance(0.1).expect("meshing failed");
 	assert!(!mesh.vertices.is_empty(), "result shape has no vertices");
 	println!(
@@ -145,7 +145,7 @@ fn test_revolve_section_volume() {
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/revolve_section.step").unwrap();
-	result.write_step(&mut file).expect("STEP write failed");
+	chijin::write_step(&result, &mut file).expect("STEP write failed");
 
 	let expected = std::f64::consts::PI * 10.0f64.powi(2) * 10.0;
 	assert!((v - expected).abs() < 1.0, "expected volume ≈ {expected:.2}, got {v}");
@@ -174,7 +174,7 @@ fn test_helix_section_volume() {
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_section.step").unwrap();
-	result.write_step(&mut file).expect("STEP write failed");
+	chijin::write_step(&result, &mut file).expect("STEP write failed");
 
 	let radius = 5.0;
 	let area = 100.0;
@@ -198,17 +198,17 @@ fn diagnose_new_faces() {
 	let origin = DVec3::new(1.0, 0.0, 1.0);
 	let delta = DVec3::new(1.0, 0.0, 0.0);
 
-	let half = Shape::half_space(origin, -delta.normalize());
+	let half: Vec<Solid> = vec![Solid::half_space(origin, -delta.normalize())];
 	let r_half = shape.intersect(&half).expect("intersect(half_space) failed");
-	println!("  intersect result: tool_face count={}", r_half.shape.faces().filter(|f| r_half.is_tool_face(f)).count());
+	println!("  intersect result: tool_face count={}", r_half.solids.faces().filter(|f| r_half.is_tool_face(f)).count());
 
-	let big_box = Shape::box_from_corners(
+	let big_box: Vec<Solid> = vec![Solid::box_from_corners(
 		DVec3::new(-1000.0, -1000.0, -1000.0),
 		DVec3::new(1.0, 1000.0, 1000.0),
-	);
+	)];
 	let r_box = shape.intersect(&big_box).expect("intersect(big_box) failed");
-	println!("  intersect result: tool_face count={}", r_box.shape.faces().filter(|f| r_box.is_tool_face(f)).count());
-	for (i, face) in r_box.shape.faces().filter(|f| r_box.is_tool_face(f)).enumerate() {
+	println!("  intersect result: tool_face count={}", r_box.solids.faces().filter(|f| r_box.is_tool_face(f)).count());
+	for (i, face) in r_box.solids.faces().filter(|f| r_box.is_tool_face(f)).enumerate() {
 		let n = face.normal_at_center();
 		let c = face.center_of_mass();
 		println!("    face[{i}]: normal=({:.3},{:.3},{:.3}) center=({:.3},{:.3},{:.3})", n.x, n.y, n.z, c.x, c.y, c.z);

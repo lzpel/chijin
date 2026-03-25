@@ -3,29 +3,29 @@
 //! These tests correspond to acceptance criteria T-01 through T-08
 //! defined in 仕様書.md §4.3.
 
-use chijin::Shape;
+use chijin::{Shape, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 	DVec3::new(x, y, z)
 }
 
-fn test_box() -> Shape {
-	Shape::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))
+fn test_box() -> Vec<Solid> {
+	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
 }
 
-fn test_box_2() -> Shape {
-	Shape::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))
+fn test_box_2() -> Vec<Solid> {
+	vec![Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))]
 }
 
-fn test_box_3() -> Shape {
-	Shape::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(8.0, 8.0, 8.0))
+fn test_box_3() -> Vec<Solid> {
+	vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(8.0, 8.0, 8.0))]
 }
 
 /// Helper: write shape to BRep binary bytes
-fn shape_to_brep_bytes(shape: &Shape) -> Vec<u8> {
+fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 	let mut buf = Vec::new();
-	shape.write_brep_bin(&mut buf).unwrap();
+	chijin::write_brep_bin(shape, &mut buf).unwrap();
 	buf
 }
 
@@ -77,7 +77,7 @@ fn test_t01_chained_boolean_drops() {
 	let b = test_box_2();
 	let c = test_box_3();
 	let r1 = a.union(&b).unwrap();
-	let r2 = r1.shape.subtract(&c).unwrap();
+	let r2 = r1.solids.subtract(&c).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -92,7 +92,7 @@ fn test_t02_multiple_reads_no_crash() {
 	let original = test_box();
 	let brep_data = shape_to_brep_bytes(&original);
 	for _ in 0..5 {
-		let _shape = Shape::read_brep_bin(&mut brep_data.as_slice()).unwrap();
+		let _shape = chijin::read_brep_bin(&mut brep_data.as_slice()).unwrap();
 	}
 }
 
@@ -109,7 +109,7 @@ fn test_t03_mesh_normals_count() {
 
 #[test]
 fn test_t04_approximation_tolerance() {
-	let cyl = Shape::cylinder(dvec3(0.0, 0.0, 0.0), 10.0, dvec3(0.0, 0.0, 1.0), 20.0);
+	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
 	let mut has_difference = false;
 	for edge in cyl.edges() {
 		let coarse = edge.approximation_segments(1.0).count();
@@ -130,7 +130,7 @@ fn test_t04_approximation_tolerance() {
 fn test_t05_translated_compound() {
 	let a = test_box();
 	let b = test_box_2();
-	let compound: Shape = a.union(&b).unwrap().into();
+	let compound: Vec<Solid> = a.union(&b).unwrap().into();
 	let v = dvec3(100.0, 0.0, 0.0);
 	let shifted = compound.translated(v);
 
@@ -153,7 +153,7 @@ fn test_t06_brep_roundtrip() {
 	let orig_mesh = original.mesh_with_tolerance(0.1).unwrap();
 
 	let brep_data = shape_to_brep_bytes(&original);
-	let restored = Shape::read_brep_bin(&mut brep_data.as_slice()).unwrap();
+	let restored = chijin::read_brep_bin(&mut brep_data.as_slice()).unwrap();
 	let rest_mesh = restored.mesh_with_tolerance(0.1).unwrap();
 
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
@@ -171,7 +171,7 @@ fn test_t07_stream_api_only() {
 	let shape = test_box();
 	let data = shape_to_brep_bytes(&shape);
 	assert!(!data.is_empty());
-	let _restored = Shape::read_brep_bin(&mut data.as_slice()).unwrap();
+	let _restored = chijin::read_brep_bin(&mut data.as_slice()).unwrap();
 }
 
 // ==================== T-08: Boolean returns BooleanShape, convertible to Shape ====================
@@ -180,36 +180,36 @@ fn test_t07_stream_api_only() {
 fn test_t08_boolean_returns_shape() {
 	let a = test_box();
 	let b = test_box_2();
-	let _union: Shape = a.union(&b).unwrap().into();
-	let _sub: Shape = a.subtract(&b).unwrap().into();
-	let _inter: Shape = a.intersect(&b).unwrap().into();
+	let _union: Vec<Solid> = a.union(&b).unwrap().into();
+	let _sub: Vec<Solid> = a.subtract(&b).unwrap().into();
+	let _inter: Vec<Solid> = a.intersect(&b).unwrap().into();
 }
 
 // ==================== STEP export ====================
 
 #[test]
 fn test_hollow_cube_write_step() {
-	let outer = Shape::box_from_corners(dvec3(-10.0, -10.0, -10.0), dvec3(10.0, 10.0, 10.0));
-	let inner = Shape::box_from_corners(dvec3(-5.0, -5.0, -5.0), dvec3(5.0, 5.0, 5.0));
-	let hollow_cube: Shape = outer.subtract(&inner).unwrap().into();
+	let outer: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-10.0, -10.0, -10.0), dvec3(10.0, 10.0, 10.0))];
+	let inner: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-5.0, -5.0, -5.0), dvec3(5.0, 5.0, 5.0))];
+	let hollow_cube: Vec<Solid> = outer.subtract(&inner).unwrap().into();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/hollow_cube.step").unwrap();
-	hollow_cube.write_step(&mut file).unwrap();
+	chijin::write_step(&hollow_cube, &mut file).unwrap();
 }
 
 // ==================== Additional Tests ====================
 
 #[test]
 fn test_empty_shape() {
-	let empty = Shape::empty();
-	assert!(!empty.is_null());
+	let empty: Vec<Solid> = vec![];
+	assert!(empty.is_null());
 }
 
 #[test]
 fn test_deep_copy() {
 	let original = test_box();
-	let copy = original.deep_copy();
+	let copy = original.clone();
 	drop(original);
 	assert!((copy.volume() - 1000.0).abs() < 1e-6);
 }
@@ -223,14 +223,14 @@ fn test_edge_iteration() {
 #[test]
 fn test_half_space_intersect() {
 	let shape = test_box();
-	let half = Shape::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0));
+	let half: Vec<Solid> = vec![Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
 	let result = shape.intersect(&half).unwrap();
-	assert!(!result.shape.is_null());
+	assert!(!result.solids.is_null());
 }
 
 #[test]
 fn test_cylinder() {
-	let cyl = Shape::cylinder(dvec3(0.0, 0.0, 0.0), 5.0, dvec3(0.0, 0.0, 1.0), 10.0);
+	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
 	let expected = std::f64::consts::PI * 5.0f64.powi(2) * 10.0;
 	assert!((cyl.volume() - expected).abs() < 1e-6);
 }
@@ -240,10 +240,10 @@ fn test_brep_text_roundtrip() {
 	let original = test_box();
 
 	let mut text_data = Vec::new();
-	original.write_brep_text(&mut text_data).unwrap();
+	chijin::write_brep_text(&original, &mut text_data).unwrap();
 	assert!(!text_data.is_empty());
 
-	let restored = Shape::read_brep_text(&mut text_data.as_slice()).unwrap();
+	let restored = chijin::read_brep_text(&mut text_data.as_slice()).unwrap();
 	let orig_mesh = original.mesh_with_tolerance(0.1).unwrap();
 	let rest_mesh = restored.mesh_with_tolerance(0.1).unwrap();
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
