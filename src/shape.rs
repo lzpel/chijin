@@ -159,7 +159,9 @@ pub trait Shape {
 
 	// --- Color ---
 	#[cfg(feature = "color")]
-	fn paint(&mut self, color: Rgb);
+	fn color_paint(&mut self, color: Rgb);
+	#[cfg(feature = "color")]
+	fn color_clear(&mut self);
 }
 
 // ==================== impl Shape for [Solid] ====================
@@ -305,9 +307,16 @@ impl Shape for [Solid] {
 	// --- Color ---
 
 	#[cfg(feature = "color")]
-	fn paint(&mut self, color: Rgb) {
+	fn color_paint(&mut self, color: Rgb) {
 		for s in self.iter_mut() {
-			s.paint(color);
+			s.color_paint(color);
+		}
+	}
+
+	#[cfg(feature = "color")]
+	fn color_clear(&mut self) {
+		for s in self.iter_mut() {
+			s.color_clear();
 		}
 	}
 }

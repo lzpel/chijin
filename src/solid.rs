@@ -238,11 +238,17 @@ impl Solid {
 
 	/// Assign the same color to every face in this solid.
 	#[cfg(feature = "color")]
-	pub fn paint(&mut self, color: crate::shape::Rgb) {
+	pub fn color_paint(&mut self, color: crate::shape::Rgb) {
 		let ids: Vec<crate::shape::TShapeId> = self.faces().map(|f| f.tshape_id()).collect();
 		for id in ids {
 			self.colormap.insert(id, color);
 		}
+	}
+
+	/// Remove all face colors from this solid.
+	#[cfg(feature = "color")]
+	pub fn color_clear(&mut self) {
+		self.colormap.clear();
 	}
 }
 
