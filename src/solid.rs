@@ -234,11 +234,9 @@ impl Shape for Solid {
 	// ==================== Color ====================
 
 	#[cfg(feature = "color")]
-	fn color_paint(&mut self, color: crate::shape::Rgb) {
-		let ids: Vec<crate::shape::TShapeId> = self.faces().map(|f| f.tshape_id()).collect();
-		for id in ids {
-			self.colormap.insert(id, color);
-		}
+	fn color_paint(self, color: crate::shape::Rgb) -> Self {
+		let colormap=self.faces().map(|f| (f.tshape_id(), color)).collect();
+		Self::new(self.inner,colormap)
 	}
 
 	#[cfg(feature = "color")]

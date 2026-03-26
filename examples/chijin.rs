@@ -20,8 +20,8 @@ fn main() {
 
     // ── 胴体 (cylinder): r=15cm, h=10cm, 原点中心 ────────────────────────────
     // 底面中心を z=-5 にして、形状が z=-5..+5 の範囲に収まるようにする
-    let mut cylinder: Solid =Solid::cylinder(DVec3::new(0.0, 0.0, -4.0), 15.0, DVec3::Z, 8.0);
-    cylinder.color_paint(dark_brown);
+    let cylinder: Solid = Solid::cylinder(DVec3::new(0.0, 0.0, -4.0), 15.0, DVec3::Z, 8.0)
+        .color_paint(dark_brown);
 
     // ── 縁板 (sheet): x=0 の多角形プロファイルを Z 軸回転体にした薄いリング ──
     // プロファイル点(y, z): (0,5),(15,5),(16,3),(15,4),(0,4)
@@ -38,29 +38,28 @@ fn main() {
         DVec3::new(0.0, 0.0, 4.0),
         DVec3::new(0.0, 0.0, 5.0),
     ]).unwrap();
-    let mut sheet = sheet_face.revolve(DVec3::ZERO, DVec3::Z, 2.0*PI).unwrap();
-    sheet.color_paint(light_brown);
+    let sheet = sheet_face.revolve(DVec3::ZERO, DVec3::Z, 2.0*PI).unwrap()
+        .color_paint(light_brown);
     println!("sheet volume: {}", sheet.volume());
 
     // ── 締め木 (block): 2cm x 5cm x 1cm ─────────────────────────────────────
     // x軸方向に伸びた板。z軸方向に 60° の仰角で配置し、x=0, y=0, z=15cm へ移動
     // corners: (-1, -2.5, -0.5) .. (1, 2.5, 0.5)
     let block_proto = Solid::box_from_corners(
-        DVec3::new(-1.0, -2.5, -0.5),
-        DVec3::new(1.0, 2.5, 0.5),
-    );
+        DVec3::new(-1.0, -4.0, -0.5),
+        DVec3::new(1.0, 4.0, 0.5),
+    ).color_paint(light_brown);
     // z軸まわりに 60°回転（板を斜めにする）してから (0, 0, 15) に移動
     let block_proto = block_proto
         .rotated(DVec3::ZERO, DVec3::Z, 60.0_f64.to_radians())
-        .translated(DVec3::new(0.0, 0.0, 15.0));
+        .translated(DVec3::new(0.0, 15.0, 0.0));
 
     // n=12 個の締め木を 360°/n ずつ Z 軸回転して配置
-    let n = 12usize;
+    let n = 20usize;
     let mut blocks: Vec<Solid> = Vec::with_capacity(n);
     for i in 0..n {
         let angle = 2.0 * PI * (i as f64) / (n as f64);
-        let mut b = block_proto.rotated(DVec3::ZERO, DVec3::Z, angle);
-        b.color_paint(light_brown);
+        let b = block_proto.rotated(DVec3::ZERO, DVec3::Z, angle);
         blocks.push(b);
     }
 

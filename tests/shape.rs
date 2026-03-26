@@ -46,6 +46,37 @@ fn test_translated_preserves_shell_count() {
 	assert_eq!(moved.shell_count(), 1);
 }
 
+#[test]
+fn test_union_of_translated_overlapping_solids_has_single_volume() {
+	// 異なる場所に同じ大きさの立方体を2つ作り、translatedで同じ場所に重ねてからunionする。
+	// 結果のvolumeは1つ分（1000）になるはず。
+	let a = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
+	let b = vec![Solid::box_from_corners(dvec3(100.0, 0.0, 0.0), dvec3(110.0, 10.0, 10.0))];
+	let b_moved: Vec<Solid> = b.iter().map(|s| s.translated(dvec3(-100.0, 0.0, 0.0))).collect();
+
+	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
+	let result_no_move: Vec<Solid> = chijin::Boolean::union(&a, &b)
+		.expect("union should succeed")
+		.into();
+	let volume_no_move: f64 = result_no_move.iter().map(|s| s.volume()).sum();
+	assert!((volume_no_move - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_no_move}");
+
+	// b_moved は a と完全に重なるので union すると1つ分（1000）。
+	let result: Vec<Solid> = chijin::Boolean::union(&a, &b_moved)
+		.expect("union should succeed")
+		.into();
+	let volume: f64 = result.iter().map(|s| s.volume()).sum();
+	assert!((volume - 1000.0).abs() < 1e-3, "expected volume ~1000, got {volume}");
+
+	// b_moved を作っても b は変化していないことを確認:
+	// result（x=0付近, volume=1000）と b（x=100付近, volume=1000）を union すると2000になるはず。
+	let result_with_b: Vec<Solid> = chijin::Boolean::union(&result, &b)
+		.expect("union should succeed")
+		.into();
+	let volume_with_b: f64 = result_with_b.iter().map(|s| s.volume()).sum();
+	assert!((volume_with_b - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_with_b}");
+}
+
 // ==================== rotated ====================
 
 #[test]

@@ -220,7 +220,7 @@ pub trait Shape: Sized {
 
 	// --- Color ---
 	#[cfg(feature = "color")]
-	fn color_paint(&mut self, color: Rgb);
+	fn color_paint(self, color: Rgb) -> Self;
 	#[cfg(feature = "color")]
 	fn color_clear(&mut self);
 	#[cfg(feature = "color")]
@@ -344,10 +344,8 @@ impl Shape for Vec<Solid> {
 	// --- Color ---
 
 	#[cfg(feature = "color")]
-	fn color_paint(&mut self, color: Rgb) {
-		for s in self.iter_mut() {
-			s.color_paint(color);
-		}
+	fn color_paint(self, color: Rgb) -> Self {
+		self.into_iter().map(|s| s.color_paint(color)).collect()
 	}
 
 	#[cfg(feature = "color")]
