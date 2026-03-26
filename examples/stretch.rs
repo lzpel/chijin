@@ -6,42 +6,43 @@
 //!
 //! 出力: out/stretched.brep (BRep テキスト形式)
 
-use chijin::{BooleanShape, Error, Shape};
+use chijin::{Boolean, Error, Shape, Solid};
 use glam::DVec3;
 use std::path::Path;
 
 /// ツール側フェイスだけを delta 方向に押し出してフィラーを作ります。
-fn extrude_tool_faces(result: &BooleanShape, delta: DVec3) -> Result<Shape, Error> {
-    let mut filler: Option<Shape> = None;
-    for face in result.shape.faces().filter(|f| result.is_tool_face(f)) {
-        let extruded = Shape::from(face.extrude(delta)?);
+fn extrude_tool_faces(result: &Boolean, delta: DVec3) -> Result<Vec<Solid>, Error> {
+    let mut filler: Option<Vec<Solid>> = None;
+    for face in result.solids.faces().filter(|f| result.is_tool_face(f)) {
+        let extruded: Vec<Solid> = vec![face.extrude(delta)?];
         filler = Some(match filler {
             None => extruded,
-            Some(f) => Shape::from(f.union(&extruded)?),
+            Some(f) => chijin::Boolean::union(&f, &extruded)?.into(),
         });
     }
-    Ok(filler.unwrap_or_else(Shape::empty))
+    Ok(filler.unwrap_or_default())
 }
 
 /// 指定された座標とベクトルで形状を分割し、片方を平行移動させた後、隙間を押し出し形状で埋めることで引き伸ばしを行います。
 /// intersect の BooleanShape::is_tool_face から切断面を直接取得するため、
 /// 法線・重心による heuristic フィルタを使いません。
-fn stretch_vector(shape: &Shape, origin: DVec3, delta: DVec3) -> Result<Shape, Error> {
+fn stretch_vector(shape: &[Solid], origin: DVec3, delta: DVec3) -> Result<Vec<Solid>, Error> {
     // Negate so the solid fills the -delta side; intersect then yields part_neg.
-    let half = Shape::half_space(origin, -delta.normalize());
+    let half: Vec<Solid> = vec![Solid::half_space(origin, -delta.normalize())];
 
-    let intersect_result = shape.intersect(&half)?;
-    let part_pos = Shape::from(shape.subtract(&half)?).translated(delta);
+    let intersect_result = chijin::Boolean::intersect(&shape, &half)?;
+    let part_pos: Vec<Solid> = chijin::Boolean::subtract(&shape, &half)?.into();
+    let part_pos = part_pos.translated(delta);
 
     let filler = extrude_tool_faces(&intersect_result, delta)?;
-    let part_neg = intersect_result.shape;
-    let combined = Shape::from(part_neg.union(&filler)?);
-    combined.union(&part_pos).map(Shape::from)
+    let part_neg: Vec<Solid> = intersect_result.into();
+    let combined: Vec<Solid> = chijin::Boolean::union(&part_neg, &filler)?.into();
+    chijin::Boolean::union(&combined, &part_pos).map(Vec::from)
 }
 
 /// (cx,cy,cz) で切断し、(dx,dy,dz) だけ各軸方向に引き延ばす。
 /// delta が 0 以下の軸はスキップする。
-fn stretch(shape: Shape, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Shape, Error> {
+fn stretch(shape: Vec<Solid>, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Vec<Solid>, Error> {
     let eps = 1e-10;
     let shape = if dx > eps { stretch_vector(&shape, DVec3::new(cx, 0.0, 0.0), DVec3::new(dx, 0.0, 0.0))? } else { shape };
     let shape = if dy > eps { stretch_vector(&shape, DVec3::new(0.0, cy, 0.0), DVec3::new(0.0, dy, 0.0))? } else { shape };
@@ -55,7 +56,7 @@ fn main() {
     let radius = 20.0_f64;
     let height = 80.0_f64;
     let base = DVec3::ZERO;
-    let cylinder = Shape::cylinder(base, radius, DVec3::Z, height);
+    let cylinder: Vec<Solid> = vec![Solid::cylinder(base, radius, DVec3::Z, height)];
 
     // 中心座標（切断位置）
     let center = DVec3::new(0.0, 0.0, height / 2.0);
@@ -78,8 +79,7 @@ fn main() {
     let out_path = "out/stretched.brep";
     std::fs::create_dir_all(Path::new(out_path).parent().unwrap()).unwrap();
     let mut buf = Vec::new();
-    result
-        .write_brep_text(&mut buf)
+    chijin::write_brep_text(&result, &mut buf)
         .expect("BRep 書き込みに失敗");
     std::fs::write(out_path, &buf).expect("ファイル書き込みに失敗");
 

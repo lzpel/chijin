@@ -1,5 +1,4 @@
 test:
-	cargo test
 	cargo test --features color
 test-system:
 	cargo run --example stretch --features prebuilt --no-default-features

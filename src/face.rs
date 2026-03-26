@@ -77,7 +77,11 @@ impl Face {
 		if shape.is_null() {
 			return Err(Error::ExtrudeFailed);
 		}
-		Ok(Solid::new(shape))
+		Ok(Solid::new(
+			shape,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		))
 	}
 
 	/// Revolve this face around an axis to create a solid.
@@ -103,7 +107,11 @@ impl Face {
 		if shape.is_null() {
 			return Err(Error::RevolveFailed);
 		}
-		Ok(Solid::new(shape))
+		Ok(Solid::new(
+			shape,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		))
 	}
 
 	/// Sweep this face along a helical path to create a solid.
@@ -136,6 +144,10 @@ impl Face {
 		if shape.is_null() {
 			return Err(Error::HelixFailed);
 		}
-		Ok(Solid::new(shape))
+		Ok(Solid::new(
+			shape,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		))
 	}
 }

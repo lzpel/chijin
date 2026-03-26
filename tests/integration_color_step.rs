@@ -5,27 +5,30 @@
 
 #![cfg(feature = "color")]
 
-use chijin::{Rgb, Shape, TShapeId};
+use chijin::{Shape, Solid, TShapeId};
 use glam::DVec3;
 use std::fs;
 
 const COLORED_BOX_STEP: &str = "steps/colored_box.step";
 
 /// Read `colored_box.step` and return the shape.  Panics if reading fails.
-fn read_colored_box() -> Shape {
+fn read_colored_box() -> Vec<Solid> {
     let data = fs::read(COLORED_BOX_STEP)
         .expect("steps/colored_box.step should exist");
-    Shape::read_step_with_colors(&mut data.as_slice())
+    chijin::read_step_with_colors(&mut data.as_slice())
         .expect("read_step_with_colors should succeed")
+}
+
+fn colormap_len(shape: &[Solid]) -> usize {
+    shape.iter().map(|s| s.colormap().len()).sum()
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn write_colored(shape: &Shape, path: &str) {
+fn write_colored(shape: &[Solid], path: &str) {
     fs::create_dir_all("out").unwrap();
     let mut buf = Vec::new();
-    shape
-        .write_step_with_colors(&mut buf)
+    chijin::write_step_with_colors(shape, &mut buf)
         .expect("write_step_with_colors should succeed");
     fs::write(path, &buf).expect("should write output file");
 }
@@ -37,19 +40,21 @@ fn write_colored(shape: &Shape, path: &str) {
 fn read_colored_step_populates_colormap() {
     let shape = read_colored_box();
     assert!(
-        shape.colormap.len() >= 6,
+        colormap_len(&shape) >= 6,
         "expected at least 6 colored faces, got {}",
-        shape.colormap.len()
+        colormap_len(&shape)
     );
     // Every entry in the colormap should correspond to an actual face.
     let face_ids: std::collections::HashSet<TShapeId> =
         shape.faces().map(|f| f.tshape_id()).collect();
-    for id in shape.colormap.keys() {
-        assert!(
-            face_ids.contains(id),
-            "colormap key {:?} does not match any face in the shape",
-            id
-        );
+    for solid in &shape {
+        for id in solid.colormap().keys() {
+            assert!(
+                face_ids.contains(id),
+                "colormap key {:?} does not match any face in the shape",
+                id
+            );
+        }
     }
 }
 
@@ -62,13 +67,13 @@ fn write_then_read_preserves_colors() {
     write_colored(&original, path);
 
     let data = fs::read(path).unwrap();
-    let reloaded = Shape::read_step_with_colors(&mut data.as_slice())
+    let reloaded = chijin::read_step_with_colors(&mut data.as_slice())
         .expect("re-read should succeed");
 
     assert!(
-        reloaded.colormap.len() >= 6,
+        colormap_len(&reloaded) >= 6,
         "re-read shape should have at least 6 colored faces, got {}",
-        reloaded.colormap.len()
+        colormap_len(&reloaded)
     );
 }
 
@@ -78,35 +83,35 @@ fn write_then_read_preserves_colors() {
 #[test]
 fn intersect_colored_step_preserves_colors() {
     let cube = read_colored_box();
-    let original_colors = cube.colormap.len();
+    let original_colors = colormap_len(&cube);
 
     // Half-space keeping z > 0 side.
-    let half = Shape::half_space(DVec3::ZERO, DVec3::Z);
-    let result = cube.intersect(&half).expect("intersect should succeed");
+    let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::Z)];
+    let result = chijin::Boolean::intersect(&cube, &half).expect("intersect should succeed");
 
     // At least one face should have kept its color.
     assert!(
-        result.shape.colormap.len() >= 1,
+        colormap_len(&result.solids) >= 1,
         "at least one face should keep its color after intersect, got 0"
     );
     assert!(
-        result.shape.colormap.len() < original_colors + 1,
+        colormap_len(&result.solids) < original_colors + 1,
         "intersect should not invent new colors"
     );
 
-    write_colored(&result.shape, "out/colored_box_intersect.step");
+    write_colored(&result.solids, "out/colored_box_intersect.step");
 }
 
 /// Translate the colored box and verify colors survive the move.
 #[test]
 fn translate_colored_step_preserves_colors() {
     let shape = read_colored_box();
-    let original_len = shape.colormap.len();
+    let original_len = colormap_len(&shape);
 
     let moved = shape.translated(DVec3::new(100.0, 0.0, 0.0));
 
     assert_eq!(
-        moved.colormap.len(),
+        colormap_len(&moved),
         original_len,
         "translate should preserve all {} face colors",
         original_len
@@ -118,12 +123,12 @@ fn translate_colored_step_preserves_colors() {
 #[test]
 fn clean_colored_step_preserves_colors() {
     let shape = read_colored_box();
-    let original_len = shape.colormap.len();
+    let original_len = colormap_len(&shape);
 
     let cleaned = shape.clean().expect("clean should succeed");
 
     assert_eq!(
-        cleaned.colormap.len(),
+        colormap_len(&cleaned),
         original_len,
         "clean should preserve all {} face colors",
         original_len

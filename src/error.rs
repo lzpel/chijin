@@ -1,51 +1,60 @@
 /// Errors that can occur during OpenCASCADE operations.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum Error {
     /// STEP file read failed (invalid format or corrupted data).
-    #[error("STEP read failed")]
     StepReadFailed,
 
     /// BRep file read failed (invalid format or corrupted data).
-    #[error("BRep read failed")]
     BrepReadFailed,
 
     /// STEP file write failed.
-    #[error("STEP write failed")]
     StepWriteFailed,
 
     /// BRep file write failed.
-    #[error("BRep write failed")]
     BrepWriteFailed,
 
     /// Triangulation/meshing failed.
-    #[error("Triangulation failed")]
     TriangulationFailed,
 
     /// Boolean operation (fuse/cut/common) failed in OCCT.
-    #[error("Boolean operation failed")]
     BooleanOperationFailed,
 
     /// Shape cleaning (UnifySameDomain) failed in OCCT.
-    #[error("Shape clean failed")]
     CleanFailed,
 
     /// Face extrusion (MakePrism) failed in OCCT.
-    #[error("Extrude failed")]
     ExtrudeFailed,
 
     /// Face revolution (MakeRevol) failed in OCCT.
-    #[error("Revolve failed")]
     RevolveFailed,
 
     /// Helix sweep (MakePipeShell) failed in OCCT.
-    #[error("Helix failed")]
     HelixFailed,
 
     /// Face creation from polygon points failed (non-planar or degenerate points).
-    #[error("Invalid polygon")]
     InvalidPolygon,
 
     /// SVG export (HLR projection) failed.
-    #[error("SVG export failed")]
     SvgExportFailed,
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::StepReadFailed => write!(f, "STEP read failed"),
+            Error::BrepReadFailed => write!(f, "BRep read failed"),
+            Error::StepWriteFailed => write!(f, "STEP write failed"),
+            Error::BrepWriteFailed => write!(f, "BRep write failed"),
+            Error::TriangulationFailed => write!(f, "Triangulation failed"),
+            Error::BooleanOperationFailed => write!(f, "Boolean operation failed"),
+            Error::CleanFailed => write!(f, "Shape clean failed"),
+            Error::ExtrudeFailed => write!(f, "Extrude failed"),
+            Error::RevolveFailed => write!(f, "Revolve failed"),
+            Error::HelixFailed => write!(f, "Helix failed"),
+            Error::InvalidPolygon => write!(f, "Invalid polygon"),
+            Error::SvgExportFailed => write!(f, "SVG export failed"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}

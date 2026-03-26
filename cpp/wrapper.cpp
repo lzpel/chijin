@@ -518,6 +518,10 @@ bool shape_is_null(const TopoDS_Shape& shape) {
     return shape.IsNull();
 }
 
+bool shape_is_solid(const TopoDS_Shape& shape) {
+    return !shape.IsNull() && shape.ShapeType() == TopAbs_SOLID;
+}
+
 uint32_t shape_shell_count(const TopoDS_Shape& shape) {
     uint32_t count = 0;
     for (TopExp_Explorer ex(shape, TopAbs_SHELL); ex.More(); ex.Next()) {

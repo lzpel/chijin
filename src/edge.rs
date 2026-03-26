@@ -38,9 +38,9 @@ impl Edge {
 	///
 	/// # Example
 	/// ```no_run
-	/// # use chijin::Shape;
-	/// # let shape = Shape::box_from_corners(
-	/// #     glam::DVec3::ZERO, glam::DVec3::new(10.0, 10.0, 10.0));
+	/// # use chijin::{Shape, Solid};
+	/// # let shape: Vec<Solid> = vec![Solid::box_from_corners(
+	/// #     glam::DVec3::ZERO, glam::DVec3::new(10.0, 10.0, 10.0))];
 	/// # let edge = shape.edges().next().unwrap();
 	/// // Fine angular sampling (0.01 rad ≈ 0.57°), coarser chord (1.0 mm)
 	/// edge.approximation_segments_ex(0.01, 1.0);
