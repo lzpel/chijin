@@ -20,9 +20,13 @@ Provides safe, ergonomic wrappers around the OCC C++ kernel for:
 
 ## Name
 
+<p align="center">
+  <img src="figure/chijin_real.jpg" alt="本物のチヂン" width="360"/>
+</p>
+
 The library is named after the **チヂン** (*chijin*), a hand drum traditional to Amami Oshima, a subtropical island of southern Japan.
 Its form — a cylindrical body bound with a ring of wooden blocks — makes for a good test of boolean operations and revolve, which is why it serves as the library's example model.
-The figure above is generated entirely with chijin itself: [`examples/chijin.rs`](examples/chijin.rs).
+The 3D figure at the top of this page is generated entirely with chijin itself: [`examples/chijin.rs`](examples/chijin.rs).
 
 ## Usage
 
@@ -30,7 +34,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chijin = "0.1.0"
+chijin = "^0.4"
+```
+
+To try the bundled example — which builds the chijin drum and writes `out/chijin.step` and `out/chijin.svg` (the image shown at the top of this page):
+
+```sh
+cargo run --example chijin --features bundled,color
 ```
 
 ## Features
