@@ -1,6 +1,6 @@
 [package]
 name = "chijin"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE (OCC 7.9)"
 license = "MIT"
