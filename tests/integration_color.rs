@@ -8,7 +8,7 @@
 
 #![cfg(feature = "color")]
 
-use chijin::{Rgb, Shape, Solid, TShapeId};
+use cadrum::{Rgb, Shape, Solid, TShapeId};
 use glam::DVec3;
 
 /// Assign a distinct color to every face of `shape` based on its outward normal.
@@ -78,7 +78,7 @@ fn colored_box_intersect_z_positive_half_space() {
     // ── Intersect with half-space z > 0 ─────────────────────────────────────
     // half_space(origin=(0,0,0), normal=(0,0,1)) keeps the z > 0 region.
     let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::Z)];
-    let result = chijin::Boolean::intersect(&cube, &half).expect("intersect should succeed");
+    let result = cadrum::Boolean::intersect(&cube, &half).expect("intersect should succeed");
 
     // ── Topology checks ──────────────────────────────────────────────────────
     // The closed solid has 6 faces: top + 4 trimmed sides + z=0 cross-section.
@@ -192,7 +192,7 @@ fn clean_merge_preserves_color() {
     color_box_faces(&mut b);
 
     // Union produces a 2×1×1 slab whose side faces may be split at x=1.
-    let unioned: Vec<Solid> = chijin::Boolean::union(&a, &b).expect("union should succeed").into();
+    let unioned: Vec<Solid> = cadrum::Boolean::union(&a, &b).expect("union should succeed").into();
 
     // clean() merges coplanar adjacent patches.
     let cleaned = unioned.clean().expect("clean should succeed");

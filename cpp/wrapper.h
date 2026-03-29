@@ -14,10 +14,10 @@
 #include <memory>
 #include <vector>
 
-namespace chijin {
+namespace cadrum {
 
-// Type aliases to bring OCCT global types into chijin namespace.
-// Required because the cxx bridge uses namespace = "chijin".
+// Type aliases to bring OCCT global types into cadrum namespace.
+// Required because the cxx bridge uses namespace = "cadrum".
 using TopoDS_Shape = ::TopoDS_Shape;
 using TopoDS_Face = ::TopoDS_Face;
 using TopoDS_Edge = ::TopoDS_Edge;
@@ -201,11 +201,11 @@ SvgEdgeData project_shape_hlr(
     double dx, double dy, double dz,
     double tolerance);
 
-} // namespace chijin
+} // namespace cadrum
 
-#ifdef CHIJIN_COLOR
+#ifdef CADRUM_COLOR
 
-namespace chijin {
+namespace cadrum {
 
 // ==================== Colored STEP I/O ====================
 
@@ -249,6 +249,6 @@ std::unique_ptr<CleanShape> clean_shape_full(const TopoDS_Shape& shape);
 std::unique_ptr<TopoDS_Shape> clean_shape_get(const CleanShape& r);
 rust::Vec<uint64_t> clean_shape_mapping(const CleanShape& r);
 
-} // namespace chijin
+} // namespace cadrum
 
-#endif // CHIJIN_COLOR
+#endif // CADRUM_COLOR

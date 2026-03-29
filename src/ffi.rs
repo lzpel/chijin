@@ -1,7 +1,7 @@
 use crate::stream::{rust_reader_read, rust_writer_flush, rust_writer_write};
 use crate::stream::{RustReader, RustWriter};
 
-#[cxx::bridge(namespace = "chijin")]
+#[cxx::bridge(namespace = "cadrum")]
 mod ffi_bridge {
 	// Shared struct for mesh data returned from C++
 	struct MeshData {
@@ -43,9 +43,9 @@ mod ffi_bridge {
 	}
 
 	unsafe extern "C++" {
-		include!("chijin/cpp/wrapper.h");
+		include!("cadrum/cpp/wrapper.h");
 
-		// Opaque C++ types (accessed as chijin::TopoDS_Shape etc. via using aliases)
+		// Opaque C++ types (accessed as cadrum::TopoDS_Shape etc. via using aliases)
 		type TopoDS_Shape;
 		type TopoDS_Face;
 		type TopoDS_Edge;

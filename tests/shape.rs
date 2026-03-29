@@ -1,4 +1,4 @@
-use chijin::{Shape, Solid};
+use cadrum::{Shape, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -26,7 +26,7 @@ fn test_clone_is_independent() {
 	let original = test_box();
 	let copy = original.clone();
 	let other: Vec<Solid> = vec![Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))];
-	let _: Vec<Solid> = chijin::Boolean::union(&original, &other).unwrap().into();
+	let _: Vec<Solid> = cadrum::Boolean::union(&original, &other).unwrap().into();
 	assert!((copy.volume() - 1000.0).abs() < 1e-6);
 }
 
@@ -55,14 +55,14 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 	let b_moved: Vec<Solid> = b.clone().translate(dvec3(-100.0, 0.0, 0.0));
 
 	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
-	let result_no_move: Vec<Solid> = chijin::Boolean::union(&a, &b)
+	let result_no_move: Vec<Solid> = cadrum::Boolean::union(&a, &b)
 		.expect("union should succeed")
 		.into();
 	let volume_no_move: f64 = result_no_move.iter().map(|s| s.volume()).sum();
 	assert!((volume_no_move - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_no_move}");
 
 	// b_moved は a と完全に重なるので union すると1つ分（1000）。
-	let result: Vec<Solid> = chijin::Boolean::union(&a, &b_moved)
+	let result: Vec<Solid> = cadrum::Boolean::union(&a, &b_moved)
 		.expect("union should succeed")
 		.into();
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
@@ -70,7 +70,7 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 
 	// b_moved を作っても b は変化していないことを確認:
 	// result（x=0付近, volume=1000）と b（x=100付近, volume=1000）を union すると2000になるはず。
-	let result_with_b: Vec<Solid> = chijin::Boolean::union(&result, &b)
+	let result_with_b: Vec<Solid> = cadrum::Boolean::union(&result, &b)
 		.expect("union should succeed")
 		.into();
 	let volume_with_b: f64 = result_with_b.iter().map(|s| s.volume()).sum();
@@ -131,7 +131,7 @@ fn test_scaled_preserves_shell_count() {
 
 #[test]
 fn test_preserves_face_ids() {
-	use chijin::TShapeId;
+	use cadrum::TShapeId;
 	fn face_ids(s: &Vec<Solid>) -> Vec<TShapeId> {
 		s.faces().map(|f| f.tshape_id()).collect()
 	}
@@ -168,7 +168,7 @@ fn test_mirrored_octants_union_volume_is_eight() {
 	let octants = [b, bx, by, bz, bxy, bxz, byz, bxyz];
 	let mut result = octants[0].clone();
 	for other in &octants[1..] {
-		result = chijin::Boolean::union(&result, other).expect("union failed").into();
+		result = cadrum::Boolean::union(&result, other).expect("union failed").into();
 	}
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((volume - 8.0).abs() < 1e-3, "expected volume ~8, got {volume}");
@@ -181,7 +181,7 @@ fn test_scaled_union_with_original_volume_is_nine() {
 	// scaled が実態を変化させていた場合は体積がこれより小さくなる。
 	let b = vec![Solid::box_from_corners(dvec3(1.0, 1.0, 1.0), dvec3(2.0, 2.0, 2.0))];
 	let b_scaled = b.scaled(DVec3::ZERO, 2.0);
-	let result: Vec<Solid> = chijin::Boolean::union(&b, &b_scaled).expect("union failed").into();
+	let result: Vec<Solid> = cadrum::Boolean::union(&b, &b_scaled).expect("union failed").into();
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((volume - 9.0).abs() < 1e-3, "expected volume ~9 (1 + 8), got {volume}");
 }
@@ -227,7 +227,7 @@ fn test_new_faces_subtract_b_inside_a() {
 	// 新実装（from_b post_ids）では unchanged 面も from_b に入る → tool faces = 6
 	let big: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
 	let small: Vec<Solid> = vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0))];
-	let result = chijin::Boolean::subtract(&big, &small).unwrap();
+	let result = cadrum::Boolean::subtract(&big, &small).unwrap();
 	assert_eq!(result.solids.faces().filter(|f| result.is_tool_face(f)).count(), 6,
 		"subtract with B fully inside A: tool faces should be all 6 inner walls");
 }
@@ -238,7 +238,7 @@ fn test_new_faces_intersect_b_inside_a() {
 	// small の 6 面はすべて unchanged → tool faces = 結果の全フェイス = 6
 	let big: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
 	let small: Vec<Solid> = vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0))];
-	let result = chijin::Boolean::intersect(&big, &small).unwrap();
+	let result = cadrum::Boolean::intersect(&big, &small).unwrap();
 	let tool_count = result.solids.faces().filter(|f| result.is_tool_face(f)).count();
 	assert_eq!(tool_count, 6,
 		"intersect with B fully inside A: tool faces should equal all faces of result");

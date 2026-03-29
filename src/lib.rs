@@ -1,4 +1,4 @@
-//! # Chijin
+//! # cadrum
 //!
 //! Minimal Rust bindings for OpenCASCADE (OCCT 7.9.3).
 //!

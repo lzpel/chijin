@@ -8,4 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wasm-bindgen = "*"
-chijin = { path = ".." }
+cadrum = { path = ".." }

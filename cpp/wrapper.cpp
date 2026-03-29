@@ -1,4 +1,4 @@
-#include "chijin/src/ffi.rs.h"
+#include "cadrum/src/ffi.rs.h"
 
 // Implementation-only OCCT headers (not exposed via wrapper.h)
 #include <Standard_Failure.hxx>
@@ -76,7 +76,7 @@
 #include <unordered_set>
 #include <array>
 
-namespace chijin {
+namespace cadrum {
 
 // ==================== RustReadStreambuf ====================
 
@@ -1001,9 +1001,9 @@ SvgEdgeData project_shape_hlr(
     return result;
 }
 
-} // namespace chijin
+} // namespace cadrum
 
-#ifdef CHIJIN_COLOR
+#ifdef CADRUM_COLOR
 
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
@@ -1014,7 +1014,7 @@ SvgEdgeData project_shape_hlr(
 #include <TDF_ChildIterator.hxx>
 #include <Quantity_Color.hxx>
 
-namespace chijin {
+namespace cadrum {
 
 // Traverse every label in the XDE document and record face-level colors.
 // Uses TDF_ChildIterator with allLevels=true for a flat, efficient walk.
@@ -1231,6 +1231,6 @@ rust::Vec<uint64_t> clean_shape_mapping(const CleanShape& r) {
     return v;
 }
 
-} // namespace chijin
+} // namespace cadrum
 
-#endif // CHIJIN_COLOR
+#endif // CADRUM_COLOR

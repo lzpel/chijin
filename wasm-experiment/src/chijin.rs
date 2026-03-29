@@ -6,7 +6,7 @@
 //!
 //! Output: out/chijin.step (AP214 STEP, colored), out/chijin.svg
 
-use chijin::{Boolean, Face, Rgb, Shape, Solid};
+use cadrum::{Boolean, Face, Rgb, Shape, Solid};
 use glam::DVec3;
 use std::f64::consts::PI;
 
@@ -89,7 +89,7 @@ fn main() {
 	// ── Write STEP ───────────────────────────────────────────────────────
 	let step_path = "out/chijin.step";
 	let mut f = std::fs::File::create(step_path).expect("failed to create STEP file");
-	chijin::write_step_with_colors(&result, &mut f).expect("failed to write STEP");
+	cadrum::write_step_with_colors(&result, &mut f).expect("failed to write STEP");
 	println!("wrote {step_path}");
 
 	// ── Write SVG (isometric view from (1,1,1)) ─────────────────────────

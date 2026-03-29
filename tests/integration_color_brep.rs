@@ -2,7 +2,7 @@
 
 #![cfg(feature = "color")]
 
-use chijin::{Rgb, Shape, Solid};
+use cadrum::{Rgb, Shape, Solid};
 use glam::DVec3;
 use std::fs;
 
@@ -10,7 +10,7 @@ const COLORED_BOX_STEP: &str = "steps/colored_box.step";
 
 fn read_colored_box() -> Vec<Solid> {
     let data = fs::read(COLORED_BOX_STEP).expect("steps/colored_box.step should exist");
-    chijin::read_step_with_colors(&mut data.as_slice())
+    cadrum::read_step_with_colors(&mut data.as_slice())
         .expect("read_step_with_colors should succeed")
 }
 
@@ -20,9 +20,9 @@ fn colormap_len(shape: &[Solid]) -> usize {
 
 fn roundtrip(shape: &[Solid]) -> Vec<Solid> {
     let mut buf = Vec::new();
-    chijin::write_brep_color(shape, &mut buf)
+    cadrum::write_brep_color(shape, &mut buf)
         .expect("write_brep_color should succeed");
-    chijin::read_brep_color(&mut buf.as_slice()).expect("read_brep_color should succeed")
+    cadrum::read_brep_color(&mut buf.as_slice()).expect("read_brep_color should succeed")
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ fn colorless_shape_roundtrip() {
 fn roundtrip_after_boolean() {
     let cube = read_colored_box();
     let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::NEG_Z)];
-    let cut = chijin::Boolean::intersect(&cube, &half).expect("intersect should succeed");
+    let cut = cadrum::Boolean::intersect(&cube, &half).expect("intersect should succeed");
 
     assert!(colormap_len(&cut.solids) >= 1, "at least one color should survive intersect");
 
@@ -82,7 +82,7 @@ fn roundtrip_after_boolean() {
 #[test]
 fn invalid_magic_returns_error() {
     let bad = b"XXXX\x01\x00\x00\x00\x00";
-    let result = chijin::read_brep_color(&mut bad.as_slice());
+    let result = cadrum::read_brep_color(&mut bad.as_slice());
     assert!(result.is_err());
 }
 
@@ -90,6 +90,6 @@ fn invalid_magic_returns_error() {
 #[test]
 fn wrong_version_returns_error() {
     let bad = b"CHJC\x02\x00\x00\x00\x00";
-    let result = chijin::read_brep_color(&mut bad.as_slice());
+    let result = cadrum::read_brep_color(&mut bad.as_slice());
     assert!(result.is_err());
 }

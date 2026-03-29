@@ -1,9 +1,9 @@
-//! Integration tests for Chijin - OpenCASCADE Rust bindings.
+//! Integration tests for cadrum - OpenCASCADE Rust bindings.
 //!
 //! These tests correspond to acceptance criteria T-01 through T-08
 //! defined in 仕様書.md §4.3.
 
-use chijin::{Shape, Solid};
+use cadrum::{Shape, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -25,7 +25,7 @@ fn test_box_3() -> Vec<Solid> {
 /// Helper: write shape to BRep binary bytes
 fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 	let mut buf = Vec::new();
-	chijin::write_brep_bin(shape, &mut buf).unwrap();
+	cadrum::write_brep_bin(shape, &mut buf).unwrap();
 	buf
 }
 
@@ -35,7 +35,7 @@ fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 fn test_t01_union_drop_result_first() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = chijin::Boolean::union(&a, &b).unwrap();
+	let result = cadrum::Boolean::union(&a, &b).unwrap();
 	drop(result);
 	drop(a);
 	drop(b);
@@ -45,7 +45,7 @@ fn test_t01_union_drop_result_first() {
 fn test_t01_union_drop_result_last() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = chijin::Boolean::union(&a, &b).unwrap();
+	let result = cadrum::Boolean::union(&a, &b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -55,7 +55,7 @@ fn test_t01_union_drop_result_last() {
 fn test_t01_subtract_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = chijin::Boolean::subtract(&a, &b).unwrap();
+	let result = cadrum::Boolean::subtract(&a, &b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -65,7 +65,7 @@ fn test_t01_subtract_drop_order() {
 fn test_t01_intersect_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = chijin::Boolean::intersect(&a, &b).unwrap();
+	let result = cadrum::Boolean::intersect(&a, &b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -76,8 +76,8 @@ fn test_t01_chained_boolean_drops() {
 	let a = test_box();
 	let b = test_box_2();
 	let c = test_box_3();
-	let r1 = chijin::Boolean::union(&a, &b).unwrap();
-	let r2 = chijin::Boolean::subtract(&r1.solids, &c).unwrap();
+	let r1 = cadrum::Boolean::union(&a, &b).unwrap();
+	let r2 = cadrum::Boolean::subtract(&r1.solids, &c).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -92,7 +92,7 @@ fn test_t02_multiple_reads_no_crash() {
 	let original = test_box();
 	let brep_data = shape_to_brep_bytes(&original);
 	for _ in 0..5 {
-		let _shape = chijin::read_brep_bin(&mut brep_data.as_slice()).unwrap();
+		let _shape = cadrum::read_brep_bin(&mut brep_data.as_slice()).unwrap();
 	}
 }
 
@@ -130,7 +130,7 @@ fn test_t04_approximation_tolerance() {
 fn test_t05_translated_compound() {
 	let a = test_box();
 	let b = test_box_2();
-	let compound: Vec<Solid> = chijin::Boolean::union(&a, &b).unwrap().into();
+	let compound: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
 	let v = dvec3(100.0, 0.0, 0.0);
 	let orig_mesh = compound.clone().mesh_with_tolerance(0.1).unwrap();
 	let shifted = compound.translate(v);
@@ -152,7 +152,7 @@ fn test_t06_brep_roundtrip() {
 	let orig_mesh = original.mesh_with_tolerance(0.1).unwrap();
 
 	let brep_data = shape_to_brep_bytes(&original);
-	let restored = chijin::read_brep_bin(&mut brep_data.as_slice()).unwrap();
+	let restored = cadrum::read_brep_bin(&mut brep_data.as_slice()).unwrap();
 	let rest_mesh = restored.mesh_with_tolerance(0.1).unwrap();
 
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
@@ -170,7 +170,7 @@ fn test_t07_stream_api_only() {
 	let shape = test_box();
 	let data = shape_to_brep_bytes(&shape);
 	assert!(!data.is_empty());
-	let _restored = chijin::read_brep_bin(&mut data.as_slice()).unwrap();
+	let _restored = cadrum::read_brep_bin(&mut data.as_slice()).unwrap();
 }
 
 // ==================== T-08: Boolean returns BooleanShape, convertible to Shape ====================
@@ -179,9 +179,9 @@ fn test_t07_stream_api_only() {
 fn test_t08_boolean_returns_shape() {
 	let a = test_box();
 	let b = test_box_2();
-	let _union: Vec<Solid> = chijin::Boolean::union(&a, &b).unwrap().into();
-	let _sub: Vec<Solid> = chijin::Boolean::subtract(&a, &b).unwrap().into();
-	let _inter: Vec<Solid> = chijin::Boolean::intersect(&a, &b).unwrap().into();
+	let _union: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
+	let _sub: Vec<Solid> = cadrum::Boolean::subtract(&a, &b).unwrap().into();
+	let _inter: Vec<Solid> = cadrum::Boolean::intersect(&a, &b).unwrap().into();
 }
 
 // ==================== STEP export ====================
@@ -190,11 +190,11 @@ fn test_t08_boolean_returns_shape() {
 fn test_hollow_cube_write_step() {
 	let outer: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-10.0, -10.0, -10.0), dvec3(10.0, 10.0, 10.0))];
 	let inner: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-5.0, -5.0, -5.0), dvec3(5.0, 5.0, 5.0))];
-	let hollow_cube: Vec<Solid> = chijin::Boolean::subtract(&outer, &inner).unwrap().into();
+	let hollow_cube: Vec<Solid> = cadrum::Boolean::subtract(&outer, &inner).unwrap().into();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/hollow_cube.step").unwrap();
-	chijin::write_step(&hollow_cube, &mut file).unwrap();
+	cadrum::write_step(&hollow_cube, &mut file).unwrap();
 }
 
 // ==================== Additional Tests ====================
@@ -223,7 +223,7 @@ fn test_edge_iteration() {
 fn test_half_space_intersect() {
 	let shape = test_box();
 	let half: Vec<Solid> = vec![Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
-	let result = chijin::Boolean::intersect(&shape, &half).unwrap();
+	let result = cadrum::Boolean::intersect(&shape, &half).unwrap();
 	assert!(!result.solids.is_null());
 }
 
@@ -239,10 +239,10 @@ fn test_brep_text_roundtrip() {
 	let original = test_box();
 
 	let mut text_data = Vec::new();
-	chijin::write_brep_text(&original, &mut text_data).unwrap();
+	cadrum::write_brep_text(&original, &mut text_data).unwrap();
 	assert!(!text_data.is_empty());
 
-	let restored = chijin::read_brep_text(&mut text_data.as_slice()).unwrap();
+	let restored = cadrum::read_brep_text(&mut text_data.as_slice()).unwrap();
 	let orig_mesh = original.mesh_with_tolerance(0.1).unwrap();
 	let rest_mesh = restored.mesh_with_tolerance(0.1).unwrap();
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());

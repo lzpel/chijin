@@ -1,7 +1,7 @@
-# Chijin
+# cadrum
 
-[![GitHub License](https://img.shields.io/github/license/lzpel/chijin)](https://github.com/lzpel/chijin/blob/main/LICENSE)
-[![Crates.io](https://img.shields.io/crates/v/chijin.svg?logo=rust)](https://crates.io/crates/chijin)
+[![GitHub License](https://img.shields.io/github/license/lzpel/cadrum)](https://github.com/lzpel/cadrum/blob/main/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/cadrum.svg?logo=rust)](https://crates.io/crates/cadrum)
 
 Minimal Rust bindings for [OpenCASCADE](https://dev.opencascade.org/) (OCCT 7.9.3) — a solid modeling kernel used in CAD/CAM software.
 
@@ -15,17 +15,17 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chijin = "^0.4"
+cadrum = "^0.4"
 ```
 
 ```rust
-use chijin::Solid;
+use cadrum::Solid;
 use glam::DVec3;
 
 fn main() {
     let shape = Solid::box_from_corners(DVec3::ZERO, DVec3::new(10.0, 20.0, 30.0));
     let mut f = std::fs::File::create("box.step").expect("failed to create file");
-    chijin::write_step(&[shape], &mut f).expect("failed to write STEP");
+    cadrum::write_step(&[shape], &mut f).expect("failed to write STEP");
 }
 ```
 
@@ -55,7 +55,7 @@ Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
 
   ```toml
   # Cargo.toml
-  chijin = { version = "0.2", features = ["prebuilt"], default-features = false }
+  cadrum = { version = "0.4", features = ["prebuilt"], default-features = false }
   ```
 
   ```sh
@@ -82,7 +82,7 @@ cargo run --example chijin
 <summary>Source code</summary>
 
 ```rust
-use chijin::{Boolean, Face, Rgb, Shape, Solid};
+use cadrum::{Boolean, Face, Rgb, Shape, Solid};
 use glam::DVec3;
 use std::f64::consts::PI;
 
@@ -146,7 +146,7 @@ fn main() {
     std::fs::create_dir_all("out").unwrap();
 
     let mut f = std::fs::File::create("out/chijin.step").unwrap();
-    chijin::write_step_with_colors(&result, &mut f).unwrap();
+    cadrum::write_step_with_colors(&result, &mut f).unwrap();
 
     let svg = result.to_svg(DVec3::new(1.0, 1.0, 1.0), 0.5).unwrap();
     let mut f = std::fs::File::create("out/chijin.svg").unwrap();
@@ -158,13 +158,11 @@ fn main() {
 
 ## Name
 
-<p align="center">
-  <img src="figure/chijin_real.jpg" alt="本物のチヂン" width="360"/>
-</p>
+The library was originally named **chijin** after the **チヂン**, a hand drum traditional to Amami Oshima, a subtropical island of southern Japan.
+It was renamed to **cadrum** (CAD + drum) to better convey its purpose as a CAD library while keeping the drum heritage.
+The 3D figure at the top of this page is generated entirely with cadrum itself: [`examples/chijin.rs`](examples/chijin.rs).
 
-The library is named after the **チヂン** (*chijin*), a hand drum traditional to Amami Oshima, a subtropical island of southern Japan.
-Its form — a cylindrical body bound with a ring of wooden blocks — makes for a good test of boolean operations and revolve, which is why it serves as the library's example model.
-The 3D figure at the top of this page is generated entirely with chijin itself: [`examples/chijin.rs`](examples/chijin.rs).
+<img src="figure/chijin_real.jpg" alt="本物のチヂン" width="360"/>
 
 ## License
 

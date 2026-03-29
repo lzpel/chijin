@@ -1,11 +1,11 @@
 [package]
-name = "chijin"
+name = "cadrum"
 version = "0.4.1"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE (OCCT 7.9.3)"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/lzpel/chijin"
+repository = "https://github.com/lzpel/cadrum"
 keywords = ["opencascade", "cad", "step", "b-rep", "geometry"]
 categories = ["graphics", "science"]
 
