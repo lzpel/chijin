@@ -7,7 +7,9 @@ use crate::stream::{RustReader, RustWriter};
 use std::io::{Read, Write};
 
 #[cfg(feature = "color")]
-use crate::shape::{merge_all_colormaps, Rgb, TShapeId};
+use crate::shape::{merge_all_colormaps, TShapeId};
+#[cfg(feature = "color")]
+use crate::color::Color;
 
 // ==================== Read ====================
 
@@ -71,7 +73,7 @@ pub fn read_step_with_colors<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Erro
     let b = ffi::colored_step_colors_b(&d);
     let mut colormap = std::collections::HashMap::new();
     for i in 0..ids.len() {
-        colormap.insert(TShapeId(ids[i]), Rgb { r: r[i], g: g[i], b: b[i] });
+        colormap.insert(TShapeId(ids[i]), Color { r: r[i], g: g[i], b: b[i] });
     }
     Ok(decompose(&inner, &colormap))
 }
@@ -119,7 +121,7 @@ pub fn read_brep_color<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
     let colormap = entries
         .into_iter()
         .filter_map(|(idx, r, g, b)| {
-            index_to_id.get(idx as usize).map(|&id| (id, Rgb { r, g, b }))
+            index_to_id.get(idx as usize).map(|&id| (id, Color { r, g, b }))
         })
         .collect();
 

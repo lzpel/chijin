@@ -8,20 +8,20 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Rgb, Shape, Solid, TShapeId};
+use cadrum::{Color, Shape, Solid, TShapeId};
 use glam::DVec3;
 
 /// Assign a distinct color to every face of `shape` based on its outward normal.
 /// Returns the number of faces that were colored (should equal the total face count).
 fn color_box_faces(shape: &mut Vec<Solid>) -> usize {
     // (direction, color) pairs — one per axis side
-    let palette: &[(DVec3, Rgb)] = &[
-        (DVec3::Z,     Rgb { r: 1.0, g: 0.0, b: 0.0 }), // top    (+Z): red
-        (DVec3::NEG_Z, Rgb { r: 0.0, g: 0.0, b: 1.0 }), // bottom (-Z): blue
-        (DVec3::Y,     Rgb { r: 0.0, g: 1.0, b: 0.0 }), // back   (+Y): green
-        (DVec3::NEG_Y, Rgb { r: 1.0, g: 1.0, b: 0.0 }), // front  (-Y): yellow
-        (DVec3::X,     Rgb { r: 0.0, g: 1.0, b: 1.0 }), // right  (+X): cyan
-        (DVec3::NEG_X, Rgb { r: 1.0, g: 0.0, b: 1.0 }), // left   (-X): magenta
+    let palette: &[(DVec3, Color)] = &[
+        (DVec3::Z,     Color { r: 1.0, g: 0.0, b: 0.0 }), // top    (+Z): red
+        (DVec3::NEG_Z, Color { r: 0.0, g: 0.0, b: 1.0 }), // bottom (-Z): blue
+        (DVec3::Y,     Color { r: 0.0, g: 1.0, b: 0.0 }), // back   (+Y): green
+        (DVec3::NEG_Y, Color { r: 1.0, g: 1.0, b: 0.0 }), // front  (-Y): yellow
+        (DVec3::X,     Color { r: 0.0, g: 1.0, b: 1.0 }), // right  (+X): cyan
+        (DVec3::NEG_X, Color { r: 1.0, g: 0.0, b: 1.0 }), // left   (-X): magenta
     ];
 
     let mut count = 0;
@@ -54,7 +54,7 @@ fn colormap_contains(shape: &[Solid], id: &TShapeId) -> bool {
 }
 
 /// Helper: get color for a TShapeId from any solid's colormap.
-fn colormap_get(shape: &[Solid], id: &TShapeId) -> Option<Rgb> {
+fn colormap_get(shape: &[Solid], id: &TShapeId) -> Option<Color> {
     shape.iter().find_map(|s| s.colormap().get(id).copied())
 }
 

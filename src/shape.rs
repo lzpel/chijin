@@ -3,73 +3,13 @@ use crate::ffi;
 use crate::iterators::{EdgeIterator, FaceIterator};
 use crate::mesh::Mesh;
 use crate::solid::Solid;
+#[cfg(feature = "color")]
+pub(crate) use crate::color::Color;
 use glam::{DVec2, DVec3};
-
-// ==================== Color types ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TShapeId(pub u64);
 
-#[cfg(feature = "color")]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rgb {
-	pub r: f32,
-	pub g: f32,
-	pub b: f32,
-}
-
-#[cfg(feature = "color")]
-impl Rgb {
-	/// Create an `Rgb` from HSV values (all in `0.0..=1.0`).
-	/// Parse a hex color string like `"#ff8800"` or `"#f80"`.
-	///
-	/// The leading `#` is required. The remaining characters must be hex digits,
-	/// either 6 (RRGGBB) or 3 (RGB, each digit is doubled).
-	pub fn from_hex(s: &str) -> Result<Self, crate::error::Error> {
-		let s = s.strip_prefix('#').ok_or(crate::error::Error::InvalidHexColor)?;
-		if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-			return Err(crate::error::Error::InvalidHexColor);
-		}
-		let (r, g, b) = match s.len() {
-			6 => {
-				let r = u8::from_str_radix(&s[0..2], 16).unwrap();
-				let g = u8::from_str_radix(&s[2..4], 16).unwrap();
-				let b = u8::from_str_radix(&s[4..6], 16).unwrap();
-				(r, g, b)
-			}
-			3 => {
-				let r = u8::from_str_radix(&s[0..1], 16).unwrap() * 17;
-				let g = u8::from_str_radix(&s[1..2], 16).unwrap() * 17;
-				let b = u8::from_str_radix(&s[2..3], 16).unwrap() * 17;
-				(r, g, b)
-			}
-			_ => return Err(crate::error::Error::InvalidHexColor),
-		};
-		Ok(Rgb {
-			r: r as f32 / 255.0,
-			g: g as f32 / 255.0,
-			b: b as f32 / 255.0,
-		})
-	}
-
-	/// Create an `Rgb` from HSV values (all in `0.0..=1.0`).
-	pub fn from_hsv(h: f32, s: f32, v: f32) -> Self {
-		let h6 = h * 6.0;
-		let f = h6.fract();
-		let p = v * (1.0 - s);
-		let q = v * (1.0 - s * f);
-		let t = v * (1.0 - s * (1.0 - f));
-		let (r, g, b) = match h6 as u32 % 6 {
-			0 => (v, t, p),
-			1 => (q, v, p),
-			2 => (p, v, t),
-			3 => (p, q, v),
-			4 => (t, p, v),
-			_ => (v, p, q),
-		};
-		Rgb { r, g, b }
-	}
-}
 
 // ==================== Internal helpers ====================
 
@@ -85,7 +25,7 @@ pub(crate) fn to_compound(solids: &[Solid]) -> cxx::UniquePtr<ffi::TopoDS_Shape>
 /// Decompose a compound TopoDS_Shape into Vec<Solid>.
 pub(crate) fn decompose(
 	compound: &ffi::TopoDS_Shape,
-	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Rgb>,
+	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Color>,
 ) -> Vec<Solid> {
 	let solid_shapes = ffi::decompose_into_solids(compound);
 	solid_shapes
@@ -103,7 +43,7 @@ pub(crate) fn decompose(
 
 /// Merge colormaps from all solids.
 #[cfg(feature = "color")]
-pub(crate) fn merge_all_colormaps(solids: &[Solid]) -> std::collections::HashMap<TShapeId, Rgb> {
+pub(crate) fn merge_all_colormaps(solids: &[Solid]) -> std::collections::HashMap<TShapeId, Color> {
 	let mut merged = std::collections::HashMap::new();
 	for s in solids {
 		merged.extend(s.colormap().iter().map(|(&k, &v)| (k, v)));
@@ -117,8 +57,8 @@ pub(crate) fn merge_all_colormaps(solids: &[Solid]) -> std::collections::HashMap
 pub(crate) fn remap_colormap_by_order(
 	old_inner: &ffi::TopoDS_Shape,
 	new_inner: &ffi::TopoDS_Shape,
-	old_colormap: &std::collections::HashMap<TShapeId, Rgb>,
-) -> std::collections::HashMap<TShapeId, Rgb> {
+	old_colormap: &std::collections::HashMap<TShapeId, Color>,
+) -> std::collections::HashMap<TShapeId, Color> {
 	let mut colormap = std::collections::HashMap::new();
 	let old_faces = FaceIterator::new(ffi::explore_faces(old_inner));
 	let new_faces = FaceIterator::new(ffi::explore_faces(new_inner));
@@ -134,9 +74,9 @@ pub(crate) fn remap_colormap_by_order(
 fn merge_colormaps(
 	from_a: &[u64],
 	from_b: &[u64],
-	colormap_a: &std::collections::HashMap<TShapeId, Rgb>,
-	colormap_b: &std::collections::HashMap<TShapeId, Rgb>,
-) -> std::collections::HashMap<TShapeId, Rgb> {
+	colormap_a: &std::collections::HashMap<TShapeId, Color>,
+	colormap_b: &std::collections::HashMap<TShapeId, Color>,
+) -> std::collections::HashMap<TShapeId, Color> {
 	let mut result = std::collections::HashMap::new();
 	for pair in from_a.chunks(2) {
 		if let Some(&color) = colormap_a.get(&TShapeId(pair[1])) {
@@ -274,11 +214,9 @@ pub trait Shape: Sized {
 
 	// --- Color ---
 	#[cfg(feature = "color")]
-	fn color_paint(self, color: Rgb) -> Self;
+	fn color_paint(self, color: Option<Color>) -> Self;
 	#[cfg(feature = "color")]
-	fn color_clear(&mut self);
-	#[cfg(feature = "color")]
-	fn color(&self) -> Option<Rgb>;
+	fn color(&self) -> Option<Color>;
 }
 
 // ==================== impl Shape for [Solid] ====================
@@ -402,24 +340,17 @@ impl Shape for Vec<Solid> {
 	// --- Color ---
 
 	#[cfg(feature = "color")]
-	fn color_paint(self, color: Rgb) -> Self {
+	fn color_paint(self, color: Option<Color>) -> Self {
 		self.into_iter().map(|s| s.color_paint(color)).collect()
 	}
 
 	#[cfg(feature = "color")]
-	fn color_clear(&mut self) {
-		for s in self.iter_mut() {
-			s.color_clear();
-		}
-	}
-
-	#[cfg(feature = "color")]
-	fn color(&self) -> Option<Rgb> {
-		let colors: Vec<Rgb> = self.iter().filter_map(|s| s.color()).collect();
+	fn color(&self) -> Option<Color> {
+		let colors: Vec<Color> = self.iter().filter_map(|s| s.color()).collect();
 		if colors.is_empty() {
 			None
 		}else{
-			Some(Rgb {
+			Some(Color {
 				r: colors.iter().map(|c| c.r).sum::<f32>() / colors.len() as f32,
 				g: colors.iter().map(|c| c.g).sum::<f32>() / colors.len() as f32,
 				b: colors.iter().map(|c| c.b).sum::<f32>() / colors.len() as f32,
@@ -468,7 +399,7 @@ fn occt_ax2_basis(dir: DVec3) -> (DVec3, DVec3) {
 fn project_and_sort_triangles(
 	mesh: &Mesh,
 	direction: DVec3,
-	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Rgb>,
+	#[cfg(feature = "color")] colormap: &std::collections::HashMap<TShapeId, Color>,
 ) -> Vec<SvgTriangle> {
 	let dir = direction.normalize();
 	let (u, v) = occt_ax2_basis(dir);

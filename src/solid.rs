@@ -12,7 +12,7 @@ use glam::{DVec2, DVec3};
 pub struct Solid {
 	inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
 	#[cfg(feature = "color")]
-	colormap: std::collections::HashMap<crate::shape::TShapeId, crate::shape::Rgb>,
+	colormap: std::collections::HashMap<crate::shape::TShapeId, crate::color::Color>,
 }
 
 impl Solid {
@@ -23,7 +23,7 @@ impl Solid {
 	pub(crate) fn new(
 		inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
 		#[cfg(feature = "color")]
-		colormap: std::collections::HashMap<crate::shape::TShapeId, crate::shape::Rgb>,
+		colormap: std::collections::HashMap<crate::shape::TShapeId, crate::color::Color>,
 	) -> Self {
 		debug_assert!(
 			ffi::shape_is_null(&inner) || ffi::shape_is_solid(&inner),
@@ -52,13 +52,13 @@ impl Solid {
 
 	/// Read-only access to the per-face colormap.
 	#[cfg(feature = "color")]
-	pub fn colormap(&self) -> &std::collections::HashMap<crate::shape::TShapeId, crate::shape::Rgb> {
+	pub fn colormap(&self) -> &std::collections::HashMap<crate::shape::TShapeId, crate::color::Color> {
 		&self.colormap
 	}
 
 	/// Mutable access to the per-face colormap.
 	#[cfg(feature = "color")]
-	pub fn colormap_mut(&mut self) -> &mut std::collections::HashMap<crate::shape::TShapeId, crate::shape::Rgb> {
+	pub fn colormap_mut(&mut self) -> &mut std::collections::HashMap<crate::shape::TShapeId, crate::color::Color> {
 		&mut self.colormap
 	}
 
@@ -242,26 +242,24 @@ impl Shape for Solid {
 	// ==================== Color ====================
 
 	#[cfg(feature = "color")]
-	fn color_paint(self, color: crate::shape::Rgb) -> Self {
-		let colormap=self.faces().map(|f| (f.tshape_id(), color)).collect();
-		Self::new(self.inner,colormap)
+	fn color_paint(self, color: Option<crate::color::Color>) -> Self {
+		let colormap = match color {
+			Some(c) => self.faces().map(|f| (f.tshape_id(), c)).collect(),
+			None => std::collections::HashMap::new(),
+		};
+		Self::new(self.inner, colormap)
 	}
 
 	#[cfg(feature = "color")]
-	fn color_clear(&mut self) {
-		self.colormap.clear();
-	}
-
-	#[cfg(feature = "color")]
-	fn color(&self) -> Option<crate::shape::Rgb> {
-		let colors: Vec<crate::shape::Rgb> = self
+	fn color(&self) -> Option<crate::color::Color> {
+		let colors: Vec<crate::color::Color> = self
 			.faces()
 			.filter_map(|f| self.colormap.get(&f.tshape_id()).copied())
 			.collect();
 		if colors.is_empty() {
 			None
 		}else{
-			Some(crate::shape::Rgb {
+			Some(crate::color::Color {
 				r: colors.iter().map(|c| c.r).sum::<f32>() / colors.len() as f32,
 				g: colors.iter().map(|c| c.g).sum::<f32>() / colors.len() as f32,
 				b: colors.iter().map(|c| c.b).sum::<f32>() / colors.len() as f32,

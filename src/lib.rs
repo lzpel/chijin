@@ -15,6 +15,7 @@ mod iterators;
 mod mesh;
 mod shape;
 mod solid;
+mod color;
 pub mod stream;
 pub mod utils;
 
@@ -27,7 +28,7 @@ pub use shape::{Boolean, Shape};
 pub use shape::TShapeId;
 pub use solid::Solid;
 #[cfg(feature = "color")]
-pub use shape::Rgb;
+pub use color::Color;
 
 // I/O functions
 pub use io::{read_step, read_brep_bin, read_brep_text};

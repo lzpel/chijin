@@ -1,6 +1,6 @@
 use cadrum::{Shape, Solid};
 #[cfg(feature = "color")]
-use cadrum::{Rgb, TShapeId};
+use cadrum::{Color, TShapeId};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -76,13 +76,13 @@ fn test_svg_colored_box() {
 	let mut shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
 
 	// Assign a distinct color to each face based on its normal
-	let palette: &[(DVec3, Rgb)] = &[
-		(DVec3::Z,     Rgb { r: 1.0, g: 0.0, b: 0.0 }), // top:    red
-		(DVec3::NEG_Z, Rgb { r: 0.0, g: 0.0, b: 1.0 }), // bottom: blue
-		(DVec3::Y,     Rgb { r: 0.0, g: 1.0, b: 0.0 }), // back:   green
-		(DVec3::NEG_Y, Rgb { r: 1.0, g: 1.0, b: 0.0 }), // front:  yellow
-		(DVec3::X,     Rgb { r: 0.0, g: 1.0, b: 1.0 }), // right:  cyan
-		(DVec3::NEG_X, Rgb { r: 1.0, g: 0.0, b: 1.0 }), // left:   magenta
+	let palette: &[(DVec3, Color)] = &[
+		(DVec3::Z,     Color { r: 1.0, g: 0.0, b: 0.0 }), // top:    red
+		(DVec3::NEG_Z, Color { r: 0.0, g: 0.0, b: 1.0 }), // bottom: blue
+		(DVec3::Y,     Color { r: 0.0, g: 1.0, b: 0.0 }), // back:   green
+		(DVec3::NEG_Y, Color { r: 1.0, g: 1.0, b: 0.0 }), // front:  yellow
+		(DVec3::X,     Color { r: 0.0, g: 1.0, b: 1.0 }), // right:  cyan
+		(DVec3::NEG_X, Color { r: 1.0, g: 0.0, b: 1.0 }), // left:   magenta
 	];
 	let id_normal: Vec<(TShapeId, DVec3)> = shape
 		.faces()

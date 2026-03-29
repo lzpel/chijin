@@ -39,6 +39,9 @@ pub enum Error {
 
     /// Invalid hex color string (expected `#RGB` or `#RRGGBB`).
     InvalidHexColor,
+
+    /// Unknown error. OpenCASCADE operation failed for some reason.
+    Unknown(String),
 }
 
 impl std::fmt::Display for Error {
@@ -57,6 +60,7 @@ impl std::fmt::Display for Error {
             Error::InvalidPolygon => write!(f, "Invalid polygon"),
             Error::SvgExportFailed => write!(f, "SVG export failed"),
             Error::InvalidHexColor => write!(f, "Invalid hex color (expected #RGB or #RRGGBB)"),
+            Error::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }
 }
