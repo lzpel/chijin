@@ -38,7 +38,7 @@ impl Edge {
 	///
 	/// # Example
 	/// ```no_run
-	/// # use chijin::{Shape, Solid};
+	/// # use cadrum::{Shape, Solid};
 	/// # let shape: Vec<Solid> = vec![Solid::box_from_corners(
 	/// #     glam::DVec3::ZERO, glam::DVec3::new(10.0, 10.0, 10.0))];
 	/// # let edge = shape.edges().next().unwrap();

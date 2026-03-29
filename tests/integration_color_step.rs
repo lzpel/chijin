@@ -5,7 +5,7 @@
 
 #![cfg(feature = "color")]
 
-use chijin::{Shape, Solid, TShapeId};
+use cadrum::{Shape, Solid, TShapeId};
 use glam::DVec3;
 use std::fs;
 
@@ -15,7 +15,7 @@ const COLORED_BOX_STEP: &str = "steps/colored_box.step";
 fn read_colored_box() -> Vec<Solid> {
     let data = fs::read(COLORED_BOX_STEP)
         .expect("steps/colored_box.step should exist");
-    chijin::read_step_with_colors(&mut data.as_slice())
+    cadrum::read_step_with_colors(&mut data.as_slice())
         .expect("read_step_with_colors should succeed")
 }
 
@@ -28,7 +28,7 @@ fn colormap_len(shape: &[Solid]) -> usize {
 fn write_colored(shape: &[Solid], path: &str) {
     fs::create_dir_all("out").unwrap();
     let mut buf = Vec::new();
-    chijin::write_step_with_colors(shape, &mut buf)
+    cadrum::write_step_with_colors(shape, &mut buf)
         .expect("write_step_with_colors should succeed");
     fs::write(path, &buf).expect("should write output file");
 }
@@ -67,7 +67,7 @@ fn write_then_read_preserves_colors() {
     write_colored(&original, path);
 
     let data = fs::read(path).unwrap();
-    let reloaded = chijin::read_step_with_colors(&mut data.as_slice())
+    let reloaded = cadrum::read_step_with_colors(&mut data.as_slice())
         .expect("re-read should succeed");
 
     assert!(
@@ -87,7 +87,7 @@ fn intersect_colored_step_preserves_colors() {
 
     // Half-space keeping z > 0 side.
     let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::Z)];
-    let result = chijin::Boolean::intersect(&cube, &half).expect("intersect should succeed");
+    let result = cadrum::Boolean::intersect(&cube, &half).expect("intersect should succeed");
 
     // At least one face should have kept its color.
     assert!(

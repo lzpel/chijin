@@ -110,9 +110,9 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		.std("c++17")
 		.define("_USE_MATH_DEFINES", None);
 
-	// Define CHIJIN_COLOR for C++ when the "color" feature is enabled.
+	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	if color {
-		build.define("CHIJIN_COLOR", None);
+		build.define("CADRUM_COLOR", None);
 	}
 
 	// On MinGW (Windows GNU toolchain), GCC at -O0 emits inline C++ methods
@@ -129,7 +129,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		build.define("OCC_CONVERT_SIGNALS", None);
 	}
 
-	build.compile("chijin_cpp");
+	build.compile("cadrum_cpp");
 
 	println!("cargo:rerun-if-changed=src/ffi.rs");
 	println!("cargo:rerun-if-changed=cpp/wrapper.h");
@@ -381,7 +381,7 @@ fn stub_out_methods(path: &Path, keep_signatures: bool) {
 		"file emptied"
 	};
 	let header = format!(
-		"// Stubbed by chijin build.rs: {}.\n\
+		"// Stubbed by cadrum build.rs: {}.\n\
 		 // Stubbed at: {}\n",
 		description, timestamp
 	);

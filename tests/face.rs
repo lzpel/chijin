@@ -1,4 +1,4 @@
-use chijin::{Face, Shape, Solid};
+use cadrum::{Face, Shape, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -83,7 +83,7 @@ fn test_face_helix_pappus() {
 	let shape: Vec<Solid> = vec![solid];
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_test.step").unwrap();
-	chijin::write_step(&shape, &mut file).expect("STEP write failed");
+	cadrum::write_step(&shape, &mut file).expect("STEP write failed");
 
 	let v = shape.volume();
 	println!("helix volume: {v:.4}");

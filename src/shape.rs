@@ -249,7 +249,7 @@ impl From<Boolean> for Vec<Solid> {
 ///
 /// Import this trait to use methods on `Vec<Solid>` / `&[Solid]`:
 /// ```
-/// use chijin::Shape;
+/// use cadrum::Shape;
 /// ```
 pub trait Shape: Sized {
 

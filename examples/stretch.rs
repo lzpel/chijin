@@ -6,7 +6,7 @@
 //!
 //! 出力: out/stretched.brep (BRep テキスト形式)
 
-use chijin::{Boolean, Error, Shape, Solid};
+use cadrum::{Boolean, Error, Shape, Solid};
 use glam::DVec3;
 use std::path::Path;
 
@@ -17,7 +17,7 @@ fn extrude_tool_faces(result: &Boolean, delta: DVec3) -> Result<Vec<Solid>, Erro
         let extruded: Vec<Solid> = vec![face.extrude(delta)?];
         filler = Some(match filler {
             None => extruded,
-            Some(f) => chijin::Boolean::union(&f, &extruded)?.into(),
+            Some(f) => cadrum::Boolean::union(&f, &extruded)?.into(),
         });
     }
     Ok(filler.unwrap_or_default())
@@ -30,14 +30,14 @@ fn stretch_vector(shape: &[Solid], origin: DVec3, delta: DVec3) -> Result<Vec<So
     // Negate so the solid fills the -delta side; intersect then yields part_neg.
     let half: Vec<Solid> = vec![Solid::half_space(origin, -delta.normalize())];
 
-    let intersect_result = chijin::Boolean::intersect(&shape, &half)?;
-    let part_pos: Vec<Solid> = chijin::Boolean::subtract(&shape, &half)?.into();
+    let intersect_result = cadrum::Boolean::intersect(&shape, &half)?;
+    let part_pos: Vec<Solid> = cadrum::Boolean::subtract(&shape, &half)?.into();
     let part_pos = part_pos.translate(delta);
 
     let filler = extrude_tool_faces(&intersect_result, delta)?;
     let part_neg: Vec<Solid> = intersect_result.into();
-    let combined: Vec<Solid> = chijin::Boolean::union(&part_neg, &filler)?.into();
-    chijin::Boolean::union(&combined, &part_pos).map(Vec::from)
+    let combined: Vec<Solid> = cadrum::Boolean::union(&part_neg, &filler)?.into();
+    cadrum::Boolean::union(&combined, &part_pos).map(Vec::from)
 }
 
 /// (cx,cy,cz) で切断し、(dx,dy,dz) だけ各軸方向に引き延ばす。
@@ -79,7 +79,7 @@ fn main() {
     let out_path = "out/stretched.brep";
     std::fs::create_dir_all(Path::new(out_path).parent().unwrap()).unwrap();
     let mut buf = Vec::new();
-    chijin::write_brep_text(&result, &mut buf)
+    cadrum::write_brep_text(&result, &mut buf)
         .expect("BRep 書き込みに失敗");
     std::fs::write(out_path, &buf).expect("ファイル書き込みに失敗");
 
