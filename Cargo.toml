@@ -11,11 +11,7 @@ categories = ["graphics", "science"]
 exclude = ["/figure", "/notes", "/steps"]
 
 [features]
-default = ["bundled", "color"]
-# Download and build OCCT 7.9.3 from source during cargo build
-bundled = []
-# Use a system-installed OCCT via the OCCT_ROOT environment variable
-prebuilt = []
+default = ["color"]
 # Enable TShapeId, Rgb, and colormap on Shape for face-level color tracking
 color = []
 

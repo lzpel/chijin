@@ -3,6 +3,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 fn main() {
+	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-env-changed=CASROOT");
+
 	if env::var("DOCS_RS").is_ok() {
 		return;
 	}
@@ -10,13 +13,26 @@ fn main() {
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-	let (occt_include, occt_lib_dir) = if cfg!(feature = "bundled") {
-		build_occt_from_source(&out_dir, &manifest_dir)
-	} else if cfg!(feature = "prebuilt") {
-		use_system_occt()
-	} else {
-		panic!("Either 'bundled' or 'prebuilt' feature must be enabled");
-	};
+	let (occt_include, occt_lib_dir) =
+		match env::var("OCCT_ROOT").or_else(|_| env::var("CASROOT")) {
+			Ok(root) => {
+				let occt_root = PathBuf::from(root);
+				let lib_dir = find_occt_lib_dir(&occt_root);
+				println!("cargo:rerun-if-changed={}", lib_dir.display());
+				if lib_dir.exists() {
+					// バイナリあり → リンクのみ
+					(find_occt_include_dir(&occt_root), lib_dir)
+				} else {
+					// バイナリなし → OCCT_ROOT にビルド
+					build_occt_from_source(&out_dir, &occt_root)
+				}
+			}
+			Err(_) => {
+				// OCCT_ROOT 未設定 → target/occt にビルド
+				let install_prefix = manifest_dir.join("target").join("occt");
+				build_occt_from_source(&out_dir, &install_prefix)
+			}
+		};
 
 	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
 }
@@ -136,8 +152,8 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	println!("cargo:rerun-if-changed=cpp/wrapper.cpp");
 }
 
-/// Feature "bundled": Download OCCT 7.9.3 source and build with CMake.
-fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, PathBuf) {
+/// Download OCCT 7.9.3 source, patch, and build with CMake into `install_prefix`.
+fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, PathBuf) {
 	let occt_version = "V7_9_3";
 	let occt_url = format!(
 		"https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz",
@@ -208,8 +224,7 @@ fn build_occt_from_source(out_dir: &Path, manifest_dir: &Path) -> (PathBuf, Path
 	// kept intact; only FillMaterialAspect / FillAspect are emptied.
 	patch_occt_sources(&source_dir);
 
-	// Install into target/occt for a stable, predictable location
-	let occt_root = manifest_dir.join("target").join("occt");
+	let occt_root = install_prefix;
 
 	// Determine lib path (CMake on Windows/MinGW installs to win64/gcc/lib)
 	let lib_dir = find_occt_lib_dir(&occt_root);
@@ -299,33 +314,6 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	occt_root.join("lib")
 }
 
-/// Feature "prebuilt": Use system-installed OCCT.
-fn use_system_occt() -> (PathBuf, PathBuf) {
-	let occt_root = env::var("OCCT_ROOT")
-		.or_else(|_| env::var("CASROOT"))
-		.expect(
-			"OCCT_ROOT or CASROOT environment variable must be set \
-             when using the 'prebuilt' feature",
-		);
-
-	let occt_root = PathBuf::from(occt_root);
-
-	let include_dir = find_occt_include_dir(&occt_root);
-	let lib_dir = find_occt_lib_dir(&occt_root);
-
-	assert!(
-		include_dir.exists(),
-		"OCCT include directory not found at {}",
-		include_dir.display()
-	);
-	assert!(
-		lib_dir.exists(),
-		"OCCT lib directory not found at {}",
-		lib_dir.display()
-	);
-
-	(include_dir, lib_dir)
-}
 
 /// Patch two OCCT source files that pull in Graphic3d_* (TKService) symbols even
 /// when BUILD_MODULE_Visualization=OFF:
