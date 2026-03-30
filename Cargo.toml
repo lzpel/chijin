@@ -8,6 +8,7 @@ readme = "README.md"
 repository = "https://github.com/lzpel/cadrum"
 keywords = ["opencascade", "cad", "step", "b-rep", "geometry"]
 categories = ["graphics", "science"]
+exclude = ["/figure", "/notes", "/steps"]
 
 [features]
 default = ["bundled", "color"]
