@@ -2,6 +2,7 @@
 
 [![GitHub License](https://img.shields.io/github/license/lzpel/cadrum)](https://github.com/lzpel/cadrum/blob/main/LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/cadrum.svg?logo=rust)](https://crates.io/crates/cadrum)
+[![Docs](https://img.shields.io/badge/docs-lzpel.github.io%2Fcadrum-blue)](https://lzpel.github.io/cadrum)
 
 Minimal Rust bindings for [OpenCASCADE](https://dev.opencascade.org/) (OCCT 7.9.3) — a solid modeling kernel used in CAD/CAM software.
 

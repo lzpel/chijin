@@ -93,6 +93,20 @@ std::unique_ptr<TopoDS_Shape> make_cylinder(
     double dx, double dy, double dz,
     double radius, double height);
 
+std::unique_ptr<TopoDS_Shape> make_sphere(
+    double cx, double cy, double cz,
+    double radius);
+
+std::unique_ptr<TopoDS_Shape> make_cone(
+    double px, double py, double pz,
+    double dx, double dy, double dz,
+    double r1, double r2, double height);
+
+std::unique_ptr<TopoDS_Shape> make_torus(
+    double px, double py, double pz,
+    double dx, double dy, double dz,
+    double r1, double r2);
+
 std::unique_ptr<TopoDS_Shape> make_empty();
 std::unique_ptr<TopoDS_Shape> deep_copy(const TopoDS_Shape& shape);
 std::unique_ptr<TopoDS_Shape> shallow_copy(const TopoDS_Shape& shape);

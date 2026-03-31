@@ -1,6 +1,4 @@
-# Sample workflow for building and deploying a Next.js site to GitHub Pages
-#
-# To get started with Next.js see: https://nextjs.org/docs/getting-started
+# Build and deploy mdbook documentation to GitHub Pages
 #
 name: Deploy mdbook to Pages
 
@@ -28,6 +26,8 @@ jobs:
   # Build job
   build:
     runs-on: ubuntu-latest
+    container:
+      image: lzpel/cadrum
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -80,6 +80,8 @@ impl Solid {
 	}
 
 	/// Create a box from two opposite corner points.
+	///
+	/// Named `box_from_corners` rather than `box` because `box` is a reserved keyword in Rust.
 	pub fn box_from_corners(corner_1: DVec3, corner_2: DVec3) -> Solid {
 		let inner = ffi::make_box(
 			corner_1.x, corner_1.y, corner_1.z,
@@ -100,6 +102,50 @@ impl Solid {
 	/// - `h`: height along the axis
 	pub fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Solid {
 		let inner = ffi::make_cylinder(p.x, p.y, p.z, dir.x, dir.y, dir.z, r, h);
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		)
+	}
+
+	/// Create a sphere.
+	///
+	/// - `center`: center point
+	/// - `radius`: radius
+	pub fn sphere(center: DVec3, radius: f64) -> Solid {
+		let inner = ffi::make_sphere(center.x, center.y, center.z, radius);
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		)
+	}
+
+	/// Create a cone.
+	///
+	/// - `p`: center of the base circle
+	/// - `dir`: axis direction
+	/// - `r1`: bottom radius
+	/// - `r2`: top radius (0 for a pointed tip)
+	/// - `h`: height along the axis
+	pub fn cone(p: DVec3, dir: DVec3, r1: f64, r2: f64, h: f64) -> Solid {
+		let inner = ffi::make_cone(p.x, p.y, p.z, dir.x, dir.y, dir.z, r1, r2, h);
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		)
+	}
+
+	/// Create a torus.
+	///
+	/// - `p`: center point
+	/// - `dir`: axis direction (normal to the torus plane)
+	/// - `r1`: major radius (center to tube center)
+	/// - `r2`: minor radius (tube radius)
+	pub fn torus(p: DVec3, dir: DVec3, r1: f64, r2: f64) -> Solid {
+		let inner = ffi::make_torus(p.x, p.y, p.z, dir.x, dir.y, dir.z, r1, r2);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]

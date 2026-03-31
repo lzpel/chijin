@@ -7,3 +7,5 @@ test:
 	cargo test --features color
 deploy: # --no-verify skips the full OCCT build verification which takes a very long time
 	cargo publish --no-verify
+deploy-docker:
+	docker build . -t lzpel/cadrum && docker push lzpel/cadrum

@@ -92,6 +92,31 @@ mod ffi_bridge {
 			height: f64,
 		) -> UniquePtr<TopoDS_Shape>;
 
+		fn make_sphere(cx: f64, cy: f64, cz: f64, radius: f64) -> UniquePtr<TopoDS_Shape>;
+
+		fn make_cone(
+			px: f64,
+			py: f64,
+			pz: f64,
+			dx: f64,
+			dy: f64,
+			dz: f64,
+			r1: f64,
+			r2: f64,
+			height: f64,
+		) -> UniquePtr<TopoDS_Shape>;
+
+		fn make_torus(
+			px: f64,
+			py: f64,
+			pz: f64,
+			dx: f64,
+			dy: f64,
+			dz: f64,
+			r1: f64,
+			r2: f64,
+		) -> UniquePtr<TopoDS_Shape>;
+
 		fn make_empty() -> UniquePtr<TopoDS_Shape>;
 
 		fn deep_copy(shape: &TopoDS_Shape) -> UniquePtr<TopoDS_Shape>;

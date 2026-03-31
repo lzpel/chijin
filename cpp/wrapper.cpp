@@ -12,8 +12,11 @@
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
@@ -270,6 +273,39 @@ std::unique_ptr<TopoDS_Shape> make_cylinder(
     gp_Ax2 axis(center, direction);
 
     BRepPrimAPI_MakeCylinder maker(axis, radius, height);
+    return std::make_unique<TopoDS_Shape>(maker.Shape());
+}
+
+std::unique_ptr<TopoDS_Shape> make_sphere(
+    double cx, double cy, double cz,
+    double radius)
+{
+    gp_Pnt center(cx, cy, cz);
+    BRepPrimAPI_MakeSphere maker(center, radius);
+    return std::make_unique<TopoDS_Shape>(maker.Shape());
+}
+
+std::unique_ptr<TopoDS_Shape> make_cone(
+    double px, double py, double pz,
+    double dx, double dy, double dz,
+    double r1, double r2, double height)
+{
+    gp_Pnt center(px, py, pz);
+    gp_Dir direction(dx, dy, dz);
+    gp_Ax2 axis(center, direction);
+    BRepPrimAPI_MakeCone maker(axis, r1, r2, height);
+    return std::make_unique<TopoDS_Shape>(maker.Shape());
+}
+
+std::unique_ptr<TopoDS_Shape> make_torus(
+    double px, double py, double pz,
+    double dx, double dy, double dz,
+    double r1, double r2)
+{
+    gp_Pnt center(px, py, pz);
+    gp_Dir direction(dx, dy, dz);
+    gp_Ax2 axis(center, direction);
+    BRepPrimAPI_MakeTorus maker(axis, r1, r2);
     return std::make_unique<TopoDS_Shape>(maker.Shape());
 }
 
