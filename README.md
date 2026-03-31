@@ -12,6 +12,8 @@ Minimal Rust bindings for [OpenCASCADE](https://dev.opencascade.org/) (OCCT 7.9.
 
 ## Usage
 
+More examples with source code are available at [lzpel.github.io/cadrum](https://lzpel.github.io/cadrum).
+
 Add this to your `Cargo.toml`:
 
 ```toml
