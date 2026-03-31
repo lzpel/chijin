@@ -1,6 +1,6 @@
 [package]
 name = "cadrum"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 description = "Minimal Rust bindings for OpenCASCADE 7.9.3."
 license = "MIT"
