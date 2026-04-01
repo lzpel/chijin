@@ -1,3 +1,5 @@
 target/
 out/
 linkedin.md
+*.step
+*.svg
