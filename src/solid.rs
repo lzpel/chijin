@@ -251,6 +251,13 @@ impl Shape for Solid {
 		ffi::shape_contains_point(&self.inner, point.x, point.y, point.z)
 	}
 
+	fn bounding_box(&self) -> [DVec3; 2] {
+		let (mut xmin, mut ymin, mut zmin) = (0.0_f64, 0.0_f64, 0.0_f64);
+		let (mut xmax, mut ymax, mut zmax) = (0.0_f64, 0.0_f64, 0.0_f64);
+		ffi::shape_bounding_box(&self.inner, &mut xmin, &mut ymin, &mut zmin, &mut xmax, &mut ymax, &mut zmax);
+		[DVec3::new(xmin, ymin, zmin), DVec3::new(xmax, ymax, zmax)]
+	}
+
 	fn faces(&self) -> FaceIterator {
 		FaceIterator::new(ffi::explore_faces(&self.inner))
 	}

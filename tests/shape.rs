@@ -246,6 +246,29 @@ fn test_new_faces_intersect_b_inside_a() {
 		"intersect with B fully inside A: tool faces should cover all result faces");
 }
 
+// ==================== bounding_box ====================
+
+#[test]
+fn test_bounding_box() {
+	// 単一 solid
+	let [min, max] = vec![Solid::box_from_corners(dvec3(1.0, 2.0, 3.0), dvec3(4.0, 6.0, 8.0))].bounding_box();
+	assert!((min - dvec3(1.0, 2.0, 3.0)).length() < 1e-6);
+	assert!((max - dvec3(4.0, 6.0, 8.0)).length() < 1e-6);
+
+	// 複数 solid のマージ
+	let [min, max] = vec![
+		Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(2.0, 2.0, 2.0)),
+		Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(7.0, 8.0, 9.0)),
+	].bounding_box();
+	assert!((min - dvec3(0.0, 0.0, 0.0)).length() < 1e-6);
+	assert!((max - dvec3(7.0, 8.0, 9.0)).length() < 1e-6);
+
+	// translate 後に追従する
+	let [min, max] = test_box().translate(dvec3(10.0, 20.0, 30.0)).bounding_box();
+	assert!((min - dvec3(10.0, 20.0, 30.0)).length() < 1e-6);
+	assert!((max - dvec3(20.0, 30.0, 40.0)).length() < 1e-6);
+}
+
 // ==================== contains ====================
 
 #[test]

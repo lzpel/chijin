@@ -45,6 +45,8 @@
 #include <BRep_Tool.hxx>
 #include <Poly_Triangulation.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
 #include <BRepGProp.hxx>
 #include <BRepGProp_Face.hxx>
 #include <GProp_GProps.hxx>
@@ -585,6 +587,15 @@ double shape_volume(const TopoDS_Shape& shape) {
 bool shape_contains_point(const TopoDS_Shape& shape, double x, double y, double z) {
     BRepClass3d_SolidClassifier classifier(shape, gp_Pnt(x, y, z), 1e-6);
     return classifier.State() == TopAbs_IN;
+}
+
+void shape_bounding_box(const TopoDS_Shape& shape,
+    double& xmin, double& ymin, double& zmin,
+    double& xmax, double& ymax, double& zmax)
+{
+    Bnd_Box box;
+    BRepBndLib::Add(shape, box);
+    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
 }
 
 // ==================== Meshing ====================

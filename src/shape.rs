@@ -205,6 +205,7 @@ pub trait Shape: Sized {
 	fn contains(&self, point: DVec3) -> bool;
 	fn is_null(&self) -> bool;
 	fn shell_count(&self) -> u32;
+	fn bounding_box(&self) -> [DVec3; 2];
 
 	// --- Topology / rendering ---
 	fn faces(&self) -> FaceIterator;
@@ -263,6 +264,13 @@ impl Shape for Vec<Solid> {
 
 	fn shell_count(&self) -> u32 {
 		self.iter().map(|s| s.shell_count()).sum()
+	}
+
+	fn bounding_box(&self) -> [DVec3; 2] {
+		self.iter()
+			.map(|s| s.bounding_box())
+			.reduce(|[amin, amax], [bmin, bmax]| [amin.min(bmin), amax.max(bmax)])
+			.unwrap_or([DVec3::ZERO, DVec3::ZERO])
 	}
 
 	// --- Topology / rendering ---

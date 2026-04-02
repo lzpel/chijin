@@ -160,6 +160,9 @@ uint32_t shape_shell_count(const TopoDS_Shape& shape);
 double shape_volume(const TopoDS_Shape& shape);
 bool shape_contains_point(const TopoDS_Shape& shape, double x, double y, double z);
 uint64_t shape_tshape_id(const TopoDS_Shape& shape);
+void shape_bounding_box(const TopoDS_Shape& shape,
+    double& xmin, double& ymin, double& zmin,
+    double& xmax, double& ymax, double& zmax);
 
 // ==================== Compound Decompose/Compose ====================
 

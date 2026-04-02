@@ -204,6 +204,11 @@ mod ffi_bridge {
 		fn shape_shell_count(shape: &TopoDS_Shape) -> u32;
 		fn shape_volume(shape: &TopoDS_Shape) -> f64;
 		fn shape_contains_point(shape: &TopoDS_Shape, x: f64, y: f64, z: f64) -> bool;
+		fn shape_bounding_box(
+			shape: &TopoDS_Shape,
+			xmin: &mut f64, ymin: &mut f64, zmin: &mut f64,
+			xmax: &mut f64, ymax: &mut f64, zmax: &mut f64,
+		);
 
 		// ==================== Compound Decompose/Compose ====================
 
