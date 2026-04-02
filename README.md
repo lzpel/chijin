@@ -103,20 +103,6 @@ cargo build
   `read_step_with_colors`, and per-face color on `Solid`.
   Colors are preserved through boolean operations and other transformations.
 
-## Showcase
-
-<p align="center">
-  <a href="https://katachiform.com/out/21">
-    <img src="figure/katachiform.png" alt="KatachiForm — Sheet Metal Configurator" width="600"/>
-  </a>
-</p>
-
-- [**KatachiForm**](https://katachiform.com/out/21) — A cloud-native CAD SaaS integrating `cadrum` with **AWS Lambda** for serverless geometry generation and STEP export.
-
-The library was originally named **chijin**, a hand drum traditional to Amami Oshima, a subtropical island of southern Japan.
-It was renamed to **cadrum** (CAD + drum) to better convey its purpose as a CAD library while keeping the drum heritage.
-[chijin drum](figure/chijin_real.jpg) looks like the 3d figure at the top of this page.
-
 ## License
 
 This project is licensed under the MIT License.
