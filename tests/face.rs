@@ -1,4 +1,4 @@
-use cadrum::{Face, Shape, Solid};
+use cadrum::{Face, SolidTrait, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -8,7 +8,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 #[test]
 fn test_face_iteration() {
 	let shape: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
-	let faces: Vec<_> = shape.faces().collect();
+	let faces: Vec<_> = shape.iter().flat_map(|s| s.face_iter()).collect();
 	assert_eq!(faces.len(), 6);
 	for face in &faces {
 		let normal = face.normal_at_center();
@@ -42,7 +42,7 @@ fn test_face_extrude() {
 	.unwrap();
 	let solid = face.extrude(dvec3(0.0, 1.0, 0.0)).unwrap();
 	let shape: Vec<Solid> = vec![solid];
-	assert_eq!(shape.shell_count(), 1);
+	assert_eq!(shape.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_face_revolve() {
 		.revolve(DVec3::ZERO, dvec3(0.0, 0.0, 1.0), std::f64::consts::TAU)
 		.unwrap();
 	let shape: Vec<Solid> = vec![solid];
-	assert_eq!(shape.shell_count(), 1);
+	assert_eq!(shape.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn test_face_helix_pappus() {
 	let mut file = std::fs::File::create("out/helix_test.step").unwrap();
 	cadrum::write_step(&shape, &mut file).expect("STEP write failed");
 
-	let v = shape.volume();
+	let v: f64 = shape.iter().map(|s| s.volume()).sum();
 	println!("helix volume: {v:.4}");
 
 	let radius = 5.0;

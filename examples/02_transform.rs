@@ -1,4 +1,4 @@
-use cadrum::{Color, Shape, Solid};
+use cadrum::{Color, SolidTrait, Solid};
 use glam::DVec3;
 use std::f64::consts::PI;
 
@@ -42,6 +42,6 @@ fn main() {
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
     cadrum::write_step_with_colors(&shapes, &mut f).expect("failed to write STEP");
 
-    let svg = shapes.to_svg(DVec3::new(1.0, 1.0, 1.0), 0.5).expect("failed to export SVG");
+    let svg = cadrum::to_svg(&shapes, DVec3::new(1.0, 1.0, 1.0), 0.5).expect("failed to export SVG");
     std::fs::write(format!("{example_name}.svg"), svg.as_bytes()).expect("failed to write SVG");
 }

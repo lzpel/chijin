@@ -5,7 +5,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Shape, Solid, TShapeId};
+use cadrum::{SolidTrait, Solid, TShapeId};
 use glam::DVec3;
 use std::fs;
 
@@ -46,7 +46,7 @@ fn read_colored_step_populates_colormap() {
     );
     // Every entry in the colormap should correspond to an actual face.
     let face_ids: std::collections::HashSet<TShapeId> =
-        shape.faces().map(|f| f.tshape_id()).collect();
+        shape.iter().flat_map(|s| s.face_iter()).map(|f| f.tshape_id()).collect();
     for solid in &shape {
         for id in solid.colormap().keys() {
             assert!(
@@ -108,7 +108,7 @@ fn translate_colored_step_preserves_colors() {
     let shape = read_colored_box();
     let original_len = colormap_len(&shape);
 
-    let moved = shape.translate(DVec3::new(100.0, 0.0, 0.0));
+    let moved: Vec<Solid> = shape.into_iter().map(|s| s.translate(DVec3::new(100.0, 0.0, 0.0))).collect();
 
     assert_eq!(
         colormap_len(&moved),
@@ -125,7 +125,7 @@ fn clean_colored_step_preserves_colors() {
     let shape = read_colored_box();
     let original_len = colormap_len(&shape);
 
-    let cleaned = shape.clean().expect("clean should succeed");
+    let cleaned: Vec<Solid> = shape.iter().map(|s| s.clean().expect("clean should succeed")).collect();
 
     assert_eq!(
         colormap_len(&cleaned),

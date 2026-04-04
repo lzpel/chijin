@@ -2,7 +2,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Color, Shape, Solid};
+use cadrum::{Color, SolidTrait, Solid};
 use glam::DVec3;
 use std::fs;
 
@@ -42,11 +42,11 @@ fn write_then_read_preserves_colors() {
     // Collect original colors by face traversal index so we can compare
     // after TShapeId changes on reload.
     let original_colors: Vec<Color> = original
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .filter_map(|f| original.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied()))
         .collect();
     let reloaded_colors: Vec<Color> = reloaded
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .filter_map(|f| reloaded.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied()))
         .collect();
 

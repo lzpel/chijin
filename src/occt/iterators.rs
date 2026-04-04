@@ -1,6 +1,6 @@
-use crate::edge::Edge;
-use crate::face::Face;
-use crate::ffi;
+use super::edge::Edge;
+use super::face::Face;
+use super::ffi;
 use glam::DVec3;
 
 /// Iterator over faces of a shape.

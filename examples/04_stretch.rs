@@ -6,7 +6,7 @@
 //!
 //! Output: stretched.brep (BRep text format)
 
-use cadrum::{Shape, Solid};
+use cadrum::{SolidTrait, Solid};
 use cadrum::utils::stretch_vector;
 use glam::DVec3;
 
@@ -16,7 +16,7 @@ fn stretch(shape: Vec<Solid>, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f
     let shape = if dx > eps { stretch_vector(&shape, DVec3::new(cx, 0.0, 0.0), DVec3::new(dx, 0.0, 0.0))? } else { shape };
     let shape = if dy > eps { stretch_vector(&shape, DVec3::new(0.0, cy, 0.0), DVec3::new(0.0, dy, 0.0))? } else { shape };
     let shape = if dz > eps { stretch_vector(&shape, DVec3::new(0.0, 0.0, cz), DVec3::new(0.0, 0.0, dz))? } else { shape };
-    shape.clean()
+    shape.iter().map(|s| s.clean()).collect()
 }
 
 fn main() {
@@ -38,11 +38,16 @@ fn main() {
     cadrum::write_brep_text(&result, &mut buf).expect("failed to write BRep");
     std::fs::write(out_path, &buf).expect("failed to write file");
 
-    let mesh = result.mesh_with_tolerance(0.5).expect("mesh failed");
+    let mesh = result.iter()
+        .map(|s| s.mesh_with_tolerance(0.5))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("mesh failed");
+    let total_vertices: usize = mesh.iter().map(|m| m.vertices.len()).sum();
+    let total_triangles: usize = mesh.iter().map(|m| m.indices.len() / 3).sum();
     println!(
         "done: ({} bytes) — vertices: {}, triangles: {}",
         buf.len(),
-        mesh.vertices.len(),
-        mesh.indices.len() / 3,
+        total_vertices,
+        total_triangles,
     );
 }

@@ -4,36 +4,39 @@
 //!
 //! ## Core Types
 //! - [`Solid`] — a single solid shape (wraps `TopoDS_Shape` / `TopAbs_SOLID`)
-//! - [`Shape`] — trait with operations on `[Solid]` / `Vec<Solid>` (import to use methods)
+//! - [`SolidTrait`] — backend-independent trait for solid operations
 
-mod edge;
-mod error;
-mod face;
-mod ffi;
-mod io;
-mod iterators;
-mod mesh;
-mod shape;
-mod solid;
-mod color;
-pub mod stream;
-pub mod utils;
+pub mod common;
+pub mod traits;
+pub mod occt;
+#[cfg(feature = "pure")]
+pub mod pure;
 
-pub use edge::Edge;
-pub use error::Error;
-pub use face::Face;
-pub use iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
-pub use mesh::Mesh;
-pub use shape::{Boolean, Shape};
-pub use shape::TShapeId;
-pub use solid::Solid;
+// Re-export the unified trait
+pub use traits::SolidTrait;
+
+// Re-export OCCT types at crate root for backward compatibility
+pub use occt::edge::Edge;
+pub use occt::face::Face;
+pub use occt::iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
+pub use occt::shape::Boolean;
+pub use occt::shape::TShapeId;
+pub use occt::solid::Solid;
+
+// Re-export common types
+pub use common::error::Error;
+pub use common::mesh::{EdgeData, Mesh};
 #[cfg(feature = "color")]
-pub use color::Color;
+pub use common::color::Color;
 
 // I/O functions
-pub use io::{read_step, read_brep_bin, read_brep_text};
-pub use io::{write_step, write_brep_bin, write_brep_text};
+pub use occt::io::{read_step, read_brep_bin, read_brep_text};
+pub use occt::io::{write_step, write_brep_bin, write_brep_text};
 #[cfg(feature = "color")]
-pub use io::{read_step_with_colors, read_brep_color};
+pub use occt::io::{read_step_with_colors, read_brep_color};
 #[cfg(feature = "color")]
-pub use io::{write_step_with_colors, write_brep_color};
+pub use occt::io::{write_step_with_colors, write_brep_color};
+
+// Re-export submodules
+pub use occt::utils;
+pub use occt::stream;

@@ -1,6 +1,6 @@
 use cadrum::{
 	utils::{helix_section, revolve_section, stretch_vector},
-	Error, Shape, Solid,
+	Error, SolidTrait, Solid,
 };
 use glam::DVec3;
 use std::panic::{self, AssertUnwindSafe};
@@ -54,7 +54,7 @@ fn stretch(
 		after_y.clone()
 	};
 
-	after_z.clean()
+	after_z.into_iter().map(|s| s.clean()).collect::<Result<Vec<_>, _>>()
 }
 
 /// 形状の引き伸ばし処理をパニックキャッチ付きで安全に実行し、結果を返します。
@@ -107,7 +107,7 @@ fn write_step(shape: &Vec<Solid>, name: &str) {
 	let path = format!("out/{name}.step");
 	let mut file = std::fs::File::create(&path).unwrap();
 	cadrum::write_step(shape, &mut file).expect("STEP write failed");
-	let mesh = shape.mesh_with_tolerance(0.1).expect("meshing failed");
+	let mesh = shape[0].mesh_with_tolerance(0.1).expect("meshing failed");
 	assert!(!mesh.vertices.is_empty(), "result shape has no vertices");
 	println!(
 		"{name}: {} vertices, {} triangles → {path}",
@@ -123,7 +123,7 @@ fn test_stretch_vector_volume() {
 	let shape = test_box();
 	// X=5 で切断し +X 方向に 1 引き延ばす → 10×10×11 = 1100
 	let result = stretch_vector(&shape, dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0)).unwrap();
-	let v = result.volume();
+	let v: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((v - 1100.0).abs() < 1e-3, "expected volume ≈ 1100, got {v}");
 }
 
@@ -143,7 +143,7 @@ fn test_revolve_section_volume() {
 		std::f64::consts::TAU,
 	)
 	.unwrap();
-	let v = result.volume();
+	let v: f64 = result.iter().map(|s| s.volume()).sum();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/revolve_section.step").unwrap();
@@ -175,7 +175,7 @@ fn test_helix_section_volume() {
 		1.0,
 	)
 	.unwrap();
-	let v = result.volume();
+	let v: f64 = result.iter().map(|s| s.volume()).sum();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_section.step").unwrap();
@@ -200,8 +200,8 @@ fn diagnose_new_faces() {
 	let shape = lambda360box();
 	println!(
 		"input: face_count={}, shell_count={}",
-		shape.faces().count(),
-		shape.shell_count()
+		shape.iter().flat_map(|s| s.face_iter()).count(),
+		shape.iter().map(|s| s.shell_count()).sum::<u32>()
 	);
 
 	let origin = DVec3::new(1.0, 0.0, 1.0);
@@ -213,7 +213,7 @@ fn diagnose_new_faces() {
 		"  intersect result: tool_face count={}",
 		r_half
 			.solids
-			.faces()
+			.iter().flat_map(|s| s.face_iter())
 			.filter(|f| r_half.is_tool_face(f))
 			.count()
 	);
@@ -227,13 +227,13 @@ fn diagnose_new_faces() {
 		"  intersect result: tool_face count={}",
 		r_box
 			.solids
-			.faces()
+			.iter().flat_map(|s| s.face_iter())
 			.filter(|f| r_box.is_tool_face(f))
 			.count()
 	);
 	for (i, face) in r_box
 		.solids
-		.faces()
+		.iter().flat_map(|s| s.face_iter())
 		.filter(|f| r_box.is_tool_face(f))
 		.enumerate()
 	{
@@ -252,7 +252,7 @@ fn stretch_box_known_error_case_1_0_1() {
 	// 既知パラメーター (cx=1.0, cy=0.0, cz=1.0, dx=1.0, dy=1.0, dz=1.0) の確認テスト。
 	let shape = lambda360box();
 	assert_eq!(
-		shape.shell_count(),
+		shape.iter().map(|s| s.shell_count()).sum::<u32>(),
 		1,
 		"input shape must have exactly one shell"
 	);
@@ -261,7 +261,7 @@ fn stretch_box_known_error_case_1_0_1() {
 	match &result {
 		Ok(s) => {
 			assert_eq!(
-				s.shell_count(),
+				s.iter().map(|s| s.shell_count()).sum::<u32>(),
 				1,
 				"stretched shape must have exactly one shell"
 			);

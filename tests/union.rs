@@ -1,4 +1,4 @@
-use cadrum::{Solid, Boolean};
+use cadrum::{SolidTrait, Solid, Boolean};
 use glam::DVec3;
 
 #[test]

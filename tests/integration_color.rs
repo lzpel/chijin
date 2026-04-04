@@ -8,7 +8,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Color, Shape, Solid, TShapeId};
+use cadrum::{Color, SolidTrait, Solid, TShapeId};
 use glam::DVec3;
 
 /// Assign a distinct color to every face of `shape` based on its outward normal.
@@ -27,7 +27,7 @@ fn color_box_faces(shape: &mut Vec<Solid>) -> usize {
     let mut count = 0;
     // Collect (id, normal) pairs first so we don't borrow shape while iterating.
     let id_normal: Vec<(TShapeId, DVec3)> = shape
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .map(|f| (f.tshape_id(), f.normal_at_center()))
         .collect();
 
@@ -83,8 +83,8 @@ fn colored_box_intersect_z_positive_half_space() {
     // ── Topology checks ──────────────────────────────────────────────────────
     // The closed solid has 6 faces: top + 4 trimmed sides + z=0 cross-section.
     // is_tool_face identifies the cross-section face(s) from the tool (half-space).
-    let shape_face_count = result.solids.faces().count();
-    let tool_face_count = result.solids.faces().filter(|f| result.is_tool_face(f)).count();
+    let shape_face_count = result.solids.iter().flat_map(|s| s.face_iter()).count();
+    let tool_face_count = result.solids.iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)).count();
     assert_eq!(shape_face_count, 6, "result.solids should have 6 faces (top + 4 sides + cut)");
     assert_eq!(tool_face_count, 1, "should have 1 tool (cross-section) face");
 
@@ -97,7 +97,7 @@ fn colored_box_intersect_z_positive_half_space() {
         "5 faces (top + 4 trimmed sides) should carry a color; cut face has none"
     );
     // Tool faces should have no color (half-space has empty colormap).
-    for f in result.solids.faces().filter(|f| result.is_tool_face(f)) {
+    for f in result.solids.iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)) {
         assert!(
             !colormap_contains(&result.solids, &f.tshape_id()),
             "tool face should have no color"
@@ -107,7 +107,7 @@ fn colored_box_intersect_z_positive_half_space() {
     // ── Top face (normal ≈ +Z) should be red ─────────────────────────────────
     let top = result
         .solids
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .find(|f| f.normal_at_center().dot(DVec3::Z) > 0.9)
         .expect("top face (+Z) should exist in result");
     let top_color = colormap_get(&result.solids, &top.tshape_id())
@@ -123,7 +123,7 @@ fn colored_box_intersect_z_positive_half_space() {
     // from_a mapping ensures the original cyan color is preserved (修正案2).
     let right = result
         .solids
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .find(|f| f.normal_at_center().dot(DVec3::X) > 0.9)
         .expect("right face (+X) should exist in result");
     let right_color = colormap_get(&result.solids, &right.tshape_id())
@@ -141,7 +141,7 @@ fn colored_box_intersect_z_positive_half_space() {
     // Note: the z=0 cut face also has normal ≈ -Z, so we check center.z as well.
     let bottom_in_result = result
         .solids
-        .faces()
+        .iter().flat_map(|s| s.face_iter())
         .any(|f| f.normal_at_center().dot(DVec3::NEG_Z) > 0.9 && f.center_of_mass().z < -0.5);
     assert!(!bottom_in_result, "bottom face (-Z) at z=-1 should be deleted by intersect");
 }
@@ -159,11 +159,11 @@ fn clean_preserves_face_colors() {
     let colored = color_box_faces(&mut cube);
     assert_eq!(colored, 6);
 
-    let cleaned = cube.clean().expect("clean should succeed");
+    let cleaned: Vec<Solid> = cube.iter().map(|s| s.clean().expect("clean should succeed")).collect();
 
     // Every face in the cleaned shape must have a color.
     let mut colored_after = 0usize;
-    for f in cleaned.faces() {
+    for f in cleaned.iter().flat_map(|s| s.face_iter()) {
         assert!(
             colormap_contains(&cleaned, &f.tshape_id()),
             "face {:?} lost its color after clean",
@@ -195,10 +195,10 @@ fn clean_merge_preserves_color() {
     let unioned: Vec<Solid> = cadrum::Boolean::union(&a, &b).expect("union should succeed").into();
 
     // clean() merges coplanar adjacent patches.
-    let cleaned = unioned.clean().expect("clean should succeed");
+    let cleaned: Vec<Solid> = unioned.iter().map(|s| s.clean().expect("clean should succeed")).collect();
 
     // Every face in the cleaned shape must have a color.
-    for f in cleaned.faces() {
+    for f in cleaned.iter().flat_map(|s| s.face_iter()) {
         assert!(
             colormap_contains(&cleaned, &f.tshape_id()),
             "face {:?} lost its color after clean+merge",
@@ -206,7 +206,7 @@ fn clean_merge_preserves_color() {
         );
     }
     // The 2×1×1 slab has 6 faces after clean.
-    let face_count = cleaned.faces().count();
+    let face_count = cleaned.iter().flat_map(|s| s.face_iter()).count();
     assert_eq!(face_count, 6, "cleaned slab should have 6 faces, got {}", face_count);
     assert_eq!(
         colormap_len(&cleaned),

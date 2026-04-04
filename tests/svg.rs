@@ -1,4 +1,4 @@
-use cadrum::{Shape, Solid};
+use cadrum::{SolidTrait, Solid};
 #[cfg(feature = "color")]
 use cadrum::{Color, TShapeId};
 use glam::DVec3;
@@ -10,8 +10,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 #[test]
 fn test_svg_box_isometric() {
 	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
-	let svg = shape
-		.to_svg(dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
+	let svg = cadrum::to_svg(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
 		.unwrap();
 
 	assert!(svg.starts_with("<svg"), "should start with <svg tag");
@@ -32,7 +31,7 @@ fn test_svg_box_isometric() {
 #[test]
 fn test_svg_box_top_down() {
 	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
-	let svg = shape.to_svg(DVec3::Z, 0.1).unwrap();
+	let svg = cadrum::to_svg(&shape, DVec3::Z, 0.1).unwrap();
 
 	assert!(svg.starts_with("<svg"));
 	assert!(svg.contains("<polyline"));
@@ -44,8 +43,7 @@ fn test_svg_box_top_down() {
 #[test]
 fn test_svg_cylinder() {
 	let shape: Vec<Solid> = vec![Solid::cylinder(DVec3::ZERO, 5.0, DVec3::Z, 10.0)];
-	let svg = shape
-		.to_svg(dvec3(1.0, 0.5, 0.3).normalize(), 0.1)
+	let svg = cadrum::to_svg(&shape, dvec3(1.0, 0.5, 0.3).normalize(), 0.1)
 		.unwrap();
 
 	assert!(svg.contains("<polyline"));
@@ -60,8 +58,7 @@ fn test_svg_has_hidden_lines() {
 	let a: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, dvec3(10.0, 10.0, 10.0))];
 	let b: Vec<Solid> = vec![Solid::box_from_corners(dvec3(5.0, 5.0, 0.0), dvec3(15.0, 15.0, 10.0))];
 	let shape: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
-	let svg = shape
-		.to_svg(dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
+	let svg = cadrum::to_svg(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
 		.unwrap();
 
 	assert!(svg.contains("#999"), "should contain hidden line color");
@@ -85,7 +82,7 @@ fn test_svg_colored_box() {
 		(DVec3::NEG_X, Color { r: 1.0, g: 0.0, b: 1.0 }), // left:   magenta
 	];
 	let id_normal: Vec<(TShapeId, DVec3)> = shape
-		.faces()
+		.iter().flat_map(|s| s.face_iter())
 		.map(|f| (f.tshape_id(), f.normal_at_center()))
 		.collect();
 	for (id, normal) in &id_normal {
@@ -97,8 +94,7 @@ fn test_svg_colored_box() {
 		}
 	}
 
-	let svg = shape
-		.to_svg(dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
+	let svg = cadrum::to_svg(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1)
 		.unwrap();
 
 	// Should contain rgb colors from the colormap

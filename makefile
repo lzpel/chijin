@@ -5,7 +5,7 @@ generate: # generate out/markdown from examples, then build out/html
 	ls examples/*.rs | xargs -IX basename X .rs | xargs -IX sh -c "cd $(PATH_DOCS) && cargo run --manifest-path ../../Cargo.toml --example X"
 	./out/bin/mdbook build
 test:
-	cargo test --features color
+	cargo test
 deploy: # --no-verify skips the full OCCT build verification which takes a very long time
 	cargo publish --no-verify
 deploy-docker:

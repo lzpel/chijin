@@ -1,15 +1,15 @@
-use crate::error::Error;
-use crate::ffi;
-use crate::iterators::FaceIterator;
-use crate::shape::{to_compound, decompose};
-use crate::solid::Solid;
-use crate::stream::{RustReader, RustWriter};
+use crate::common::error::Error;
+use super::ffi;
+use super::iterators::FaceIterator;
+use super::shape::{to_compound, decompose};
+use super::solid::Solid;
+use super::stream::{RustReader, RustWriter};
 use std::io::{Read, Write};
 
 #[cfg(feature = "color")]
-use crate::shape::{merge_all_colormaps, TShapeId};
+use super::shape::{merge_all_colormaps, TShapeId};
 #[cfg(feature = "color")]
-use crate::color::Color;
+use crate::common::color::Color;
 
 // ==================== Read ====================
 

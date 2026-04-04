@@ -14,6 +14,8 @@ exclude = ["/figure", "/notes", "/steps"]
 default = ["color"]
 # Enable TShapeId, Rgb, and colormap on Shape for face-level color tracking
 color = []
+# Pure Rust CAD backend (no OCCT dependency)
+pure = []
 
 [dependencies]
 cxx = "1"

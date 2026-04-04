@@ -1,5 +1,5 @@
-use crate::stream::{rust_reader_read, rust_writer_flush, rust_writer_write};
-use crate::stream::{RustReader, RustWriter};
+use super::stream::{rust_reader_read, rust_writer_flush, rust_writer_write};
+use super::stream::{RustReader, RustWriter};
 
 #[cxx::bridge(namespace = "cadrum")]
 mod ffi_bridge {
@@ -17,19 +17,6 @@ mod ffi_bridge {
 	struct ApproxPoints {
 		coords: Vec<f64>, // flat xyz
 		count: u32,
-	}
-
-	// Shared struct for HLR projected edges (SVG export)
-	struct SvgEdgeData {
-		visible_coords: Vec<f64>,  // flat x,y pairs
-		visible_counts: Vec<u32>,  // point count per polyline
-		hidden_coords: Vec<f64>,
-		hidden_counts: Vec<u32>,
-		min_x: f64,
-		min_y: f64,
-		max_x: f64,
-		max_y: f64,
-		success: bool,
 	}
 
 	// Expose Rust stream types to C++ for streambuf callbacks
@@ -261,17 +248,10 @@ mod ffi_bridge {
 			chord: f64,
 		) -> ApproxPoints;
 
-		// ==================== SVG / HLR Projection ====================
-
-		fn project_shape_hlr(
-			shape: &TopoDS_Shape,
-			dx: f64, dy: f64, dz: f64,
-			tolerance: f64,
-		) -> SvgEdgeData;
 	}
 }
 
-// Re-export all bridge items so other modules can use `crate::ffi::TopoDS_Shape` etc.
+// Re-export all bridge items so other modules can use `ffi::TopoDS_Shape` etc.
 pub use ffi_bridge::*;
 
 // cxx opaque types default to `!Send + !Sync`. We mark them `Send` here so

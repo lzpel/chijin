@@ -1,4 +1,4 @@
-/// Errors that can occur during OpenCASCADE operations.
+/// Errors that can occur during CAD operations.
 #[derive(Debug)]
 pub enum Error {
     /// STEP file read failed (invalid format or corrupted data).
@@ -16,19 +16,19 @@ pub enum Error {
     /// Triangulation/meshing failed.
     TriangulationFailed,
 
-    /// Boolean operation (fuse/cut/common) failed in OCCT.
+    /// Boolean operation (fuse/cut/common) failed.
     BooleanOperationFailed,
 
-    /// Shape cleaning (UnifySameDomain) failed in OCCT.
+    /// Shape cleaning (UnifySameDomain) failed.
     CleanFailed,
 
-    /// Face extrusion (MakePrism) failed in OCCT.
+    /// Face extrusion (MakePrism) failed.
     ExtrudeFailed,
 
-    /// Face revolution (MakeRevol) failed in OCCT.
+    /// Face revolution (MakeRevol) failed.
     RevolveFailed,
 
-    /// Helix sweep (MakePipeShell) failed in OCCT.
+    /// Helix sweep (MakePipeShell) failed.
     HelixFailed,
 
     /// Face creation from polygon points failed (non-planar or degenerate points).
@@ -40,7 +40,7 @@ pub enum Error {
     /// Invalid color string (unrecognized name or invalid hex format).
     InvalidColor(String),
 
-    /// Unknown error. OpenCASCADE operation failed for some reason.
+    /// Unknown error.
     Unknown(String),
 }
 

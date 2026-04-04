@@ -1,4 +1,4 @@
-use cadrum::{Boolean, Shape, Solid};
+use cadrum::{Boolean, SolidTrait, Solid};
 use glam::DVec3;
 use std::time::{Duration, Instant};
 
@@ -63,8 +63,8 @@ fn test_subtract_bbox_speedup() {
 	println!("[non-intersecting offset=(15,15,0)]");
 	let (no_bbox, no_bbox_solids) = run_subtract(DVec3::new(15.0, 15.0, 0.0), false);
 	let (bbox,    bbox_solids)    = run_subtract(DVec3::new(15.0, 15.0, 0.0), true);
-	println!("no_bbox_solids.volume(): {}", no_bbox_solids.volume());
-	println!("bbox_solids.volume(): {}", bbox_solids.volume());
+	println!("no_bbox_solids.volume(): {}", no_bbox_solids.iter().map(|s| s.volume()).sum::<f64>());
+	println!("bbox_solids.volume(): {}", bbox_solids.iter().map(|s| s.volume()).sum::<f64>());
 	let speedup = no_bbox.as_secs_f64() / bbox.as_secs_f64();
 	println!("  -> speedup: {speedup:.1}x\n");
 
@@ -73,8 +73,8 @@ fn test_subtract_bbox_speedup() {
 	println!("[partially-intersecting offset=(3,3,0)]");
 	let (no_bbox2, no_bbox2_solids) = run_subtract(DVec3::new(3.0, 3.0, 0.0), false);
 	let (bbox2,    bbox2_solids)    = run_subtract(DVec3::new(3.0, 3.0, 0.0), true);
-	println!("no_bbox2.volume(): {}", no_bbox2_solids.volume());
-	println!("bbox2.volume(): {}", bbox2_solids.volume());
+	println!("no_bbox2.volume(): {}", no_bbox2_solids.iter().map(|s| s.volume()).sum::<f64>());
+	println!("bbox2.volume(): {}", bbox2_solids.iter().map(|s| s.volume()).sum::<f64>());
 	let speedup2 = no_bbox2.as_secs_f64() / bbox2.as_secs_f64();
 	println!("  -> speedup: {speedup2:.1}x\n");
 }

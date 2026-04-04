@@ -1,7 +1,26 @@
-use crate::error::Error;
-use crate::ffi;
-use crate::solid::Solid;
+use crate::common::error::Error;
+use crate::traits::FaceTrait;
+use super::ffi;
+use super::solid::Solid;
 use glam::DVec3;
+
+impl FaceTrait for Face {
+	fn normal_at_center(&self) -> DVec3 {
+		let mut nx = 0.0;
+		let mut ny = 0.0;
+		let mut nz = 0.0;
+		ffi::face_normal_at_center(&self.inner, &mut nx, &mut ny, &mut nz);
+		DVec3::new(nx, ny, nz)
+	}
+
+	fn center_of_mass(&self) -> DVec3 {
+		let mut cx = 0.0;
+		let mut cy = 0.0;
+		let mut cz = 0.0;
+		ffi::face_center_of_mass(&self.inner, &mut cx, &mut cy, &mut cz);
+		DVec3::new(cx, cy, cz)
+	}
+}
 
 impl Face {
 	/// Create a planar face from a polygon defined by 3D points.
@@ -40,8 +59,8 @@ impl Face {
 	///
 	/// Use this to look up or set entries in `Shape::colormap`,
 	/// or to match faces against [`BooleanShape::new_face_ids`].
-	pub fn tshape_id(&self) -> crate::shape::TShapeId {
-		crate::shape::TShapeId(ffi::face_tshape_id(&self.inner))
+	pub fn tshape_id(&self) -> super::shape::TShapeId {
+		super::shape::TShapeId(ffi::face_tshape_id(&self.inner))
 	}
 
 	/// Get the normal vector at the center of mass of this face.

@@ -1,4 +1,4 @@
-use cadrum::{Boolean, Color, Shape, Solid};
+use cadrum::{Boolean, Color, SolidTrait, Solid};
 use glam::DVec3;
 
 fn main() {
@@ -15,28 +15,34 @@ fn main() {
     };
 
     // union: merge both shapes into one — offset X=0
-    let union = Boolean::union(&[make_box()], &[make_cyl()])
+    let union: Vec<Solid> = Boolean::union(&[make_box()], &[make_cyl()])
         .expect("union failed")
         .solids
-        .translate(DVec3::new(0.0, 0.0, 0.0));
+        .into_iter()
+        .map(|s| s.translate(DVec3::new(0.0, 0.0, 0.0)))
+        .collect();
 
     // subtract: box minus cylinder — offset X=40
-    let subtract = Boolean::subtract(&[make_box()], &[make_cyl()])
+    let subtract: Vec<Solid> = Boolean::subtract(&[make_box()], &[make_cyl()])
         .expect("subtract failed")
         .solids
-        .translate(DVec3::new(40.0, 0.0, 0.0));
+        .into_iter()
+        .map(|s| s.translate(DVec3::new(40.0, 0.0, 0.0)))
+        .collect();
 
     // intersect: only the overlapping volume — offset X=80
-    let intersect = Boolean::intersect(&[make_box()], &[make_cyl()])
+    let intersect: Vec<Solid> = Boolean::intersect(&[make_box()], &[make_cyl()])
         .expect("intersect failed")
         .solids
-        .translate(DVec3::new(80.0, 0.0, 0.0));
+        .into_iter()
+        .map(|s| s.translate(DVec3::new(80.0, 0.0, 0.0)))
+        .collect();
 
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
     cadrum::write_step_with_colors(&shapes, &mut f).expect("failed to write STEP");
 
-    let svg = shapes.to_svg(DVec3::new(1.0, 1.0, 2.0), 0.5).expect("failed to export SVG");
+    let svg = cadrum::to_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5).expect("failed to export SVG");
     std::fs::write(format!("{example_name}.svg"), svg.as_bytes()).expect("failed to write SVG");
 }

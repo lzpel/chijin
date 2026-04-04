@@ -1,12 +1,16 @@
-use crate::error::Error;
-use crate::shape::{Boolean, Shape};
-use crate::solid::Solid;
+use crate::common::error::Error;
+use crate::traits::SolidTrait;
+use super::shape::{Boolean, to_compound};
+use super::solid::Solid;
+use super::ffi;
+use super::iterators::FaceIterator;
 use glam::DVec3;
 
 /// Extrude only the tool-side faces of a boolean result by `delta` to create a filler solid.
 fn extrude_tool_faces(result: &Boolean, delta: DVec3) -> Result<Vec<Solid>, Error> {
+	let compound = to_compound(&result.solids);
 	let mut filler: Option<Vec<Solid>> = None;
-	for face in result.solids.faces().filter(|f| result.is_tool_face(f)) {
+	for face in FaceIterator::new(ffi::explore_faces(&compound)).filter(|f| result.is_tool_face(f)) {
 		let solid = face.extrude(delta)?;
 		let extruded: Vec<Solid> = vec![solid];
 		filler = Some(match filler {
@@ -29,10 +33,9 @@ pub fn revolve_section(
 	let half = vec![Solid::half_space(origin, -plane_normal.normalize())];
 	let intersect_result = Boolean::intersect(shape, &half)?;
 
+	let compound = to_compound(&intersect_result.solids);
 	let mut result: Option<Vec<Solid>> = None;
-	for face in intersect_result
-		.solids
-		.faces()
+	for face in FaceIterator::new(ffi::explore_faces(&compound))
 		.filter(|f| intersect_result.is_tool_face(f))
 	{
 		let solid = face.revolve(origin, axis_direction, angle)?;
@@ -58,10 +61,9 @@ pub fn helix_section(
 	let half = vec![Solid::half_space(origin, -plane_normal.normalize())];
 	let intersect_result = Boolean::intersect(shape, &half)?;
 
+	let compound = to_compound(&intersect_result.solids);
 	let mut result: Option<Vec<Solid>> = None;
-	for face in intersect_result
-		.solids
-		.faces()
+	for face in FaceIterator::new(ffi::explore_faces(&compound))
 		.filter(|f| intersect_result.is_tool_face(f))
 	{
 		let solid = face.helix(origin, axis_direction, pitch, turns, false)?;
@@ -80,8 +82,11 @@ pub fn stretch_vector(shape: &[Solid], origin: DVec3, delta: DVec3) -> Result<Ve
 	let half = vec![Solid::half_space(origin, -delta.normalize())];
 
 	let intersect_result = Boolean::intersect(shape, &half)?;
-	let part_pos: Vec<Solid> = Boolean::subtract(shape, &half)?.into();
-	let part_pos = part_pos.translate(delta);
+	let part_pos: Vec<Solid> = Boolean::subtract(shape, &half)?
+		.solids
+		.into_iter()
+		.map(|s| s.translate(delta))
+		.collect();
 
 	let filler = extrude_tool_faces(&intersect_result, delta)?;
 	let part_neg: Vec<Solid> = intersect_result.into();
