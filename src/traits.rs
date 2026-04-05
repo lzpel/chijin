@@ -1,3 +1,19 @@
+//! Backend-independent trait definitions (pub(crate) — not exposed to users).
+//! バックエンド共通のトレイト定義（pub(crate) — ユーザーに非公開）。
+//!
+//! build_delegation.rs parses this file and auto-generates pub inherent methods
+//! on concrete types (Solid, Face, Edge). Trait names must follow the `<Type>Trait`
+//! convention (e.g. SolidTrait → Solid).
+//!
+//! build_delegation.rs がこのファイルをパースして、具象型 (Solid, Face, Edge) の
+//! pub inherent methods を自動生成する。トレイト名は `<Type>Trait` 規則に従うこと。
+//!
+//! Constraints (build_delegation.rs uses a line-based text parser):
+//! パーサー制約（行ベースのテキスト処理）:
+//! - fn signatures must fit on a single line / fn シグネチャは1行に収めること
+//! - lifetime parameters and where clauses are not supported / ライフタイム・where句は非対応
+//! - #[cfg(...)] is recognized only on the immediately preceding line / #[cfg] は直前1行のみ認識
+
 use glam::DVec3;
 use crate::common::mesh::Mesh;
 use crate::common::error::Error;
@@ -28,6 +44,7 @@ pub trait SolidTrait: Sized + Clone {
 	fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Self;
 	fn cone(p: DVec3, dir: DVec3, r1: f64, r2: f64, h: f64) -> Self;
 	fn torus(p: DVec3, dir: DVec3, r1: f64, r2: f64) -> Self;
+	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
 
 	// --- Transforms ---
 	fn translate(self, translation: DVec3) -> Self;

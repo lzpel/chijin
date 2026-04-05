@@ -1,15 +1,20 @@
+mod build_delegation;
+
 use std::env;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 fn main() {
 	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-changed=src/traits.rs");
 
 	if env::var("DOCS_RS").is_ok() {
 		return;
 	}
 
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+	build_delegation::build_delegation(include_str!("src/traits.rs"), &out_dir);
+
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
 	let occt_root = env::var("OCCT_ROOT")

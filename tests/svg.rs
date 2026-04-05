@@ -1,4 +1,4 @@
-use cadrum::{SolidTrait, Solid};
+use cadrum::Solid;
 #[cfg(feature = "color")]
 use cadrum::Color;
 use glam::DVec3;

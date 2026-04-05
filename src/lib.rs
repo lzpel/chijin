@@ -4,18 +4,15 @@
 //!
 //! ## Core Types
 //! - [`Solid`] — a single solid shape (wraps `TopoDS_Shape` / `TopAbs_SOLID`)
-//! - [`SolidTrait`] — backend-independent trait for solid operations
+//! - [`Solid`] has all methods directly (no trait import needed)
 
 pub mod common;
-pub mod traits;
+pub(crate) mod traits;
 pub mod occt;
 #[cfg(feature = "pure")]
 pub mod pure;
 
-// Re-export the unified trait
-pub use traits::SolidTrait;
-
-// Re-export OCCT types at crate root for backward compatibility
+// Re-export OCCT types at crate root
 pub use occt::edge::Edge;
 pub use occt::face::Face;
 pub use occt::iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
@@ -23,6 +20,7 @@ pub use occt::boolean::Boolean;
 pub use occt::solid::Solid;
 
 // Re-export common types
+pub use glam::DVec3;
 pub use common::error::Error;
 pub use common::mesh::{EdgeData, Mesh};
 #[cfg(feature = "color")]
@@ -59,3 +57,6 @@ pub fn to_svg(solids: &[Solid], direction: glam::DVec3, tolerance: f64) -> Resul
     }
     Ok(combined.to_svg(direction))
 }
+
+// Auto-generated inherent method delegations (trait methods → pub fn on concrete types)
+include!(concat!(env!("OUT_DIR"), "/generated_delegation.rs"));

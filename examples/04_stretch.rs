@@ -6,7 +6,7 @@
 //!
 //! Output: stretched.brep (BRep text format)
 
-use cadrum::{SolidTrait, Solid};
+use cadrum::Solid;
 use cadrum::utils::stretch_vector;
 use glam::DVec3;
 

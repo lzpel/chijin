@@ -83,20 +83,6 @@ impl Solid {
 
 	// ==================== Constructors ====================
 
-	/// Create a half-space solid.
-	///
-	/// The solid fills the half-space on the side **where the normal points**.
-	pub fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Solid {
-		let inner = ffi::make_half_space(
-			plane_origin.x, plane_origin.y, plane_origin.z,
-			plane_normal.x, plane_normal.y, plane_normal.z,
-		);
-		Solid::new(
-			inner,
-			#[cfg(feature = "color")]
-			std::collections::HashMap::new(),
-		)
-	}
 
 	/// Returns `true` if this solid wraps a null shape.
 	pub fn is_null(&self) -> bool {
@@ -163,6 +149,18 @@ impl SolidTrait for Solid {
 
 	fn torus(p: DVec3, dir: DVec3, r1: f64, r2: f64) -> Solid {
 		let inner = ffi::make_torus(p.x, p.y, p.z, dir.x, dir.y, dir.z, r1, r2);
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		)
+	}
+
+	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Solid {
+		let inner = ffi::make_half_space(
+			plane_origin.x, plane_origin.y, plane_origin.z,
+			plane_normal.x, plane_normal.y, plane_normal.z,
+		);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]

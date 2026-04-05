@@ -6,7 +6,7 @@
 //!
 //! Output: chijin.step (AP214 STEP, colored), chijin.svg
 
-use cadrum::{Boolean, Face, Color, SolidTrait, Solid};
+use cadrum::{Boolean, Face, Color, Solid};
 use glam::DVec3;
 use std::f64::consts::PI;
 

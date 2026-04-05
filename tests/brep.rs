@@ -4,7 +4,7 @@
 //! then read it back.  If the reader only consumes what it needs
 //! (count-driven parsing) and ignores trailing data, these tests pass.
 
-use cadrum::{Solid, SolidTrait};
+use cadrum::Solid;
 use glam::DVec3;
 
 fn test_box() -> Vec<Solid> {

@@ -1,6 +1,6 @@
 use cadrum::{
 	utils::{helix_section, revolve_section, stretch_vector},
-	Error, SolidTrait, Solid,
+	Error, Solid,
 };
 use glam::DVec3;
 use std::panic::{self, AssertUnwindSafe};

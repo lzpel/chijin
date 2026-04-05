@@ -1,4 +1,4 @@
-use cadrum::{Boolean, Color, SolidTrait, Solid};
+use cadrum::{Boolean, Color, Solid};
 use glam::DVec3;
 
 fn main() {

@@ -5,7 +5,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{SolidTrait, Solid};
+use cadrum::Solid;
 use glam::DVec3;
 use std::fs;
 

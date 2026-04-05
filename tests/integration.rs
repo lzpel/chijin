@@ -3,8 +3,7 @@
 //! These tests correspond to acceptance criteria T-01 through T-08
 //! defined in 仕様書.md §4.3.
 
-use cadrum::{SolidTrait, Solid};
-use cadrum::traits::EdgeTrait;
+use cadrum::Solid;
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
