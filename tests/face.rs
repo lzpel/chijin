@@ -83,7 +83,7 @@ fn test_face_helix_pappus() {
 	let shape: Vec<Solid> = vec![solid];
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_test.step").unwrap();
-	cadrum::write_step(&shape, &mut file).expect("STEP write failed");
+	cadrum::io::write_step(&shape, &mut file).expect("STEP write failed");
 
 	let v: f64 = shape.iter().map(|s| s.volume()).sum();
 	println!("helix volume: {v:.4}");

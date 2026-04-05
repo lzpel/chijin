@@ -23,7 +23,7 @@ fn lambda360box() -> Vec<Solid> {
 		"steps/LAMBDA360-BOX-d6cb2eb2d6e0d802095ea1eda691cf9a3e9bf3394301a0d148f53e55f0f97951.step",
 	)
 	.expect("Failed to open step file");
-	cadrum::read_step(&mut file).expect("Failed to read step file")
+	cadrum::io::read_step(&mut file).expect("Failed to read step file")
 }
 
 /// 形状をX, Y, Zの各軸方向に順番に引き伸ばします。
@@ -106,7 +106,7 @@ fn write_step(shape: &Vec<Solid>, name: &str) {
 	std::fs::create_dir_all("out").unwrap();
 	let path = format!("out/{name}.step");
 	let mut file = std::fs::File::create(&path).unwrap();
-	cadrum::write_step(shape, &mut file).expect("STEP write failed");
+	cadrum::io::write_step(shape, &mut file).expect("STEP write failed");
 	let mesh = shape[0].mesh_with_tolerance(0.1).expect("meshing failed");
 	assert!(!mesh.vertices.is_empty(), "result shape has no vertices");
 	println!(
@@ -147,7 +147,7 @@ fn test_revolve_section_volume() {
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/revolve_section.step").unwrap();
-	cadrum::write_step(&result, &mut file).expect("STEP write failed");
+	cadrum::io::write_step(&result, &mut file).expect("STEP write failed");
 
 	let expected = std::f64::consts::PI * 10.0f64.powi(2) * 10.0;
 	assert!(
@@ -179,7 +179,7 @@ fn test_helix_section_volume() {
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/helix_section.step").unwrap();
-	cadrum::write_step(&result, &mut file).expect("STEP write failed");
+	cadrum::io::write_step(&result, &mut file).expect("STEP write failed");
 
 	let radius = 5.0;
 	let area = 100.0;

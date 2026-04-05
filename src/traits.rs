@@ -17,6 +17,7 @@
 use glam::DVec3;
 use crate::common::mesh::Mesh;
 use crate::common::error::Error;
+use crate::occt::solid::Solid;
 #[cfg(feature = "color")]
 use crate::common::color::Color;
 
@@ -71,4 +72,15 @@ pub trait SolidTrait: Sized + Clone {
 	fn color_paint(self, color: Option<Color>) -> Self;
 	#[cfg(feature = "color")]
 	fn color(&self) -> Option<Color>;
+}
+
+/// Backend-independent I/O trait.
+#[allow(non_camel_case_types)]
+pub trait ioTrait {
+	fn read_step<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
+	fn read_brep_binary<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
+	fn read_brep_text<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
+	fn write_step<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
+	fn write_brep_binary<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
+	fn write_brep_text<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
 }

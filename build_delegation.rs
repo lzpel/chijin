@@ -227,7 +227,12 @@ fn parse_method(line: &str, cfg: Option<String>) -> Option<Method> {
     let rest = &line[fn_idx + 3..];
 
     let paren_open = rest.find('(')?;
-    let name = rest[..paren_open].trim().to_string();
+    let name_with_generics = rest[..paren_open].trim();
+    let name = if let Some(angle) = name_with_generics.find('<') {
+        name_with_generics[..angle].trim().to_string()
+    } else {
+        name_with_generics.to_string()
+    };
 
     let paren_close = rest.rfind(')')?;
     let args_str = &rest[paren_open + 1..paren_close];
@@ -236,7 +241,7 @@ fn parse_method(line: &str, cfg: Option<String>) -> Option<Method> {
     let mut has_self = false;
     let mut args = Vec::new();
 
-    for arg in args_str.split(',') {
+    for arg in split_args(args_str) {
         let arg = arg.trim();
         if arg.is_empty() {
             continue;
@@ -262,4 +267,24 @@ fn parse_method(line: &str, cfg: Option<String>) -> Option<Method> {
         args,
         has_self,
     })
+}
+
+/// Split arguments by ',' while respecting `<>` nesting.
+fn split_args(s: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (i, b) in s.bytes().enumerate() {
+        match b {
+            b'<' => depth += 1,
+            b'>' => { if depth > 0 { depth -= 1; } }
+            b',' if depth == 0 => {
+                result.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    result.push(&s[start..]);
+    result
 }

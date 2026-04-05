@@ -35,7 +35,7 @@ fn main() {
 
     let out_path = format!("{example_name}.brep");
     let mut buf = Vec::new();
-    cadrum::write_brep_text(&result, &mut buf).expect("failed to write BRep");
+    cadrum::io::write_brep_text(&result, &mut buf).expect("failed to write BRep");
     std::fs::write(out_path, &buf).expect("failed to write file");
 
     let mesh = result.iter()

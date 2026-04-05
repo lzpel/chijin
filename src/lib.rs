@@ -15,7 +15,6 @@ pub mod pure;
 // Re-export OCCT types at crate root
 pub use occt::edge::Edge;
 pub use occt::face::Face;
-pub use occt::iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
 pub use occt::boolean::Boolean;
 pub use occt::solid::Solid;
 
@@ -26,16 +25,14 @@ pub use common::mesh::{EdgeData, Mesh};
 #[cfg(feature = "color")]
 pub use common::color::Color;
 
-// I/O functions
-pub use occt::io::{read_step, read_brep_binary, read_brep_text};
-pub use occt::io::{write_step, write_brep_binary, write_brep_text};
+// I/O (cadrum::io::read_step(...) etc.)
+pub use occt::io::io;
 
 // Re-export submodules
 pub use occt::utils;
-pub use occt::stream;
 
 // TODO: モック実装。メッシュ結合を適切な方法に置き換える。
-pub fn to_svg(solids: &[Solid], direction: glam::DVec3, tolerance: f64) -> Result<String, Error> {
+pub fn to_svg<'a>(solids: impl IntoIterator<Item = &'a Solid>, direction: glam::DVec3, tolerance: f64) -> Result<String, Error> {
     let mut combined = Mesh {
         vertices: vec![], uvs: vec![], normals: vec![], indices: vec![],
         face_ids: vec![],

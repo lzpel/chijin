@@ -18,7 +18,7 @@ fn main() {
     let shapes = vec![box_, cylinder, sphere, cone, torus];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
-    cadrum::write_step(&shapes, &mut f).expect("failed to write STEP");
+    cadrum::io::write_step(&shapes, &mut f).expect("failed to write STEP");
 
     let svg = cadrum::to_svg(&shapes, DVec3::new(1.0, 1.0, 1.0), 0.5).expect("failed to export SVG");
     std::fs::write(format!("{example_name}.svg"), svg.as_bytes()).expect("failed to write SVG");

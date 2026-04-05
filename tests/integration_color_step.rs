@@ -15,7 +15,7 @@ const COLORED_BOX_STEP: &str = "steps/colored_box.step";
 fn read_colored_box() -> Vec<Solid> {
     let data = fs::read(COLORED_BOX_STEP)
         .expect("steps/colored_box.step should exist");
-    cadrum::read_step(&mut data.as_slice())
+    cadrum::io::read_step(&mut data.as_slice())
         .expect("read_step should succeed")
 }
 
@@ -28,7 +28,7 @@ fn colormap_len(shape: &[Solid]) -> usize {
 fn write_colored(shape: &[Solid], path: &str) {
     fs::create_dir_all("out").unwrap();
     let mut buf = Vec::new();
-    cadrum::write_step(shape, &mut buf)
+    cadrum::io::write_step(shape, &mut buf)
         .expect("write_step should succeed");
     fs::write(path, &buf).expect("should write output file");
 }
@@ -67,7 +67,7 @@ fn write_then_read_preserves_colors() {
     write_colored(&original, path);
 
     let data = fs::read(path).unwrap();
-    let reloaded = cadrum::read_step(&mut data.as_slice())
+    let reloaded = cadrum::io::read_step(&mut data.as_slice())
         .expect("re-read should succeed");
 
     assert!(

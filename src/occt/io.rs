@@ -1,4 +1,5 @@
 use crate::common::error::Error;
+use crate::traits::ioTrait;
 use super::ffi;
 use super::iterators::FaceIterator;
 use super::compound::Compound;
@@ -9,13 +10,93 @@ use std::io::{Read, Write};
 #[cfg(feature = "color")]
 use crate::common::color::Color;
 
-// ==================== Read ====================
+/// I/O operations backed by OpenCASCADE.
+#[allow(non_camel_case_types)]
+pub struct io;
 
-/// Read a shape from a STEP format stream.
-///
-/// With the `color` feature enabled, face colors are automatically extracted
-/// from the STEP file (XDE / AP214 styled items).
-pub fn read_step<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
+// ==================== Color trailer ====================
+
+#[cfg(feature = "color")]
+const COLOR_TRAILER_MAGIC: &[u8; 4] = b"CDCL";
+
+#[cfg(feature = "color")]
+fn strip_color_trailer(buf: &[u8]) -> (std::collections::HashMap<u64, Color>, usize) {
+    if buf.len() < 8 || &buf[buf.len() - 4..] != COLOR_TRAILER_MAGIC {
+        return (std::collections::HashMap::new(), buf.len());
+    }
+    let entry_count = u32::from_le_bytes(buf[buf.len() - 8..buf.len() - 4].try_into().unwrap()) as usize;
+    let trailer_size = 8 + entry_count * 16;
+    if buf.len() < trailer_size {
+        return (std::collections::HashMap::new(), buf.len());
+    }
+    let brep_len = buf.len() - trailer_size;
+    let entries_start = brep_len;
+    let mut colormap = std::collections::HashMap::new();
+    for i in 0..entry_count {
+        let off = entries_start + i * 16;
+        let idx = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        let r = f32::from_le_bytes(buf[off + 4..off + 8].try_into().unwrap());
+        let g = f32::from_le_bytes(buf[off + 8..off + 12].try_into().unwrap());
+        let b = f32::from_le_bytes(buf[off + 12..off + 16].try_into().unwrap());
+        colormap.insert(idx as u64, Color { r, g, b });
+    }
+    (colormap, brep_len)
+}
+
+#[cfg(feature = "color")]
+fn resolve_color_trailer(
+    inner: &ffi::TopoDS_Shape,
+    index_colormap: &std::collections::HashMap<u64, Color>,
+) -> std::collections::HashMap<u64, Color> {
+    let index_to_id: Vec<u64> = FaceIterator::new(ffi::explore_faces(inner))
+        .map(|f| f.tshape_id())
+        .collect();
+    index_colormap
+        .iter()
+        .filter_map(|(&idx, &color)| {
+            index_to_id.get(idx as usize).map(|&id| (id, color))
+        })
+        .collect()
+}
+
+#[cfg(feature = "color")]
+fn write_color_trailer<W: Write>(
+    compound: &Compound,
+    writer: &mut W,
+) -> Result<(), Error> {
+    let colormap = compound.colormap();
+    if colormap.is_empty() {
+        return Ok(());
+    }
+    let id_to_index: std::collections::HashMap<u64, u32> =
+        FaceIterator::new(ffi::explore_faces(compound.inner()))
+            .enumerate()
+            .map(|(i, f)| (f.tshape_id(), i as u32))
+            .collect();
+    let mut entries: Vec<(u32, f32, f32, f32)> = colormap
+        .iter()
+        .filter_map(|(id, rgb)| {
+            id_to_index.get(id).map(|&idx| (idx, rgb.r, rgb.g, rgb.b))
+        })
+        .collect();
+    entries.sort_by_key(|e| e.0);
+
+    for (idx, r, g, b) in &entries {
+        writer.write_all(&idx.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
+        writer.write_all(&r.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
+        writer.write_all(&g.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
+        writer.write_all(&b.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
+    }
+    writer.write_all(&(entries.len() as u32).to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
+    writer.write_all(COLOR_TRAILER_MAGIC).map_err(|_| Error::BrepWriteFailed)?;
+    Ok(())
+}
+
+// ==================== IoTrait implementation ====================
+
+impl ioTrait for io {
+
+fn read_step<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
     #[cfg(feature = "color")]
     {
         let mut rust_reader = RustReader::from_ref(reader);
@@ -52,7 +133,7 @@ pub fn read_step<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
 ///
 /// With the `color` feature enabled, a color trailer (if present) at the end
 /// of the data is parsed to reconstruct the per-face colormap.
-pub fn read_brep_binary<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
+fn read_brep_binary<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
     #[cfg(feature = "color")]
     {
         let mut buf = Vec::new();
@@ -82,7 +163,7 @@ pub fn read_brep_binary<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
 ///
 /// With the `color` feature enabled, a color trailer (if present) at the end
 /// of the data is parsed to reconstruct the per-face colormap.
-pub fn read_brep_text<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
+fn read_brep_text<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
     #[cfg(feature = "color")]
     {
         let mut buf = Vec::new();
@@ -108,98 +189,13 @@ pub fn read_brep_text<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
     }
 }
 
-
-// ==================== Color trailer ====================
-
-#[cfg(feature = "color")]
-const COLOR_TRAILER_MAGIC: &[u8; 4] = b"CDCL";
-
-/// Strip the color trailer (if present) from the end of `buf`.
-/// Returns the colormap and the byte length of the BRep portion.
-#[cfg(feature = "color")]
-fn strip_color_trailer(buf: &[u8]) -> (std::collections::HashMap<u64, Color>, usize) {
-    // Minimum trailer: 0 entries → 4 (count) + 4 (magic) = 8 bytes
-    if buf.len() < 8 || &buf[buf.len() - 4..] != COLOR_TRAILER_MAGIC {
-        return (std::collections::HashMap::new(), buf.len());
-    }
-    let entry_count = u32::from_le_bytes(buf[buf.len() - 8..buf.len() - 4].try_into().unwrap()) as usize;
-    let trailer_size = 8 + entry_count * 16;
-    if buf.len() < trailer_size {
-        return (std::collections::HashMap::new(), buf.len());
-    }
-    let brep_len = buf.len() - trailer_size;
-    let entries_start = brep_len;
-    let mut colormap = std::collections::HashMap::new();
-    for i in 0..entry_count {
-        let off = entries_start + i * 16;
-        let idx = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-        let r = f32::from_le_bytes(buf[off + 4..off + 8].try_into().unwrap());
-        let g = f32::from_le_bytes(buf[off + 8..off + 12].try_into().unwrap());
-        let b = f32::from_le_bytes(buf[off + 12..off + 16].try_into().unwrap());
-        colormap.insert(idx as u64, Color { r, g, b });
-    }
-    (colormap, brep_len)
-}
-
-/// Build the face-index-keyed colormap from the raw index→Color map
-/// by mapping face traversal order to TShape IDs.
-#[cfg(feature = "color")]
-fn resolve_color_trailer(
-    inner: &ffi::TopoDS_Shape,
-    index_colormap: &std::collections::HashMap<u64, Color>,
-) -> std::collections::HashMap<u64, Color> {
-    let index_to_id: Vec<u64> = FaceIterator::new(ffi::explore_faces(inner))
-        .map(|f| f.tshape_id())
-        .collect();
-    index_colormap
-        .iter()
-        .filter_map(|(&idx, &color)| {
-            index_to_id.get(idx as usize).map(|&id| (id, color))
-        })
-        .collect()
-}
-
-/// Write the color trailer after BRep data.
-#[cfg(feature = "color")]
-fn write_color_trailer<W: Write>(
-    compound: &Compound,
-    writer: &mut W,
-) -> Result<(), Error> {
-    let colormap = compound.colormap();
-    if colormap.is_empty() {
-        return Ok(());
-    }
-    let id_to_index: std::collections::HashMap<u64, u32> =
-        FaceIterator::new(ffi::explore_faces(compound.inner()))
-            .enumerate()
-            .map(|(i, f)| (f.tshape_id(), i as u32))
-            .collect();
-    let mut entries: Vec<(u32, f32, f32, f32)> = colormap
-        .iter()
-        .filter_map(|(id, rgb)| {
-            id_to_index.get(id).map(|&idx| (idx, rgb.r, rgb.g, rgb.b))
-        })
-        .collect();
-    entries.sort_by_key(|e| e.0);
-
-    for (idx, r, g, b) in &entries {
-        writer.write_all(&idx.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
-        writer.write_all(&r.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
-        writer.write_all(&g.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
-        writer.write_all(&b.to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
-    }
-    writer.write_all(&(entries.len() as u32).to_le_bytes()).map_err(|_| Error::BrepWriteFailed)?;
-    writer.write_all(COLOR_TRAILER_MAGIC).map_err(|_| Error::BrepWriteFailed)?;
-    Ok(())
-}
-
 // ==================== Write ====================
 
 /// Write a shape to a STEP format stream.
 ///
 /// With the `color` feature enabled, face colors are automatically embedded
 /// in the STEP file (XDE / AP214 styled items).
-pub fn write_step<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(), Error> {
+fn write_step<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
     let compound = Compound::new(solids);
     #[cfg(feature = "color")]
     {
@@ -230,7 +226,7 @@ pub fn write_step<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(), Erro
 ///
 /// With the `color` feature enabled, a color trailer is appended after the
 /// BRep data so that face colors survive the round-trip.
-pub fn write_brep_binary<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(), Error> {
+fn write_brep_binary<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
     let compound = Compound::new(solids);
     let mut rust_writer = RustWriter::from_ref(writer);
     if !ffi::write_brep_bin_stream(compound.inner(), &mut rust_writer) {
@@ -245,7 +241,7 @@ pub fn write_brep_binary<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(
 ///
 /// With the `color` feature enabled, a color trailer is appended after the
 /// BRep data so that face colors survive the round-trip.
-pub fn write_brep_text<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(), Error> {
+fn write_brep_text<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
     let compound = Compound::new(solids);
     let mut rust_writer = RustWriter::from_ref(writer);
     if !ffi::write_brep_text_stream(compound.inner(), &mut rust_writer) {
@@ -256,3 +252,4 @@ pub fn write_brep_text<W: Write>(solids: &[Solid], writer: &mut W) -> Result<(),
     Ok(())
 }
 
+} // impl IoTrait for Io

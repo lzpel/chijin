@@ -88,7 +88,7 @@ fn main() {
 	// ── Write STEP ───────────────────────────────────────────────────────
 	let step_path = format!("{example_name}.step");
 	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
+	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
 	println!("wrote {}", &step_path);
 
 	// ── Write SVG (isometric view from (1,1,1)) ─────────────────────────
