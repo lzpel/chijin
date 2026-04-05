@@ -7,6 +7,23 @@ use super::edge::Edge;
 use super::iterators::{EdgeIterator, FaceIterator};
 use glam::{DVec2, DVec3};
 
+#[cfg(feature = "color")]
+fn remap_colormap_by_order(
+	old_inner: &ffi::TopoDS_Shape,
+	new_inner: &ffi::TopoDS_Shape,
+	old_colormap: &std::collections::HashMap<u64, crate::common::color::Color>,
+) -> std::collections::HashMap<u64, crate::common::color::Color> {
+	let mut colormap = std::collections::HashMap::new();
+	for (old_face, new_face) in FaceIterator::new(ffi::explore_faces(old_inner))
+		.zip(FaceIterator::new(ffi::explore_faces(new_inner)))
+	{
+		if let Some(&color) = old_colormap.get(&old_face.tshape_id()) {
+			colormap.insert(new_face.tshape_id(), color);
+		}
+	}
+	colormap
+}
+
 /// A single solid topology shape wrapping a `TopoDS_Shape` guaranteed to be `TopAbs_SOLID`.
 ///
 /// `inner` is private to prevent external mutation that could break the solid invariant.
@@ -181,7 +198,7 @@ impl SolidTrait for Solid {
 	fn scaled(&self, center: DVec3, factor: f64) -> Self {
 		let inner = ffi::scale_shape(&self.inner, center.x, center.y, center.z, factor);
 		#[cfg(feature = "color")]
-		let colormap = super::shape::remap_colormap_by_order(&self.inner, &inner, &self.colormap);
+		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
 		Solid::new(inner, #[cfg(feature = "color")] colormap)
 	}
 
@@ -192,7 +209,7 @@ impl SolidTrait for Solid {
 			plane_normal.x, plane_normal.y, plane_normal.z,
 		);
 		#[cfg(feature = "color")]
-		let colormap = super::shape::remap_colormap_by_order(&self.inner, &inner, &self.colormap);
+		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
 		Solid::new(inner, #[cfg(feature = "color")] colormap)
 	}
 
@@ -337,7 +354,7 @@ impl Clone for Solid {
 	fn clone(&self) -> Self {
 		let inner = ffi::deep_copy(&self.inner);
 		#[cfg(feature = "color")]
-		let colormap = super::shape::remap_colormap_by_order(&self.inner, &inner, &self.colormap);
+		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]

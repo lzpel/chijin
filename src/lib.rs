@@ -19,7 +19,7 @@ pub use traits::SolidTrait;
 pub use occt::edge::Edge;
 pub use occt::face::Face;
 pub use occt::iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
-pub use occt::shape::Boolean;
+pub use occt::boolean::Boolean;
 pub use occt::solid::Solid;
 
 // Re-export common types

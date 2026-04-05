@@ -1,6 +1,6 @@
 use crate::common::error::Error;
 use crate::traits::SolidTrait;
-use super::shape::Boolean;
+use super::boolean::Boolean;
 use super::compound::Compound;
 use super::solid::Solid;
 use super::ffi;

@@ -5,6 +5,6 @@ pub mod solid;
 pub mod face;
 pub mod edge;
 pub(crate) mod compound;
-pub mod shape;
+pub mod boolean;
 pub mod io;
 pub mod utils;

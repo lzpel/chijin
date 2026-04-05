@@ -1,29 +1,11 @@
 use crate::common::error::Error;
 use super::ffi;
-use super::iterators::FaceIterator;
 use super::compound::Compound;
 use super::solid::Solid;
 #[cfg(feature = "color")]
-pub(crate) use crate::common::color::Color;
+use crate::common::color::Color;
 
 // ==================== Color helpers ====================
-
-#[cfg(feature = "color")]
-pub(crate) fn remap_colormap_by_order(
-	old_inner: &ffi::TopoDS_Shape,
-	new_inner: &ffi::TopoDS_Shape,
-	old_colormap: &std::collections::HashMap<u64, Color>,
-) -> std::collections::HashMap<u64, Color> {
-	let mut colormap = std::collections::HashMap::new();
-	let old_faces = FaceIterator::new(ffi::explore_faces(old_inner));
-	let new_faces = FaceIterator::new(ffi::explore_faces(new_inner));
-	for (old_face, new_face) in old_faces.zip(new_faces) {
-		if let Some(&color) = old_colormap.get(&old_face.tshape_id()) {
-			colormap.insert(new_face.tshape_id(), color);
-		}
-	}
-	colormap
-}
 
 #[cfg(feature = "color")]
 fn merge_colormaps(
@@ -69,64 +51,57 @@ impl Boolean {
 	// --- Boolean operations ---
 
 	pub fn union<'a>(
-		a: impl IntoIterator<Item = &'a Solid> + Clone,
-		b: impl IntoIterator<Item = &'a Solid> + Clone,
+		a: impl IntoIterator<Item = &'a Solid>,
+		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
-		let ca = Compound::new(a.clone());
-		let cb = Compound::new(b.clone());
+		let ca = Compound::new(a);
+		let cb = Compound::new(b);
 		let r = ffi::boolean_fuse(ca.inner(), cb.inner());
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
-		Self::build_boolean_result(r, a, b)
+		Self::build_boolean_result(r, ca, cb)
 	}
 
 	pub fn subtract<'a>(
-		a: impl IntoIterator<Item = &'a Solid> + Clone,
-		b: impl IntoIterator<Item = &'a Solid> + Clone,
+		a: impl IntoIterator<Item = &'a Solid>,
+		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
-		let ca = Compound::new(a.clone());
-		let cb = Compound::new(b.clone());
+		let ca = Compound::new(a);
+		let cb = Compound::new(b);
 		let r = ffi::boolean_cut(ca.inner(), cb.inner());
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
-		Self::build_boolean_result(r, a, b)
+		Self::build_boolean_result(r, ca, cb)
 	}
 
 	pub fn intersect<'a>(
-		a: impl IntoIterator<Item = &'a Solid> + Clone,
-		b: impl IntoIterator<Item = &'a Solid> + Clone,
+		a: impl IntoIterator<Item = &'a Solid>,
+		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
-		let ca = Compound::new(a.clone());
-		let cb = Compound::new(b.clone());
+		let ca = Compound::new(a);
+		let cb = Compound::new(b);
 		let r = ffi::boolean_common(ca.inner(), cb.inner());
 		if r.is_null() {
 			return Err(Error::BooleanOperationFailed);
 		}
-		Self::build_boolean_result(r, a, b)
+		Self::build_boolean_result(r, ca, cb)
 	}
 
 	// ==================== Boolean helper ====================
 
-	fn build_boolean_result<'a>(
+	fn build_boolean_result(
 		r: cxx::UniquePtr<ffi::BooleanShape>,
-		self_solids: impl IntoIterator<Item = &'a Solid>,
-		other_solids: impl IntoIterator<Item = &'a Solid>,
+		ca: Compound,
+		cb: Compound,
 	) -> Result<Boolean, Error> {
 		let from_a = ffi::boolean_shape_from_a(&r);
 		let from_b = ffi::boolean_shape_from_b(&r);
 		let inner = ffi::boolean_shape_shape(&r);
 
 		#[cfg(feature = "color")]
-		let colormap = {
-			use super::compound::merge_all_colormaps;
-			let colormap_a = merge_all_colormaps(self_solids);
-			let colormap_b = merge_all_colormaps(other_solids);
-			merge_colormaps(&from_a, &from_b, &colormap_a, &colormap_b)
-		};
-		#[cfg(not(feature = "color"))]
-		let _ = (self_solids, other_solids);
+		let colormap = merge_colormaps(&from_a, &from_b, ca.colormap(), cb.colormap());
 
 		let compound = Compound::from_raw(
 			inner,

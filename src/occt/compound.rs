@@ -70,13 +70,3 @@ impl Compound {
     }
 
 }
-
-/// Merge colormaps from all solids into one.
-#[cfg(feature = "color")]
-pub(crate) fn merge_all_colormaps<'a>(solids: impl IntoIterator<Item = &'a Solid>) -> std::collections::HashMap<u64, Color> {
-    let mut merged = std::collections::HashMap::new();
-    for s in solids {
-        merged.extend(s.colormap().iter().map(|(&k, &v)| (k, v)));
-    }
-    merged
-}
