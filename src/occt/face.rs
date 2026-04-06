@@ -1,7 +1,7 @@
-use crate::common::error::Error;
-use crate::traits::FaceTrait;
 use super::ffi;
 use super::solid::Solid;
+use crate::common::error::Error;
+use crate::traits::FaceTrait;
 use glam::DVec3;
 
 impl FaceTrait for Face {
@@ -92,11 +92,20 @@ impl Face {
 	/// # Errors
 	/// Returns [`Error::RevolveFailed`] if the operation fails (e.g. the face
 	/// crosses the rotation axis, causing self-intersection).
-	pub fn revolve(&self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Result<Solid, Error> {
+	pub fn revolve(
+		&self,
+		axis_origin: DVec3,
+		axis_direction: DVec3,
+		angle: f64,
+	) -> Result<Solid, Error> {
 		let shape = ffi::face_revolve(
 			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
+			axis_origin.x,
+			axis_origin.y,
+			axis_origin.z,
+			axis_direction.x,
+			axis_direction.y,
+			axis_direction.z,
 			angle,
 		);
 		if shape.is_null() {
@@ -132,9 +141,15 @@ impl Face {
 	) -> Result<Solid, Error> {
 		let shape = ffi::face_helix(
 			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
-			pitch, turns, align_to_spine,
+			axis_origin.x,
+			axis_origin.y,
+			axis_origin.z,
+			axis_direction.x,
+			axis_direction.y,
+			axis_direction.z,
+			pitch,
+			turns,
+			align_to_spine,
 		);
 		if shape.is_null() {
 			return Err(Error::HelixFailed);

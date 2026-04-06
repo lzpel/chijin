@@ -1,7 +1,7 @@
-use glam::{DVec2, DVec3};
-use std::collections::HashMap;
 #[cfg(feature = "color")]
 use super::color::Color;
+use glam::{DVec2, DVec3};
+use std::collections::HashMap;
 
 /// 3D edge polylines for SVG rendering.
 ///
@@ -19,21 +19,21 @@ pub struct EdgeData {
 /// `indices` contains triangle indices (groups of 3).
 #[derive(Debug, Clone)]
 pub struct Mesh {
-    /// Vertex positions in 3D space.
-    pub vertices: Vec<DVec3>,
-    /// UV coordinates, normalized to [0, 1] per face.
-    pub uvs: Vec<DVec2>,
-    /// Vertex normals.
-    pub normals: Vec<DVec3>,
-    /// Triangle indices (groups of 3, referencing into `vertices`).
-    pub indices: Vec<usize>,
-    /// Per-triangle face ID. Length equals `indices.len() / 3`.
-    pub face_ids: Vec<u64>,
-    /// Per-face color map (face_id → Color).
-    #[cfg(feature = "color")]
-    pub colormap: HashMap<u64, Color>,
-    /// Topological edge polylines for SVG rendering.
-    pub edges: EdgeData,
+	/// Vertex positions in 3D space.
+	pub vertices: Vec<DVec3>,
+	/// UV coordinates, normalized to [0, 1] per face.
+	pub uvs: Vec<DVec2>,
+	/// Vertex normals.
+	pub normals: Vec<DVec3>,
+	/// Triangle indices (groups of 3, referencing into `vertices`).
+	pub indices: Vec<usize>,
+	/// Per-triangle face ID. Length equals `indices.len() / 3`.
+	pub face_ids: Vec<u64>,
+	/// Per-face color map (face_id → Color).
+	#[cfg(feature = "color")]
+	pub colormap: HashMap<u64, Color>,
+	/// Topological edge polylines for SVG rendering.
+	pub edges: EdgeData,
 }
 
 // ==================== SVG ====================
@@ -63,7 +63,10 @@ impl Mesh {
 		let silhouette_edges = detect_silhouette_edges(self, dir);
 
 		// 4. Combine topological edges + silhouette edges
-		let all_edges: Vec<&Vec<DVec3>> = self.edges.polylines.iter()
+		let all_edges: Vec<&Vec<DVec3>> = self
+			.edges
+			.polylines
+			.iter()
 			.chain(silhouette_edges.iter())
 			.collect();
 
@@ -120,12 +123,7 @@ fn projection_basis(dir: DVec3) -> (DVec3, DVec3) {
 	(x_dir, y_dir)
 }
 
-fn project_and_sort_triangles(
-	mesh: &Mesh,
-	dir: DVec3,
-	u: DVec3,
-	v: DVec3,
-) -> Vec<SvgTriangle> {
+fn project_and_sort_triangles(mesh: &Mesh, dir: DVec3, u: DVec3, v: DVec3) -> Vec<SvgTriangle> {
 	let tri_count = mesh.indices.len() / 3;
 	let mut triangles = Vec::with_capacity(tri_count);
 
@@ -409,20 +407,36 @@ fn build_svg(
 
 	for tri in triangles {
 		for &(x, y) in &tri.pts {
-			if x < min_x { min_x = x; }
-			if x > max_x { max_x = x; }
-			if y < min_y { min_y = y; }
-			if y > max_y { max_y = y; }
+			if x < min_x {
+				min_x = x;
+			}
+			if x > max_x {
+				max_x = x;
+			}
+			if y < min_y {
+				min_y = y;
+			}
+			if y > max_y {
+				max_y = y;
+			}
 		}
 	}
 
 	for lines in [visible_lines, hidden_lines] {
 		for line in lines {
 			for &(x, y) in line {
-				if x < min_x { min_x = x; }
-				if x > max_x { max_x = x; }
-				if y < min_y { min_y = y; }
-				if y > max_y { max_y = y; }
+				if x < min_x {
+					min_x = x;
+				}
+				if x > max_x {
+					max_x = x;
+				}
+				if y < min_y {
+					min_y = y;
+				}
+				if y > max_y {
+					max_y = y;
+				}
 			}
 		}
 	}

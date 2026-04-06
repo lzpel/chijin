@@ -1,5 +1,5 @@
-use glam::DVec3;
 use crate::traits::FaceTrait;
+use glam::DVec3;
 
 /// A face in the pure Rust backend.
 ///

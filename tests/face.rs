@@ -7,7 +7,10 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 #[test]
 fn test_face_iteration() {
-	let shape: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
+	let shape: Vec<Solid> = vec![Solid::box_from_corners(
+		dvec3(0.0, 0.0, 0.0),
+		dvec3(10.0, 10.0, 10.0),
+	)];
 	let faces: Vec<_> = shape.iter().flat_map(|s| s.face_iter()).collect();
 	assert_eq!(faces.len(), 6);
 	for face in &faces {
@@ -89,13 +92,14 @@ fn test_face_helix_pappus() {
 	println!("helix volume: {v:.4}");
 
 	let radius = 5.0;
-	let path_length =
-		((2.0 * std::f64::consts::PI * radius).powi(2) + 10.0f64.powi(2)).sqrt();
+	let path_length = ((2.0 * std::f64::consts::PI * radius).powi(2) + 10.0f64.powi(2)).sqrt();
 	let expected = 1.0 * path_length;
 	let tolerance = expected * 0.10;
 
-	println!("helix volume: {v:.4}, expected (Pappus): {expected:.4}, diff: {:.1}%",
-		(v - expected).abs() / expected * 100.0);
+	println!(
+		"helix volume: {v:.4}, expected (Pappus): {expected:.4}, diff: {:.1}%",
+		(v - expected).abs() / expected * 100.0
+	);
 	assert!(
 		(v - expected).abs() < tolerance,
 		"Pappus volume check: expected ≈ {expected:.2}, got {v:.2}"

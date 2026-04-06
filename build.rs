@@ -311,7 +311,6 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	occt_root.join("lib")
 }
 
-
 /// Patch two OCCT source files that pull in Graphic3d_* (TKService) symbols even
 /// when BUILD_MODULE_Visualization=OFF:
 ///
@@ -325,7 +324,10 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 ///    The only caller was FillAspect(), which is now empty.
 fn patch_occt_sources(source_dir: &Path) {
 	// Stub method bodies only: keep #includes and signatures, empty the bodies.
-	stub_out_methods(&source_dir.join("src/XCAFDoc/XCAFDoc_VisMaterial.cxx"), true);
+	stub_out_methods(
+		&source_dir.join("src/XCAFDoc/XCAFDoc_VisMaterial.cxx"),
+		true,
+	);
 	// Empty the entire file: the initializer list references the base class, so
 	// body stubs alone cannot cut the TKService dependency.
 	stub_out_methods(&source_dir.join("src/XCAFPrs/XCAFPrs_Texture.cxx"), false);

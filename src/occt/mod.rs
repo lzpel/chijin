@@ -1,10 +1,10 @@
+pub mod boolean;
+pub(crate) mod compound;
+pub mod edge;
+pub mod face;
 pub(crate) mod ffi;
-pub mod stream;
+pub mod io;
 pub(crate) mod iterators;
 pub mod solid;
-pub mod face;
-pub mod edge;
-pub(crate) mod compound;
-pub mod boolean;
-pub mod io;
+pub mod stream;
 pub mod utils;

@@ -5,11 +5,11 @@ use super::stream::{RustReader, RustWriter};
 mod ffi_bridge {
 	// Shared struct for mesh data returned from C++
 	struct MeshData {
-		vertices: Vec<f64>,         // flat xyz
-		uvs: Vec<f64>,              // flat uv
-		normals: Vec<f64>,          // flat xyz
+		vertices: Vec<f64>, // flat xyz
+		uvs: Vec<f64>,      // flat uv
+		normals: Vec<f64>,  // flat xyz
 		indices: Vec<u32>,
-		face_tshape_ids: Vec<u64>,  // per-triangle TShape* address
+		face_tshape_ids: Vec<u64>, // per-triangle TShape* address
 		success: bool,
 	}
 
@@ -169,21 +169,31 @@ mod ffi_bridge {
 
 		fn rotate_shape(
 			shape: &TopoDS_Shape,
-			ox: f64, oy: f64, oz: f64,
-			dx: f64, dy: f64, dz: f64,
+			ox: f64,
+			oy: f64,
+			oz: f64,
+			dx: f64,
+			dy: f64,
+			dz: f64,
 			angle: f64,
 		) -> UniquePtr<TopoDS_Shape>;
 
 		fn scale_shape(
 			shape: &TopoDS_Shape,
-			cx: f64, cy: f64, cz: f64,
+			cx: f64,
+			cy: f64,
+			cz: f64,
 			factor: f64,
 		) -> UniquePtr<TopoDS_Shape>;
 
 		fn mirror_shape(
 			shape: &TopoDS_Shape,
-			ox: f64, oy: f64, oz: f64,
-			nx: f64, ny: f64, nz: f64,
+			ox: f64,
+			oy: f64,
+			oz: f64,
+			nx: f64,
+			ny: f64,
+			nz: f64,
 		) -> UniquePtr<TopoDS_Shape>;
 
 		fn shape_is_null(shape: &TopoDS_Shape) -> bool;
@@ -193,8 +203,12 @@ mod ffi_bridge {
 		fn shape_contains_point(shape: &TopoDS_Shape, x: f64, y: f64, z: f64) -> bool;
 		fn shape_bounding_box(
 			shape: &TopoDS_Shape,
-			xmin: &mut f64, ymin: &mut f64, zmin: &mut f64,
-			xmax: &mut f64, ymax: &mut f64, zmax: &mut f64,
+			xmin: &mut f64,
+			ymin: &mut f64,
+			zmin: &mut f64,
+			xmax: &mut f64,
+			ymax: &mut f64,
+			zmax: &mut f64,
 		);
 
 		// ==================== Compound Decompose/Compose ====================
@@ -227,15 +241,24 @@ mod ffi_bridge {
 		fn face_extrude(face: &TopoDS_Face, dx: f64, dy: f64, dz: f64) -> UniquePtr<TopoDS_Shape>;
 		fn face_revolve(
 			face: &TopoDS_Face,
-			ox: f64, oy: f64, oz: f64,
-			dx: f64, dy: f64, dz: f64,
+			ox: f64,
+			oy: f64,
+			oz: f64,
+			dx: f64,
+			dy: f64,
+			dz: f64,
 			angle: f64,
 		) -> UniquePtr<TopoDS_Shape>;
 		fn face_helix(
 			face: &TopoDS_Face,
-			ox: f64, oy: f64, oz: f64,
-			dx: f64, dy: f64, dz: f64,
-			pitch: f64, turns: f64,
+			ox: f64,
+			oy: f64,
+			oz: f64,
+			dx: f64,
+			dy: f64,
+			dz: f64,
+			pitch: f64,
+			turns: f64,
 			align_to_spine: bool,
 		) -> UniquePtr<TopoDS_Shape>;
 

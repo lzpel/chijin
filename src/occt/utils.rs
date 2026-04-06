@@ -1,12 +1,17 @@
-use crate::common::error::Error;
 use super::boolean::Boolean;
 use super::solid::Solid;
+use crate::common::error::Error;
 use glam::DVec3;
 
 /// Extrude only the tool-side faces of a boolean result by `delta` to create a filler solid.
 fn extrude_tool_faces(result: &Boolean, delta: DVec3) -> Result<Vec<Solid>, Error> {
 	let mut filler: Option<Vec<Solid>> = None;
-	for face in result.solids.iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)) {
+	for face in result
+		.solids()
+		.iter()
+		.flat_map(|s| s.face_iter())
+		.filter(|f| result.is_tool_face(f))
+	{
 		let solid = face.extrude(delta)?;
 		let extruded: Vec<Solid> = vec![solid];
 		filler = Some(match filler {
@@ -30,7 +35,10 @@ pub fn revolve_section(
 	let intersect_result = Boolean::intersect(shape, &half)?;
 
 	let mut result: Option<Vec<Solid>> = None;
-	for face in intersect_result.solids.iter().flat_map(|s| s.face_iter())
+	for face in intersect_result
+		.solids()
+		.iter()
+		.flat_map(|s| s.face_iter())
 		.filter(|f| intersect_result.is_tool_face(f))
 	{
 		let solid = face.revolve(origin, axis_direction, angle)?;
@@ -57,7 +65,10 @@ pub fn helix_section(
 	let intersect_result = Boolean::intersect(shape, &half)?;
 
 	let mut result: Option<Vec<Solid>> = None;
-	for face in intersect_result.solids.iter().flat_map(|s| s.face_iter())
+	for face in intersect_result
+		.solids()
+		.iter()
+		.flat_map(|s| s.face_iter())
 		.filter(|f| intersect_result.is_tool_face(f))
 	{
 		let solid = face.helix(origin, axis_direction, pitch, turns, false)?;
@@ -77,7 +88,7 @@ pub fn stretch_vector(shape: &[Solid], origin: DVec3, delta: DVec3) -> Result<Ve
 
 	let intersect_result = Boolean::intersect(shape, &half)?;
 	let part_pos: Vec<Solid> = Boolean::subtract(shape, &half)?
-		.solids
+		.into_solids()
 		.into_iter()
 		.map(|s| s.translate(delta))
 		.collect();

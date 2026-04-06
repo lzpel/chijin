@@ -1,5 +1,5 @@
-use glam::DVec3;
 use crate::traits::EdgeTrait;
+use glam::DVec3;
 
 /// An edge in the pure Rust backend.
 ///

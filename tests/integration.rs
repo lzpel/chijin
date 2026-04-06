@@ -11,15 +11,24 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 }
 
 fn test_box() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
+	vec![Solid::box_from_corners(
+		dvec3(0.0, 0.0, 0.0),
+		dvec3(10.0, 10.0, 10.0),
+	)]
 }
 
 fn test_box_2() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))]
+	vec![Solid::box_from_corners(
+		dvec3(5.0, 5.0, 5.0),
+		dvec3(15.0, 15.0, 15.0),
+	)]
 }
 
 fn test_box_3() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(8.0, 8.0, 8.0))]
+	vec![Solid::box_from_corners(
+		dvec3(3.0, 3.0, 3.0),
+		dvec3(8.0, 8.0, 8.0),
+	)]
 }
 
 /// Helper: write shape to BRep binary bytes
@@ -77,7 +86,7 @@ fn test_t01_chained_boolean_drops() {
 	let b = test_box_2();
 	let c = test_box_3();
 	let r1 = cadrum::Boolean::union(&a, &b).unwrap();
-	let r2 = cadrum::Boolean::subtract(&r1.solids, &c).unwrap();
+	let r2 = cadrum::Boolean::subtract(r1.solids(), &c).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -109,7 +118,12 @@ fn test_t03_mesh_normals_count() {
 
 #[test]
 fn test_t04_approximation_tolerance() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
+	let cyl: Vec<Solid> = vec![Solid::cylinder(
+		dvec3(0.0, 0.0, 0.0),
+		10.0,
+		dvec3(0.0, 0.0, 1.0),
+		20.0,
+	)];
 	let mut has_difference = false;
 	for edge in cyl.iter().flat_map(|s| s.edges()) {
 		let coarse = edge.approximation_segments(1.0).len();
@@ -188,8 +202,14 @@ fn test_t08_boolean_returns_shape() {
 
 #[test]
 fn test_hollow_cube_write_step() {
-	let outer: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-10.0, -10.0, -10.0), dvec3(10.0, 10.0, 10.0))];
-	let inner: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-5.0, -5.0, -5.0), dvec3(5.0, 5.0, 5.0))];
+	let outer: Vec<Solid> = vec![Solid::box_from_corners(
+		dvec3(-10.0, -10.0, -10.0),
+		dvec3(10.0, 10.0, 10.0),
+	)];
+	let inner: Vec<Solid> = vec![Solid::box_from_corners(
+		dvec3(-5.0, -5.0, -5.0),
+		dvec3(5.0, 5.0, 5.0),
+	)];
 	let hollow_cube: Vec<Solid> = cadrum::Boolean::subtract(&outer, &inner).unwrap().into();
 
 	std::fs::create_dir_all("out").unwrap();
@@ -222,14 +242,22 @@ fn test_edge_iteration() {
 #[test]
 fn test_half_space_intersect() {
 	let shape = test_box();
-	let half: Vec<Solid> = vec![Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
+	let half: Vec<Solid> = vec![Solid::half_space(
+		dvec3(5.0, 0.0, 0.0),
+		dvec3(1.0, 0.0, 0.0),
+	)];
 	let result = cadrum::Boolean::intersect(&shape, &half).unwrap();
-	assert!(!result.solids.iter().all(|s| s.is_null()));
+	assert!(!result.solids().iter().all(|s| s.is_null()));
 }
 
 #[test]
 fn test_cylinder() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
+	let cyl: Vec<Solid> = vec![Solid::cylinder(
+		dvec3(0.0, 0.0, 0.0),
+		5.0,
+		dvec3(0.0, 0.0, 1.0),
+		10.0,
+	)];
 	let expected = std::f64::consts::PI * 5.0f64.powi(2) * 10.0;
 	assert!((cyl.iter().map(|s| s.volume()).sum::<f64>() - expected).abs() < 1e-6);
 }

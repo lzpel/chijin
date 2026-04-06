@@ -54,7 +54,10 @@ fn stretch(
 		after_y.clone()
 	};
 
-	after_z.into_iter().map(|s| s.clean()).collect::<Result<Vec<_>, _>>()
+	after_z
+		.into_iter()
+		.map(|s| s.clean())
+		.collect::<Result<Vec<_>, _>>()
 }
 
 /// 形状の引き伸ばし処理をパニックキャッチ付きで安全に実行し、結果を返します。
@@ -212,8 +215,9 @@ fn diagnose_new_faces() {
 	println!(
 		"  intersect result: tool_face count={}",
 		r_half
-			.solids
-			.iter().flat_map(|s| s.face_iter())
+			.solids()
+			.iter()
+			.flat_map(|s| s.face_iter())
 			.filter(|f| r_half.is_tool_face(f))
 			.count()
 	);
@@ -226,14 +230,16 @@ fn diagnose_new_faces() {
 	println!(
 		"  intersect result: tool_face count={}",
 		r_box
-			.solids
-			.iter().flat_map(|s| s.face_iter())
+			.solids()
+			.iter()
+			.flat_map(|s| s.face_iter())
 			.filter(|f| r_box.is_tool_face(f))
 			.count()
 	);
 	for (i, face) in r_box
-		.solids
-		.iter().flat_map(|s| s.face_iter())
+		.solids()
+		.iter()
+		.flat_map(|s| s.face_iter())
 		.filter(|f| r_box.is_tool_face(f))
 		.enumerate()
 	{

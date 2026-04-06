@@ -1,9 +1,9 @@
+use super::edge::Edge;
+use super::face::Face;
+use super::ffi;
+use super::iterators::{EdgeIterator, FaceIterator};
 use crate::common::error::Error;
 use crate::traits::SolidTrait;
-use super::ffi;
-use super::face::Face;
-use super::edge::Edge;
-use super::iterators::{EdgeIterator, FaceIterator};
 use glam::DVec3;
 
 #[cfg(feature = "color")]
@@ -40,8 +40,10 @@ impl Solid {
 	/// Panics if `inner` is not `TopAbs_SOLID` (and not null).
 	pub(crate) fn new(
 		inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
-		#[cfg(feature = "color")]
-		colormap: std::collections::HashMap<u64, crate::common::color::Color>,
+		#[cfg(feature = "color")] colormap: std::collections::HashMap<
+			u64,
+			crate::common::color::Color,
+		>,
 	) -> Self {
 		debug_assert!(
 			ffi::shape_is_null(&inner) || ffi::shape_is_solid(&inner),
@@ -76,12 +78,13 @@ impl Solid {
 
 	/// Mutable access to the per-face colormap.
 	#[cfg(feature = "color")]
-	pub fn colormap_mut(&mut self) -> &mut std::collections::HashMap<u64, crate::common::color::Color> {
+	pub fn colormap_mut(
+		&mut self,
+	) -> &mut std::collections::HashMap<u64, crate::common::color::Color> {
 		&mut self.colormap
 	}
 
 	// ==================== Constructors ====================
-
 
 	/// Returns `true` if this solid wraps a null shape.
 	pub fn is_null(&self) -> bool {
@@ -102,15 +105,11 @@ impl Solid {
 }
 
 impl SolidTrait for Solid {
-	type Face = Face;
-	type Edge = Edge;
-
 	// ==================== Constructors ====================
 
 	fn box_from_corners(corner_1: DVec3, corner_2: DVec3) -> Solid {
 		let inner = ffi::make_box(
-			corner_1.x, corner_1.y, corner_1.z,
-			corner_2.x, corner_2.y, corner_2.z,
+			corner_1.x, corner_1.y, corner_1.z, corner_2.x, corner_2.y, corner_2.z,
 		);
 		Solid::new(
 			inner,
@@ -157,8 +156,12 @@ impl SolidTrait for Solid {
 
 	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Solid {
 		let inner = ffi::make_half_space(
-			plane_origin.x, plane_origin.y, plane_origin.z,
-			plane_normal.x, plane_normal.y, plane_normal.z,
+			plane_origin.x,
+			plane_origin.y,
+			plane_origin.z,
+			plane_normal.x,
+			plane_normal.y,
+			plane_normal.z,
 		);
 		Solid::new(
 			inner,
@@ -181,8 +184,12 @@ impl SolidTrait for Solid {
 	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self {
 		let inner = ffi::rotate_shape(
 			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
+			axis_origin.x,
+			axis_origin.y,
+			axis_origin.z,
+			axis_direction.x,
+			axis_direction.y,
+			axis_direction.z,
 			angle,
 		);
 		Solid {
@@ -196,18 +203,30 @@ impl SolidTrait for Solid {
 		let inner = ffi::scale_shape(&self.inner, center.x, center.y, center.z, factor);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-		Solid::new(inner, #[cfg(feature = "color")] colormap)
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			colormap,
+		)
 	}
 
 	fn mirrored(&self, plane_origin: DVec3, plane_normal: DVec3) -> Self {
 		let inner = ffi::mirror_shape(
 			&self.inner,
-			plane_origin.x, plane_origin.y, plane_origin.z,
-			plane_normal.x, plane_normal.y, plane_normal.z,
+			plane_origin.x,
+			plane_origin.y,
+			plane_origin.z,
+			plane_normal.x,
+			plane_normal.y,
+			plane_normal.z,
 		);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
-		Solid::new(inner, #[cfg(feature = "color")] colormap)
+		Solid::new(
+			inner,
+			#[cfg(feature = "color")]
+			colormap,
+		)
 	}
 
 	fn clean(&self) -> Result<Self, Error> {
@@ -259,7 +278,15 @@ impl SolidTrait for Solid {
 	fn bounding_box(&self) -> [DVec3; 2] {
 		let (mut xmin, mut ymin, mut zmin) = (0.0_f64, 0.0_f64, 0.0_f64);
 		let (mut xmax, mut ymax, mut zmax) = (0.0_f64, 0.0_f64, 0.0_f64);
-		ffi::shape_bounding_box(&self.inner, &mut xmin, &mut ymin, &mut zmin, &mut xmax, &mut ymax, &mut zmax);
+		ffi::shape_bounding_box(
+			&self.inner,
+			&mut xmin,
+			&mut ymin,
+			&mut zmin,
+			&mut xmax,
+			&mut ymax,
+			&mut zmax,
+		);
 		[DVec3::new(xmin, ymin, zmin), DVec3::new(xmax, ymax, zmax)]
 	}
 
@@ -272,7 +299,6 @@ impl SolidTrait for Solid {
 	fn edges(&self) -> Vec<Edge> {
 		EdgeIterator::new(ffi::explore_edges(&self.inner)).collect()
 	}
-
 
 	// ==================== Color ====================
 
@@ -289,9 +315,10 @@ impl SolidTrait for Solid {
 
 	#[cfg(feature = "color")]
 	fn color(&self) -> Option<crate::common::color::Color> {
-		let colors: Vec<crate::common::color::Color> = FaceIterator::new(ffi::explore_faces(&self.inner))
-			.filter_map(|f| self.colormap.get(&f.tshape_id()).copied())
-			.collect();
+		let colors: Vec<crate::common::color::Color> =
+			FaceIterator::new(ffi::explore_faces(&self.inner))
+				.filter_map(|f| self.colormap.get(&f.tshape_id()).copied())
+				.collect();
 		if colors.is_empty() {
 			None
 		} else {

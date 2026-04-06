@@ -7,26 +7,30 @@
 //! - [`Solid`] has all methods directly (no trait import needed)
 
 pub mod common;
-pub(crate) mod traits;
+#[cfg(not(feature = "pure"))]
 pub mod occt;
 #[cfg(feature = "pure")]
 pub mod pure;
+pub(crate) mod traits;
 
-// Re-export OCCT types at crate root
-pub use occt::edge::Edge;
-pub use occt::face::Face;
+// Re-export backend types at crate root
+#[cfg(not(feature = "pure"))]
 pub use occt::boolean::Boolean;
+#[cfg(not(feature = "pure"))]
+pub use occt::edge::Edge;
+#[cfg(not(feature = "pure"))]
+pub use occt::face::Face;
+#[cfg(not(feature = "pure"))]
+use occt::io::Io; // private: used by generated delegation, not exposed to users
+#[cfg(not(feature = "pure"))]
 pub use occt::solid::Solid;
 
 // Re-export common types
-pub use glam::DVec3;
-pub use common::error::Error;
-pub use common::mesh::{EdgeData, Mesh};
 #[cfg(feature = "color")]
 pub use common::color::Color;
-
-// I/O (cadrum::io::read_step(...) etc.)
-pub use occt::io::io;
+pub use common::error::Error;
+pub use common::mesh::{EdgeData, Mesh};
+pub use glam::DVec3;
 
 // Re-export submodules
 pub use occt::utils;

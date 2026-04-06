@@ -1,9 +1,10 @@
-use crate::common::error::Error;
-use super::ffi;
 use super::compound::Compound;
+use super::ffi;
 use super::solid::Solid;
 #[cfg(feature = "color")]
 use crate::common::color::Color;
+use crate::common::error::Error;
+use crate::traits::BooleanTrait;
 
 // ==================== Color helpers ====================
 
@@ -32,25 +33,13 @@ fn merge_colormaps(
 
 /// Result of a boolean operation.
 pub struct Boolean {
-	pub solids: Vec<Solid>,
+	solids: Vec<Solid>,
 	from_a: Vec<u64>,
 	from_b: Vec<u64>,
 }
 
-impl Boolean {
-	/// Returns `true` if `face` originated from the `other` (tool) operand.
-	pub fn is_tool_face(&self, face: &crate::occt::face::Face) -> bool {
-		self.from_b.contains(&face.tshape_id())
-	}
-
-	/// Returns `true` if `face` originated from `self` (the base shape operand).
-	pub fn is_shape_face(&self, face: &crate::occt::face::Face) -> bool {
-		self.from_a.contains(&face.tshape_id())
-	}
-
-	// --- Boolean operations ---
-
-	pub fn union<'a>(
+impl BooleanTrait for Boolean {
+	fn union<'a>(
 		a: impl IntoIterator<Item = &'a Solid>,
 		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
@@ -63,7 +52,7 @@ impl Boolean {
 		Self::build_boolean_result(r, ca, cb)
 	}
 
-	pub fn subtract<'a>(
+	fn subtract<'a>(
 		a: impl IntoIterator<Item = &'a Solid>,
 		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
@@ -76,7 +65,7 @@ impl Boolean {
 		Self::build_boolean_result(r, ca, cb)
 	}
 
-	pub fn intersect<'a>(
+	fn intersect<'a>(
 		a: impl IntoIterator<Item = &'a Solid>,
 		b: impl IntoIterator<Item = &'a Solid>,
 	) -> Result<Self, Error> {
@@ -89,8 +78,24 @@ impl Boolean {
 		Self::build_boolean_result(r, ca, cb)
 	}
 
-	// ==================== Boolean helper ====================
+	fn is_tool_face(&self, face: &crate::occt::face::Face) -> bool {
+		self.from_b.contains(&face.tshape_id())
+	}
 
+	fn is_shape_face(&self, face: &crate::occt::face::Face) -> bool {
+		self.from_a.contains(&face.tshape_id())
+	}
+
+	fn solids(&self) -> &[Solid] {
+		&self.solids
+	}
+
+	fn into_solids(self) -> Vec<Solid> {
+		self.solids
+	}
+}
+
+impl Boolean {
 	fn build_boolean_result(
 		r: cxx::UniquePtr<ffi::BooleanShape>,
 		ca: Compound,
@@ -119,6 +124,6 @@ impl Boolean {
 
 impl From<Boolean> for Vec<Solid> {
 	fn from(r: Boolean) -> Vec<Solid> {
-		r.solids
+		r.into_solids()
 	}
 }
