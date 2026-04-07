@@ -40,25 +40,13 @@ pub fn chijin() -> Result<Solid, cadrum::Error> {
 	let hole_proto = Solid::cylinder(0.7, DVec3::new(10.0, 0.0, 30.0), 30.0)
 		.translate(DVec3::new(-5.0, 16.0, -15.0));
 
-	// Distribute 20 blocks and holes evenly around Z, each block in a rainbow color
-	let n = 20usize;
-	let mut blocks = Vec::with_capacity(n);
-	let mut holes = Vec::with_capacity(n);
-	for i in 0..n {
-		let angle = 2.0 * PI * (i as f64) / (n as f64);
-		let color = Color::from_hsv(i as f32 / n as f32, 1.0, 1.0);
-		blocks.push(block_proto.clone().rotate_z(angle).color(color));
-		holes.push(hole_proto.clone().rotate_z(angle));
-	}
-	let blocks = blocks.into_iter()
-		.map(|v| vec![v])
-		.reduce(|a, b| a.union(&b).unwrap())
-		.unwrap();
-	let holes = holes.into_iter()
-		.map(|v| vec![v])
-		.reduce(|a, b| a.union(&b).unwrap())
-		.unwrap();
-
+	// Distribute N blocks and holes evenly around Z, each block in a rainbow color
+	// N 個のブロックと穴を Z 軸周りに等間隔配置、各ブロックに虹色を割り当て
+	const N: usize = 20;
+	let angle = |i: usize| 2.0 * PI * (i as f64) / (N as f64);
+	let color = |i: usize| Color::from_hsv(i as f32 / N as f32, 1.0, 1.0);
+	let blocks: [Solid; N] = std::array::from_fn(|i| block_proto.clone().rotate_z(angle(i)).color(color(i)));
+	let holes: [Solid; N] = std::array::from_fn(|i| hole_proto.clone().rotate_z(angle(i)));
 	// ── Assemble with boolean operations: union, subtract, union ─────────
 	let result = [cylinder]
 		.union(&sheets)?
