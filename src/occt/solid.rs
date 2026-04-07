@@ -99,8 +99,8 @@ impl SolidTrait for Solid {
 		)
 	}
 
-	fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Solid {
-		let inner = ffi::make_cylinder(p.x, p.y, p.z, dir.x, dir.y, dir.z, r, h);
+	fn cylinder(r: f64, axis: DVec3, h: f64) -> Solid {
+		let inner = ffi::make_cylinder(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r, h);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]
@@ -108,8 +108,8 @@ impl SolidTrait for Solid {
 		)
 	}
 
-	fn sphere(center: DVec3, radius: f64) -> Solid {
-		let inner = ffi::make_sphere(center.x, center.y, center.z, radius);
+	fn sphere(radius: f64) -> Solid {
+		let inner = ffi::make_sphere(0.0, 0.0, 0.0, radius);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]
@@ -117,8 +117,8 @@ impl SolidTrait for Solid {
 		)
 	}
 
-	fn cone(p: DVec3, dir: DVec3, r1: f64, r2: f64, h: f64) -> Solid {
-		let inner = ffi::make_cone(p.x, p.y, p.z, dir.x, dir.y, dir.z, r1, r2, h);
+	fn cone(r1: f64, r2: f64, axis: DVec3, h: f64) -> Solid {
+		let inner = ffi::make_cone(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r1, r2, h);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]
@@ -126,8 +126,8 @@ impl SolidTrait for Solid {
 		)
 	}
 
-	fn torus(p: DVec3, dir: DVec3, r1: f64, r2: f64) -> Solid {
-		let inner = ffi::make_torus(p.x, p.y, p.z, dir.x, dir.y, dir.z, r1, r2);
+	fn torus(r1: f64, r2: f64, axis: DVec3) -> Solid {
+		let inner = ffi::make_torus(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r1, r2);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]

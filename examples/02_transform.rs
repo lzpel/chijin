@@ -7,7 +7,7 @@ fn main() {
 
     // Base shape: cone pointing up (tip at Z=20), used as reference for each transform
     let base = || {
-        Solid::cone(DVec3::ZERO, DVec3::Z, 8.0, 0.0, 20.0)
+        Solid::cone(8.0, 0.0, DVec3::Z, 20.0)
             .color_paint(Some(Color::from_str("#888888").unwrap()))
     };
 

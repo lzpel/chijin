@@ -23,7 +23,7 @@ fn main() {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
     let radius = 20.0_f64;
     let height = 80.0_f64;
-    let cylinder: Vec<Solid> = vec![Solid::cylinder(DVec3::ZERO, radius, DVec3::Z, height)];
+    let cylinder: Vec<Solid> = vec![Solid::cylinder(radius, DVec3::Z, height)];
     let center = DVec3::new(0.0, 0.0, height / 2.0);
     let (dx, dy, dz) = (30.0, 20.0, 40.0);
 

@@ -3,7 +3,7 @@ use glam::DVec3;
 use std::time::{Duration, Instant};
 
 fn make_toruses(offset: DVec3) -> Vec<Solid> {
-	(0..10).flat_map(|i| (0..10).map(move |j| Solid::torus(DVec3::new(i as f64 * 30.0, j as f64 * 30.0, 0.0) + offset, DVec3::Z, 5.0, 1.0))).collect()
+	(0..10).flat_map(|i| (0..10).map(move |j| Solid::torus(5.0, 1.0, DVec3::Z).translate(DVec3::new(i as f64 * 30.0, j as f64 * 30.0, 0.0) + offset))).collect()
 }
 
 fn bboxes_overlap([amin, amax]: [DVec3; 2], [bmin, bmax]: [DVec3; 2]) -> bool {

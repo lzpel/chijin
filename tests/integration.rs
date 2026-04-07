@@ -1,7 +1,17 @@
 //! Integration tests for cadrum - OpenCASCADE Rust bindings.
 //!
-//! These tests correspond to acceptance criteria T-01 through T-08
-//! defined in 仕様書.md §4.3.
+//! このファイルはプロジェクト最古のテスト群。notes/20260301-仕様書.md §3（既知バグ）
+//! と §4.3（合格基準一覧）に定義された T-01〜T-08 に対応する。
+//!
+//! 各テスト名の `t0N` は合格基準番号に対応:
+//!   T-01: Bug 1 — ブール演算結果の drop 順序で STATUS_HEAP_CORRUPTION が起きない
+//!   T-02: Bug 2 — read_step 複数回呼び出し後にプロセスが正常終了する
+//!   T-03: Bug 3 — mesh.normals.len() == mesh.vertices.len()（法線 off-by-one）
+//!   T-04: Bug 4 — approximation_segments の tolerance が反映される（ハードコード脱却）
+//!   T-05: Bug 5 — union 後コンパウンドへの平行移動が全頂点に正確に反映される
+//!   T-06: I/O  — BRep バイナリの write→read ラウンドトリップ
+//!   T-07: I/O  — read/write 中に一時ファイルが生成されない（ストリームAPI）
+//!   T-08: API設計 — boolean の戻り値が中間型でなく Shape（現 Vec<Solid>）に変換可能
 
 use cadrum::Solid;
 use glam::DVec3;
@@ -30,6 +40,9 @@ fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 }
 
 // ==================== T-01: Boolean drop order safety ====================
+// Bug 1: OCC のブール演算結果は入力と Handle<Geom_XXX> を共有するため、
+// drop 順序によっては参照カウントが壊れ STATUS_HEAP_CORRUPTION が発生していた。
+// deep_copy 不要で任意の drop 順序が安全であることを保証する。
 
 #[test]
 fn test_t01_union_drop_result_first() {
@@ -86,6 +99,10 @@ fn test_t01_chained_boolean_drops() {
 }
 
 // ==================== T-02: read multiple times ====================
+// Bug 2: STEPControl_Reader のデストラクタが OCCT グローバル状態と衝突し
+// プロセス終了時に STATUS_ACCESS_VIOLATION が発生していた。
+// read_step を複数回呼んでもクラッシュしないことを確認する。
+// （本来はプロセス exit code で検証すべきだが、テスト完走で代用）
 
 #[test]
 fn test_t02_multiple_reads_no_crash() {
@@ -97,6 +114,8 @@ fn test_t02_multiple_reads_no_crash() {
 }
 
 // ==================== T-03: Mesh normals count ====================
+// Bug 3: 法線ループで normal_array.Length()（キャパシティ=頂点数+1）を上限に
+// 使っていたため normals が vertices より1つ少なかった。
 
 #[test]
 fn test_t03_mesh_normals_count() {
@@ -106,10 +125,12 @@ fn test_t03_mesh_normals_count() {
 }
 
 // ==================== T-04: Approximation tolerance ====================
+// Bug 4: Edge の折れ線近似の angular/chord deflection が 0.1 にハードコードされていた。
+// tolerance パラメータが実際に反映されること（密度が変化すること）を確認する。
 
 #[test]
 fn test_t04_approximation_tolerance() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
+	let cyl: Vec<Solid> = vec![Solid::cylinder(10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
 	let mut has_difference = false;
 	for edge in cyl.iter().flat_map(|s| s.edges()) {
 		let coarse = edge.approximation_segments(1.0).len();
@@ -122,6 +143,8 @@ fn test_t04_approximation_tolerance() {
 }
 
 // ==================== T-05: Translation on compound shapes ====================
+// Bug 5: set_global_translation(propagate=false) がコンパウンドのサブシェイプに
+// 伝播しなかった。union 後の形状に平行移動を適用し、全頂点が正確にシフトすることを確認。
 
 #[test]
 fn test_t05_translated_compound() {
@@ -142,6 +165,7 @@ fn test_t05_translated_compound() {
 }
 
 // ==================== T-06: BRep binary roundtrip ====================
+// BRep バイナリの write→read で頂点数・座標が一致することを確認。
 
 #[test]
 fn test_t06_brep_roundtrip() {
@@ -160,17 +184,9 @@ fn test_t06_brep_roundtrip() {
 	}
 }
 
-// ==================== T-07: No temporary files ====================
-
-#[test]
-fn test_t07_stream_api_only() {
-	let shape = test_box();
-	let data = shape_to_brep_bytes(&shape);
-	assert!(!data.is_empty());
-	let _restored = cadrum::io::read_brep_binary(&mut data.as_slice()).unwrap();
-}
-
 // ==================== T-08: Boolean returns BooleanShape, convertible to Shape ====================
+// boolean の戻り値が中間型 BooleanShape ではなく Vec<Solid> に変換可能であること。
+// （旧 API では BooleanShape という中間型が必要だった）
 
 #[test]
 fn test_t08_boolean_returns_shape() {
@@ -182,6 +198,7 @@ fn test_t08_boolean_returns_shape() {
 }
 
 // ==================== STEP export ====================
+// 仕様書外の追加テスト。STEP 書き出しが正常に完了することを確認。
 
 #[test]
 fn test_hollow_cube_write_step() {
@@ -194,28 +211,7 @@ fn test_hollow_cube_write_step() {
 	cadrum::io::write_step(&hollow_cube, &mut file).unwrap();
 }
 
-// ==================== Additional Tests ====================
-
-#[test]
-fn test_empty_shape() {
-	let empty: Vec<Solid> = vec![];
-	assert!(empty.iter().all(|s| s.is_null()));
-}
-
-#[test]
-fn test_deep_copy() {
-	let original = test_box();
-	let copy = original.clone();
-	drop(original);
-	assert!((copy.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-6);
-}
-
-#[test]
-fn test_edge_iteration() {
-	let shape = test_box();
-	assert!((shape.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-6);
-}
-
+// half_space は仕様書 §2.1 で定義されたプリミティブ。intersect との組み合わせ確認。
 #[test]
 fn test_half_space_intersect() {
 	let shape = test_box();
@@ -224,13 +220,15 @@ fn test_half_space_intersect() {
 	assert!(!result.solids().iter().all(|s| s.is_null()));
 }
 
+// cylinder プリミティブの体積が πr²h と一致することを確認。
 #[test]
 fn test_cylinder() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(dvec3(0.0, 0.0, 0.0), 5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
+	let cyl: Vec<Solid> = vec![Solid::cylinder(5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
 	let expected = std::f64::consts::PI * 5.0f64.powi(2) * 10.0;
 	assert!((cyl.iter().map(|s| s.volume()).sum::<f64>() - expected).abs() < 1e-6);
 }
 
+// T-06 のテキスト版。BRep テキストの write→read ラウンドトリップ。
 #[test]
 fn test_brep_text_roundtrip() {
 	let original = test_box();

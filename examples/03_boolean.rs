@@ -10,7 +10,8 @@ fn main() {
             .color_paint(Some(Color::from_str("#4a90d9").unwrap()))
     };
     let make_cyl = || {
-        Solid::cylinder(DVec3::new(10.0, 10.0, -5.0), 8.0, DVec3::Z, 30.0)
+        Solid::cylinder(8.0, DVec3::Z, 30.0)
+            .translate(DVec3::new(10.0, 10.0, -5.0))
             .color_paint(Some(Color::from_str("#e67e22").unwrap()))
     };
 

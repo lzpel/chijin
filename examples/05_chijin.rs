@@ -13,7 +13,7 @@ use std::f64::consts::PI;
 pub fn chijin() -> Solid {
 	// ── Body (cylinder): r=15, h=8, centered at origin (z=-4..+4) ────────
 	let cylinder: Solid =
-		Solid::cylinder(DVec3::new(0.0, 0.0, -4.0), 15.0, DVec3::Z, 8.0).color_paint(Some(Color::from_str("#999").unwrap()));
+		Solid::cylinder(15.0, DVec3::Z, 8.0).translate(DVec3::new(0.0, 0.0, -4.0)).color_paint(Some(Color::from_str("#999").unwrap()));
 
 	// ── Rim: cross-section polygon in the x=0 plane, revolved 360° around Z
 	// to form a ring with outer radius 17 at z=3..5.
@@ -39,12 +39,8 @@ pub fn chijin() -> Solid {
 		.translate(DVec3::new(0.0, 15.0, 0.0));
 
 	// ── Lacing holes: thin cylinders through each block ──────────────────
-	let hole_proto = Solid::cylinder(
-		DVec3::new(-5.0, 16.0, -15.0),
-		0.7,
-		DVec3::new(10.0, 0.0, 30.0),
-		30.0,
-	);
+	let hole_proto = Solid::cylinder(0.7, DVec3::new(10.0, 0.0, 30.0), 30.0)
+		.translate(DVec3::new(-5.0, 16.0, -15.0));
 
 	// Distribute 20 blocks and holes evenly around Z, each block in a rainbow color
 	let n = 20usize;

@@ -44,7 +44,7 @@ fn test_svg_box_top_down() {
 
 #[test]
 fn test_svg_cylinder() {
-	let shape: Vec<Solid> = vec![Solid::cylinder(DVec3::ZERO, 5.0, DVec3::Z, 10.0)];
+	let shape: Vec<Solid> = vec![Solid::cylinder(5.0, DVec3::Z, 10.0)];
 	let svg = svg_string(&shape, dvec3(1.0, 0.5, 0.3).normalize(), 0.1);
 
 	assert!(svg.contains("<polyline"));

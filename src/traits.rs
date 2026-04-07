@@ -38,10 +38,10 @@ pub trait EdgeTrait {
 pub trait SolidTrait: Sized + Clone {
 	// --- Constructors ---
 	fn cube(x: f64, y: f64, z: f64) -> Self;
-	fn sphere(center: DVec3, radius: f64) -> Self;
-	fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Self;
-	fn cone(p: DVec3, dir: DVec3, r1: f64, r2: f64, h: f64) -> Self;
-	fn torus(p: DVec3, dir: DVec3, r1: f64, r2: f64) -> Self;
+	fn sphere(radius: f64) -> Self;
+	fn cylinder(r: f64, axis: DVec3, h: f64) -> Self;
+	fn cone(r1: f64, r2: f64, axis: DVec3, h: f64) -> Self;
+	fn torus(r1: f64, r2: f64, axis: DVec3) -> Self;
 	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
 
 	// --- Transforms ---
