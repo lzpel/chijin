@@ -208,6 +208,16 @@ fn parse_traits(src: &str) -> Vec<(String, Vec<Method>)> {
 						if let Some(method) = parse_method(line, pending_cfg.take()) {
 							methods.push(method);
 						}
+						// Skip default impl body: if line ends with '{', skip until matching '}'
+						if line.ends_with('{') {
+							let mut depth = 1usize;
+							while depth > 0 && i + 1 < lines.len() {
+								i += 1;
+								let body_line = lines[i].trim();
+								depth += body_line.matches('{').count();
+								depth -= body_line.matches('}').count();
+							}
+						}
 					} else {
 						pending_cfg = None;
 					}
@@ -233,8 +243,10 @@ fn extract_trait_name(line: &str) -> Option<String> {
 }
 
 fn parse_method(line: &str, cfg: Option<String>) -> Option<Method> {
-	// "fn name(args) -> RetType;"
+	// "fn name(args) -> RetType;" or "fn name(args) -> RetType { default_impl }"
 	let line = line.trim().trim_end_matches(';');
+	// Strip default impl body: "-> Self { ... }" → "-> Self"
+	let line = if let Some(brace) = line.find('{') { line[..brace].trim() } else { line };
 
 	let fn_idx = line.find("fn ")?;
 	let rest = &line[fn_idx + 3..];
