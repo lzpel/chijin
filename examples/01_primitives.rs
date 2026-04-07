@@ -1,3 +1,5 @@
+//! Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
+
 use cadrum::Solid;
 use glam::DVec3;
 

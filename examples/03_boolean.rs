@@ -1,3 +1,5 @@
+//! Boolean operations: union, subtract, and intersect between a box and a cylinder.
+
 use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 

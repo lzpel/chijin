@@ -27,11 +27,15 @@ Primitives: box, cylinder, sphere, cone, torus — colored and exported as STEP 
 
 #### Primitives
 
+Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
+
 ```sh
 cargo run --example 01_primitives
 ```
 
 ```rust
+//! Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
+
 use cadrum::Solid;
 use glam::DVec3;
 
@@ -70,11 +74,15 @@ fn main() {
 
 #### Transform
 
+Transform operations: translate, rotate, scale, and mirror applied to a cone.
+
 ```sh
 cargo run --example 02_transform
 ```
 
 ```rust
+//! Transform operations: translate, rotate, scale, and mirror applied to a cone.
+
 use cadrum::Solid;
 use glam::DVec3;
 use std::f64::consts::PI;
@@ -124,11 +132,15 @@ fn main() {
 
 #### Boolean
 
+Boolean operations: union, subtract, and intersect between a box and a cylinder.
+
 ```sh
 cargo run --example 03_boolean
 ```
 
 ```rust
+//! Boolean operations: union, subtract, and intersect between a box and a cylinder.
+
 use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 
@@ -172,78 +184,16 @@ fn main() -> Result<(), cadrum::Error> {
   <img src="figure/examples/03_boolean.svg" alt="03_boolean" width="360"/>
 </p>
 
-#### Stretch
-
-```sh
-cargo run --example 04_stretch
-```
-
-```rust
-//! Stretch example: create a cylinder and stretch it along XYZ from its center.
-//!
-//! ```
-//! cargo run --example 02_stretch
-//! ```
-//!
-//! Output: stretched.brep (BRep text format)
-
-use cadrum::Solid;
-use cadrum::utils::stretch_vector;
-use glam::DVec3;
-
-/// Cut at (cx,cy,cz) and stretch each axis by (dx,dy,dz). Axes with delta <= 0 are skipped.
-fn stretch(shape: Vec<Solid>, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f64) -> Result<Vec<Solid>, cadrum::Error> {
-    let eps = 1e-10;
-    let shape = if dx > eps { stretch_vector(&shape, DVec3::new(cx, 0.0, 0.0), DVec3::new(dx, 0.0, 0.0))? } else { shape };
-    let shape = if dy > eps { stretch_vector(&shape, DVec3::new(0.0, cy, 0.0), DVec3::new(0.0, dy, 0.0))? } else { shape };
-    let shape = if dz > eps { stretch_vector(&shape, DVec3::new(0.0, 0.0, cz), DVec3::new(0.0, 0.0, dz))? } else { shape };
-    shape.iter().map(|s| s.clean()).collect()
-}
-
-fn main() {
-	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-    let radius = 20.0_f64;
-    let height = 80.0_f64;
-    let cylinder: Vec<Solid> = vec![Solid::cylinder(radius, DVec3::Z, height)];
-    let center = DVec3::new(0.0, 0.0, height / 2.0);
-    let (dx, dy, dz) = (30.0, 20.0, 40.0);
-
-    println!("cylinder: radius={radius}mm, height={height}mm");
-    println!("cut at: {center:?} / stretch: X={dx}mm Y={dy}mm Z={dz}mm");
-
-    let result = stretch(cylinder, center.x, center.y, center.z, dx, dy, dz)
-        .expect("stretch failed");
-
-    let out_path = format!("{example_name}.brep");
-    let mut buf = Vec::new();
-    cadrum::io::write_brep_text(&result, &mut buf).expect("failed to write BRep");
-    std::fs::write(out_path, &buf).expect("failed to write file");
-
-    let mesh = cadrum::io::mesh(&result, 0.5).expect("mesh failed");
-    println!(
-        "done: ({} bytes) — vertices: {}, triangles: {}",
-        buf.len(),
-        mesh.vertices.len(),
-        mesh.indices.len() / 3,
-    );
-}
-
-```
-
 #### Chijin
 
+Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
+
 ```sh
-cargo run --example 05_chijin
+cargo run --example 04_chijin
 ```
 
 ```rust
-//! Chijin example: build a chijin (hand drum from Amami Oshima).
-//!
-//! ```
-//! cargo run --example chijin
-//! ```
-//!
-//! Output: chijin.step (AP214 STEP, colored), chijin.svg
+//! Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
 
 use cadrum::{Face, Color, Solid, SolidExt};
 use glam::DVec3;
@@ -279,25 +229,13 @@ pub fn chijin() -> Result<Solid, cadrum::Error> {
 	let hole_proto = Solid::cylinder(0.7, DVec3::new(10.0, 0.0, 30.0), 30.0)
 		.translate(DVec3::new(-5.0, 16.0, -15.0));
 
-	// Distribute 20 blocks and holes evenly around Z, each block in a rainbow color
-	let n = 20usize;
-	let mut blocks = Vec::with_capacity(n);
-	let mut holes = Vec::with_capacity(n);
-	for i in 0..n {
-		let angle = 2.0 * PI * (i as f64) / (n as f64);
-		let color = Color::from_hsv(i as f32 / n as f32, 1.0, 1.0);
-		blocks.push(block_proto.clone().rotate_z(angle).color(color));
-		holes.push(hole_proto.clone().rotate_z(angle));
-	}
-	let blocks = blocks.into_iter()
-		.map(|v| vec![v])
-		.reduce(|a, b| a.union(&b).unwrap())
-		.unwrap();
-	let holes = holes.into_iter()
-		.map(|v| vec![v])
-		.reduce(|a, b| a.union(&b).unwrap())
-		.unwrap();
-
+	// Distribute N blocks and holes evenly around Z, each block in a rainbow color
+	// N 個のブロックと穴を Z 軸周りに等間隔配置、各ブロックに虹色を割り当て
+	const N: usize = 20;
+	let angle = |i: usize| 2.0 * PI * (i as f64) / (N as f64);
+	let color = |i: usize| Color::from_hsv(i as f32 / N as f32, 1.0, 1.0);
+	let blocks: [Solid; N] = std::array::from_fn(|i| block_proto.clone().rotate_z(angle(i)).color(color(i)));
+	let holes: [Solid; N] = std::array::from_fn(|i| hole_proto.clone().rotate_z(angle(i)));
 	// ── Assemble with boolean operations: union, subtract, union ─────────
 	let result = [cylinder]
 		.union(&sheets)?
@@ -327,7 +265,7 @@ fn main() -> Result<(), cadrum::Error> {
 ```
 
 <p align="center">
-  <img src="figure/examples/05_chijin.svg" alt="05_chijin" width="360"/>
+  <img src="figure/examples/04_chijin.svg" alt="04_chijin" width="360"/>
 </p>
 
 ## Requirements

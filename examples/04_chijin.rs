@@ -1,10 +1,4 @@
-//! Chijin example: build a chijin (hand drum from Amami Oshima).
-//!
-//! ```
-//! cargo run --example chijin
-//! ```
-//!
-//! Output: chijin.step (AP214 STEP, colored), chijin.svg
+//! Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
 
 use cadrum::{Face, Color, Solid, SolidExt};
 use glam::DVec3;

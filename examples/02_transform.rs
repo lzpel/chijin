@@ -1,3 +1,5 @@
+//! Transform operations: translate, rotate, scale, and mirror applied to a cone.
+
 use cadrum::Solid;
 use glam::DVec3;
 use std::f64::consts::PI;
