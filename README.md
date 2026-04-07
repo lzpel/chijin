@@ -34,7 +34,7 @@ use glam::DVec3;
 fn main() {
     let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
-    let box_ = Solid::box_from_corners(DVec3::ZERO, DVec3::new(10.0, 20.0, 30.0))
+    let box_ = Solid::cube(10.0, 20.0, 30.0)
         .color_paint(Some(Color::from_str("#4a90d9").unwrap()));
     let cylinder = Solid::cylinder(DVec3::new(30.0, 0.0, 0.0), 8.0, DVec3::Z, 30.0)
         .color_paint(Some(Color::from_str("#e67e22").unwrap()));

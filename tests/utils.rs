@@ -11,7 +11,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 }
 
 fn test_box() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
+	vec![Solid::cube(10.0, 10.0, 10.0)]
 }
 
 /// テスト用のベース形状として、外部のSTEPファイルを読み込みます。
@@ -148,7 +148,7 @@ fn diagnose_new_faces() {
 	let r_half = cadrum::Boolean::intersect(&shape, &half).expect("intersect(half_space) failed");
 	println!("  intersect result: tool_face count={}", r_half.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_half.is_tool_face(f)).count());
 
-	let big_box: Vec<Solid> = vec![Solid::box_from_corners(DVec3::new(-1000.0, -1000.0, -1000.0), DVec3::new(1.0, 1000.0, 1000.0))];
+	let big_box: Vec<Solid> = vec![Solid::cube(1001.0, 2000.0, 2000.0).translate(DVec3::new(-1000.0, -1000.0, -1000.0))];
 	let r_box = cadrum::Boolean::intersect(&shape, &big_box).expect("intersect(big_box) failed");
 	println!("  intersect result: tool_face count={}", r_box.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_box.is_tool_face(f)).count());
 	for (i, face) in r_box.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_box.is_tool_face(f)).enumerate() {

@@ -37,7 +37,7 @@ pub trait EdgeTrait {
 /// Defines the common interface that both OCCT and Pure Rust backends must implement.
 pub trait SolidTrait: Sized + Clone {
 	// --- Constructors ---
-	fn box_from_corners(corner_1: DVec3, corner_2: DVec3) -> Self;
+	fn cube(x: f64, y: f64, z: f64) -> Self;
 	fn sphere(center: DVec3, radius: f64) -> Self;
 	fn cylinder(p: DVec3, r: f64, dir: DVec3, h: f64) -> Self;
 	fn cone(p: DVec3, dir: DVec3, r1: f64, r2: f64, h: f64) -> Self;

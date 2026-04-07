@@ -7,7 +7,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 /// 10×10×10 ボックス（体積 1000）
 fn test_box() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
+	vec![Solid::cube(10.0, 10.0, 10.0)]
 }
 
 // ==================== clone ====================
@@ -25,7 +25,7 @@ fn test_clone_is_independent() {
 	// コピー後にオリジナルを boolean 操作しても copy は影響を受けない
 	let original = test_box();
 	let copy = original.clone();
-	let other: Vec<Solid> = vec![Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))];
+	let other: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 5.0))];
 	let _: Vec<Solid> = cadrum::Boolean::union(&original, &other).unwrap().into();
 	assert!((copy.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-6);
 }
@@ -50,8 +50,8 @@ fn test_translated_preserves_shell_count() {
 fn test_union_of_translated_overlapping_solids_has_single_volume() {
 	// 異なる場所に同じ大きさの立方体を2つ作り、translatedで同じ場所に重ねてからunionする。
 	// 結果のvolumeは1つ分（1000）になるはず。
-	let a = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
-	let b = vec![Solid::box_from_corners(dvec3(100.0, 0.0, 0.0), dvec3(110.0, 10.0, 10.0))];
+	let a = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let b = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(100.0, 0.0, 0.0))];
 	let b_moved: Vec<Solid> = b.clone().into_iter().map(|s| s.translate(dvec3(-100.0, 0.0, 0.0))).collect();
 
 	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
@@ -150,7 +150,7 @@ fn test_preserves_face_ids() {
 fn test_mirrored_octants_union_volume_is_eight() {
 	// (1,1,1)→(2,2,2) のboxを全8方向に鏡像コピーして8辺体を作る。
 	// 実態が独立していない（同一インスタンスなど）場合は重複で体積が8を下回る。
-	let b = vec![Solid::box_from_corners(dvec3(1.0, 1.0, 1.0), dvec3(2.0, 2.0, 2.0))];
+	let b = vec![Solid::cube(1.0, 1.0, 1.0).translate(dvec3(1.0, 1.0, 1.0))];
 	let bx: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::X)).collect();
 	let by: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Y)).collect();
 	let bz: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Z)).collect();
@@ -172,7 +172,7 @@ fn test_scaled_union_with_original_volume_is_nine() {
 	// (1,1,1)→(2,2,2) のbox（体積1）と原点中心2倍スケール（→(2,2,2)→(4,4,4), 体積8）は
 	// 角のみ接するので union 体積 = 1 + 8 = 9。
 	// scaled が実態を変化させていた場合は体積がこれより小さくなる。
-	let b = vec![Solid::box_from_corners(dvec3(1.0, 1.0, 1.0), dvec3(2.0, 2.0, 2.0))];
+	let b = vec![Solid::cube(1.0, 1.0, 1.0).translate(dvec3(1.0, 1.0, 1.0))];
 	let b_scaled: Vec<Solid> = b.iter().map(|s| s.scaled(DVec3::ZERO, 2.0)).collect();
 	let result: Vec<Solid> = cadrum::Boolean::union(&b, &b_scaled).expect("union failed").into();
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
@@ -184,8 +184,8 @@ fn test_scaled_union_with_original_volume_is_nine() {
 #[test]
 fn test_vec_solid_roundtrip() {
 	// 2 つのボックスを Vec<Solid> として結合し、体積を確認
-	let a = Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0));
-	let b = Solid::box_from_corners(dvec3(20.0, 0.0, 0.0), dvec3(30.0, 10.0, 10.0));
+	let a = Solid::cube(10.0, 10.0, 10.0);
+	let b = Solid::cube(10.0, 10.0, 10.0).translate(dvec3(20.0, 0.0, 0.0));
 	let shape: Vec<Solid> = vec![a, b];
 	let total_volume: f64 = shape.iter().map(|s| s.volume()).sum();
 
@@ -218,8 +218,8 @@ fn test_new_faces_subtract_b_inside_a() {
 	// small_box が big_box に完全に収まる → small の 6 面はすべて Modified されない
 	// 旧実装（collect_generated_faces）では Modified() が空 → tool faces = 0
 	// 新実装（from_b post_ids）では unchanged 面も from_b に入る → tool faces = 6
-	let big: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
-	let small: Vec<Solid> = vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0))];
+	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let result = cadrum::Boolean::subtract(&big, &small).unwrap();
 	assert_eq!(result.solids().iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
 }
@@ -228,8 +228,8 @@ fn test_new_faces_subtract_b_inside_a() {
 fn test_new_faces_intersect_b_inside_a() {
 	// intersect(big, small) の結果は small そのもの
 	// small の 6 面はすべて unchanged → tool faces = 結果の全フェイス = 6
-	let big: Vec<Solid> = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))];
-	let small: Vec<Solid> = vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(7.0, 7.0, 7.0))];
+	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let result = cadrum::Boolean::intersect(&big, &small).unwrap();
 	let tool_count = result.solids().iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)).count();
 	assert_eq!(tool_count, 6, "intersect with B fully inside A: tool faces should equal all faces of result");
@@ -241,12 +241,12 @@ fn test_new_faces_intersect_b_inside_a() {
 #[test]
 fn test_bounding_box() {
 	// 単一 solid
-	let [min, max] = Solid::box_from_corners(dvec3(1.0, 2.0, 3.0), dvec3(4.0, 6.0, 8.0)).bounding_box();
+	let [min, max] = Solid::cube(3.0, 4.0, 5.0).translate(dvec3(1.0, 2.0, 3.0)).bounding_box();
 	assert!((min - dvec3(1.0, 2.0, 3.0)).length() < 1e-6);
 	assert!((max - dvec3(4.0, 6.0, 8.0)).length() < 1e-6);
 
 	// 複数 solid のマージ
-	let solids = vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(2.0, 2.0, 2.0)), Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(7.0, 8.0, 9.0))];
+	let solids = vec![Solid::cube(2.0, 2.0, 2.0), Solid::cube(2.0, 3.0, 4.0).translate(dvec3(5.0, 5.0, 5.0))];
 	let bboxes: Vec<[DVec3; 2]> = solids.iter().map(|s| s.bounding_box()).collect();
 	let min = bboxes.iter().map(|b| b[0]).reduce(|a, b| a.min(b)).unwrap();
 	let max = bboxes.iter().map(|b| b[1]).reduce(|a, b| a.max(b)).unwrap();

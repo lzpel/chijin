@@ -48,7 +48,7 @@ fn bin_write_then_read_preserves_colors() {
 /// A shape with an empty colormap round-trips without error (binary).
 #[test]
 fn bin_colorless_shape_roundtrip() {
-	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, DVec3::ONE)];
+	let shape: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0)];
 	let reloaded = roundtrip_bin(&shape);
 	assert_eq!(colormap_len(&reloaded), 0);
 }
@@ -85,7 +85,7 @@ fn text_write_then_read_preserves_colors() {
 /// A shape with an empty colormap round-trips without error (text).
 #[test]
 fn text_colorless_shape_roundtrip() {
-	let shape: Vec<Solid> = vec![Solid::box_from_corners(DVec3::ZERO, DVec3::ONE)];
+	let shape: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0)];
 	let reloaded = roundtrip_text(&shape);
 	assert_eq!(colormap_len(&reloaded), 0);
 }

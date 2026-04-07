@@ -6,7 +6,7 @@ fn main() {
 
     // Base shapes: a box and a cylinder, overlapping at origin
     let make_box = || {
-        Solid::box_from_corners(DVec3::ZERO, DVec3::new(20.0, 20.0, 20.0))
+        Solid::cube(20.0, 20.0, 20.0)
             .color_paint(Some(Color::from_str("#4a90d9").unwrap()))
     };
     let make_cyl = || {

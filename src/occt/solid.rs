@@ -90,8 +90,8 @@ impl Solid {
 impl SolidTrait for Solid {
 	// ==================== Constructors ====================
 
-	fn box_from_corners(corner_1: DVec3, corner_2: DVec3) -> Solid {
-		let inner = ffi::make_box(corner_1.x, corner_1.y, corner_1.z, corner_2.x, corner_2.y, corner_2.z);
+	fn cube(x: f64, y: f64, z: f64) -> Solid {
+		let inner = ffi::make_box(0.0, 0.0, 0.0, x, y, z);
 		Solid::new(
 			inner,
 			#[cfg(feature = "color")]

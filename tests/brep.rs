@@ -8,7 +8,7 @@ use cadrum::Solid;
 use glam::DVec3;
 
 fn test_box() -> Vec<Solid> {
-	vec![Solid::box_from_corners(DVec3::ZERO, DVec3::ONE)]
+	vec![Solid::cube(1.0, 1.0, 1.0)]
 }
 
 /// Write BRep binary, append 1 KB of 0xAB, read back.

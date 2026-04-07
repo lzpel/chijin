@@ -11,15 +11,15 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 }
 
 fn test_box() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(0.0, 0.0, 0.0), dvec3(10.0, 10.0, 10.0))]
+	vec![Solid::cube(10.0, 10.0, 10.0)]
 }
 
 fn test_box_2() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(5.0, 5.0, 5.0), dvec3(15.0, 15.0, 15.0))]
+	vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 5.0))]
 }
 
 fn test_box_3() -> Vec<Solid> {
-	vec![Solid::box_from_corners(dvec3(3.0, 3.0, 3.0), dvec3(8.0, 8.0, 8.0))]
+	vec![Solid::cube(5.0, 5.0, 5.0).translate(dvec3(3.0, 3.0, 3.0))]
 }
 
 /// Helper: write shape to BRep binary bytes
@@ -185,8 +185,8 @@ fn test_t08_boolean_returns_shape() {
 
 #[test]
 fn test_hollow_cube_write_step() {
-	let outer: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-10.0, -10.0, -10.0), dvec3(10.0, 10.0, 10.0))];
-	let inner: Vec<Solid> = vec![Solid::box_from_corners(dvec3(-5.0, -5.0, -5.0), dvec3(5.0, 5.0, 5.0))];
+	let outer: Vec<Solid> = vec![Solid::cube(20.0, 20.0, 20.0).translate(dvec3(-10.0, -10.0, -10.0))];
+	let inner: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(-5.0, -5.0, -5.0))];
 	let hollow_cube: Vec<Solid> = cadrum::Boolean::subtract(&outer, &inner).unwrap().into();
 
 	std::fs::create_dir_all("out").unwrap();

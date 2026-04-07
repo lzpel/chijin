@@ -67,7 +67,7 @@ fn colormap_get(shape: &[Solid], id: &u64) -> Option<Color> {
 #[test]
 fn colored_box_intersect_z_positive_half_space() {
 	// ── Build colored box ────────────────────────────────────────────────────
-	let mut cube: Vec<Solid> = vec![Solid::box_from_corners(DVec3::splat(-1.0), DVec3::splat(1.0))];
+	let mut cube: Vec<Solid> = vec![Solid::cube(2.0, 2.0, 2.0).translate(DVec3::splat(-1.0))];
 	let colored = color_box_faces(&mut cube);
 	assert_eq!(colored, 6, "all 6 faces of the box should receive a color");
 	assert_eq!(cube[0].colormap().len(), 6);
@@ -122,7 +122,7 @@ fn colored_box_intersect_z_positive_half_space() {
 /// through the color-remapping code.
 #[test]
 fn clean_preserves_face_colors() {
-	let mut cube: Vec<Solid> = vec![Solid::box_from_corners(DVec3::splat(-1.0), DVec3::splat(1.0))];
+	let mut cube: Vec<Solid> = vec![Solid::cube(2.0, 2.0, 2.0).translate(DVec3::splat(-1.0))];
 	let colored = color_box_faces(&mut cube);
 	assert_eq!(colored, 6);
 
@@ -147,11 +147,11 @@ fn clean_preserves_face_colors() {
 #[test]
 fn clean_merge_preserves_color() {
 	// Box A: x ∈ [0,1], y ∈ [0,1], z ∈ [0,1]
-	let mut a: Vec<Solid> = vec![Solid::box_from_corners(DVec3::new(0.0, 0.0, 0.0), DVec3::new(1.0, 1.0, 1.0))];
+	let mut a: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0)];
 	color_box_faces(&mut a);
 
 	// Box B: x ∈ [1,2], y ∈ [0,1], z ∈ [0,1]  (adjacent, sharing the x=1 face)
-	let mut b: Vec<Solid> = vec![Solid::box_from_corners(DVec3::new(1.0, 0.0, 0.0), DVec3::new(2.0, 1.0, 1.0))];
+	let mut b: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0).translate(DVec3::new(1.0, 0.0, 0.0))];
 	color_box_faces(&mut b);
 
 	// Union produces a 2×1×1 slab whose side faces may be split at x=1.

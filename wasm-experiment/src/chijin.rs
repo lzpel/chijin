@@ -34,7 +34,7 @@ pub fn chijin() -> Solid {
 	let sheets = [sheet.mirrored(DVec3::ZERO, DVec3::Z), sheet];
 
 	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
-	let block_proto = Solid::box_from_corners(DVec3::new(-1.0, -4.0, -0.5), DVec3::new(1.0, 4.0, 0.5))
+	let block_proto = Solid::cube(2.0, 8.0, 1.0).translate(DVec3::new(-1.0, -4.0, -0.5))
 		.rotate(DVec3::ZERO, DVec3::Z, 60.0_f64.to_radians())
 		.translate(DVec3::new(0.0, 15.0, 0.0));
 
