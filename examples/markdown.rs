@@ -153,17 +153,75 @@ fn write_summary(summary_path: &Path, entries: &[Entry], outputs: &HashMap<PathB
 	eprintln!("generated: {}", summary_path.display());
 }
 
-/// Update the ## Examples section in README.md, writing SVG assets to figure/examples/.
-/// README.md の ## Examples 節を更新し、SVG アセットを figure/examples/ に書き出す。
+/// Render a single example as full markdown (code + image) for README.
+/// 1つの example をソースコード + 画像付きの markdown として生成する。
+fn render_full(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+	let (stem, desc) = (entry.stem(), entry.description());
+	let mut s = String::new();
+	if !desc.is_empty() {
+		s.push_str(&format!("\n{}\n", desc));
+	}
+	s.push_str(&format!("\n```sh\ncargo run --example {}\n```\n", stem));
+	s.push_str(&format!("\n```rust\n{}\n```\n", entry.content));
+	if let Some(img) = first_image(outputs, stem) {
+		s.push_str(&format!(
+			"\n<p align=\"center\">\n  <img src=\"figure/examples/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
+			img, stem
+		));
+	}
+	s
+}
+
+/// Render a single example as compact markdown (description + link + image) for README.
+/// 1つの example を説明 + リンク + 画像の簡潔な markdown として生成する。
+fn render_compact(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+	let (stem, desc) = (entry.stem(), entry.description());
+	let mut s = String::new();
+	if !desc.is_empty() {
+		s.push_str(&format!("\n{}\n", desc));
+	}
+	s.push_str(&format!("\n```sh\ncargo run --example {}\n```\n", stem));
+	s.push_str(&format!("\n```rust\n{}\n```\n", entry.content));
+	if let Some(img) = first_image(outputs, stem) {
+		s.push_str(&format!(
+			"\n<p align=\"center\">\n  <img src=\"figure/examples/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
+			img, stem
+		));
+	}
+	s
+}
+
+/// Find the first SVG/PNG asset for a given stem.
+/// 指定 stem の最初の SVG/PNG アセットを返す。
+fn first_image<'a>(outputs: &'a HashMap<PathBuf, Vec<u8>>, stem: &str) -> Option<&'a str> {
+	assets_for(outputs, stem).into_iter()
+		.find(|p| p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png"))))
+		.and_then(|p| p.to_str())
+}
+
+/// Parse <!--NN--> or <!--NN+--> markers and resolve matching entries.
+/// <!--NN--> は単一 example、<!--NN+--> は NN 以降の全 example にマッチする。
+fn resolve_marker<'a>(marker: &str, entries: &'a [Entry]) -> Vec<&'a Entry> {
+	let inner = marker.trim();
+	if inner.ends_with('+') {
+		// "02+" → entries whose stem starts with 02 or higher
+		let prefix = inner.trim_end_matches('+');
+		entries.iter().filter(|e| &e.stem()[..2] >= prefix).collect()
+	} else {
+		// "01" → single entry whose stem starts with this prefix
+		entries.iter().filter(|e| e.stem().starts_with(inner)).collect()
+	}
+}
+
+/// Update README.md by replacing sections with <!--NN--> markers.
+/// README.md の <!--NN--> マーカーを解釈して example 内容で置換する。
+///
+/// - `## Example <!--01-->` → single example, full display (no #### title)
+///   単一 example をソースコード付きで表示（#### タイトルなし）
+/// - `## Other examples <!--02+-->` → multiple examples, compact display (#### titles)
+///   複数 example を簡潔に表示（#### タイトル付き）
 fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) {
 	let readme = fs::read_to_string(readme_path).expect("failed to read README.md");
-
-	// Find "## Examples" and the next "##" heading (or EOF) / ## Examples 節の範囲を特定
-	let section_start = readme.find("\n## Examples").map(|i| i + 1)
-		.expect("README.md must contain a ## Examples section");
-	let section_end = readme[section_start + 1..].find("\n## ")
-		.map(|i| section_start + 1 + i + 1)
-		.unwrap_or(readme.len());
 
 	// Write SVG/PNG assets to figure/examples/ / SVG/PNG を figure/examples/ に書き出す
 	let figure_dir = readme_path.parent().unwrap().join("figure").join("examples");
@@ -174,36 +232,56 @@ fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf
 		}
 	}
 
-	// Build the new ## Examples section / 新しい ## Examples 節を構築
-	let mut section = String::from("## Examples\n");
-	for entry in entries {
-		let (stem, title, desc) = (entry.stem(), entry.title(), entry.description());
-
-		section.push_str(&format!("\n#### {}\n", title));
-		if !desc.is_empty() {
-			section.push_str(&format!("\n{}\n", desc));
-		}
-		section.push_str(&format!("\n```sh\ncargo run --example {}\n```\n", stem));
-		section.push_str(&format!("\n```rust\n{}\n```\n", entry.content));
-
-		// Embed first SVG/PNG as centered image / 最初の SVG/PNG を中央寄せで埋め込む
-		let image = assets_for(outputs, stem).into_iter()
-			.find(|p| p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png"))));
-		if let Some(img_path) = image {
-			let img_name = img_path.to_str().unwrap();
-			section.push_str(&format!(
-				"\n<p align=\"center\">\n  <img src=\"figure/examples/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
-				img_name, stem
-			));
-		}
-	}
-	section.push('\n');
-
-	// Replace the old section / 旧 Examples 節を差し替え
+	// Find ## headings with <!--NN--> or <!--NN+--> markers and replace their content
+	// <!--NN--> マーカー付きの ## 見出しを検索し、内容を置換する
 	let mut new_readme = String::with_capacity(readme.len());
-	new_readme.push_str(&readme[..section_start]);
-	new_readme.push_str(&section);
-	new_readme.push_str(&readme[section_end..]);
+	let mut last_end = 0;
+
+	for (i, line) in readme.lines().enumerate() {
+		let trimmed = line.trim();
+		if !trimmed.starts_with("## ") || !trimmed.contains("<!--") { continue; }
+
+		// Extract marker between <!-- and --> / <!-- と --> の間のマーカーを抽出
+		let marker = match (trimmed.find("<!--"), trimmed.find("-->")) {
+			(Some(a), Some(b)) if a < b => trimmed[a + 4..b].trim(),
+			_ => continue,
+		};
+		// Must contain a digit / 数字を含むこと
+		if !marker.bytes().any(|b| b.is_ascii_digit()) { continue; }
+
+		let heading = trimmed[..trimmed.find("<!--").unwrap()].trim();
+
+		// Find byte offset of this line / この行のバイトオフセットを特定
+		let line_start = readme.lines().take(i).map(|l| l.len() + 1).sum::<usize>();
+		let line_end = line_start + line.len() + 1;
+
+		// Find end of section (next ## or EOF) / この節の終端を特定
+		let section_end = readme[line_end..].find("\n## ")
+			.map(|j| line_end + j + 1)
+			.unwrap_or(readme.len());
+
+		new_readme.push_str(&readme[last_end..line_start]);
+
+		let matched = resolve_marker(marker, entries);
+		let is_single = matched.len() == 1;
+
+		new_readme.push_str(&format!("{} <!--{}-->\n", heading, marker));
+
+		for entry in &matched {
+			if !is_single {
+				new_readme.push_str(&format!("\n#### {}\n", entry.title()));
+			}
+			new_readme.push_str(&if is_single {
+				render_full(entry, outputs)
+			} else {
+				render_compact(entry, outputs)
+			});
+		}
+		new_readme.push('\n');
+
+		last_end = section_end;
+	}
+	new_readme.push_str(&readme[last_end..]);
 
 	fs::write(readme_path, &new_readme).unwrap();
 	eprintln!("updated: {}", readme_path.display());

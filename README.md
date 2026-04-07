@@ -23,9 +23,7 @@ cadrum = "^0.4"
 
 Primitives: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG. ([`examples/01_primitives.rs`](examples/01_primitives.rs))
 
-## Examples
-
-#### Primitives
+## Example <!--01-->
 
 Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
 
@@ -71,6 +69,37 @@ fn main() {
 <p align="center">
   <img src="figure/examples/01_primitives.svg" alt="01_primitives" width="360"/>
 </p>
+
+## Requirements
+
+- A C++17 compiler (GCC, Clang, or MSVC)
+- CMake
+
+Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
+
+## Build
+
+By default, `cargo build` downloads OCCT 7.9.3 source and builds it automatically.
+The built library is placed in `target/occt/` and removed by `cargo clean`.
+
+To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:
+
+```sh
+export OCCT_ROOT=~/occt
+cargo build
+```
+
+- If `OCCT_ROOT` is set and the directory already contains OCCT libraries, they are linked directly (no rebuild).
+- If `OCCT_ROOT` is set but the directory is empty or missing, OCCT is built and installed there.
+- To force a rebuild, remove the directory: `rm -rf ~/occt`
+
+## Features
+
+- `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
+  `read_step_with_colors`, and per-face color on `Solid`.
+  Colors are preserved through boolean operations and other transformations.
+
+## Other examples <!--02+-->
 
 #### Transform
 
@@ -267,35 +296,6 @@ fn main() -> Result<(), cadrum::Error> {
 <p align="center">
   <img src="figure/examples/04_chijin.svg" alt="04_chijin" width="360"/>
 </p>
-
-## Requirements
-
-- A C++17 compiler (GCC, Clang, or MSVC)
-- CMake
-
-Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
-
-## Build
-
-By default, `cargo build` downloads OCCT 7.9.3 source and builds it automatically.
-The built library is placed in `target/occt/` and removed by `cargo clean`.
-
-To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:
-
-```sh
-export OCCT_ROOT=~/occt
-cargo build
-```
-
-- If `OCCT_ROOT` is set and the directory already contains OCCT libraries, they are linked directly (no rebuild).
-- If `OCCT_ROOT` is set but the directory is empty or missing, OCCT is built and installed there.
-- To force a rebuild, remove the directory: `rm -rf ~/occt`
-
-## Features
-
-- `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
-  `read_step_with_colors`, and per-face color on `Solid`.
-  Colors are preserved through boolean operations and other transformations.
 
 ## License
 
