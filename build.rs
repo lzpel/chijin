@@ -1,20 +1,23 @@
+mod build_delegation;
+
 use std::env;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 fn main() {
 	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-changed=src/traits.rs");
 
 	if env::var("DOCS_RS").is_ok() {
 		return;
 	}
 
 	let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+	build_delegation::build_delegation(include_str!("src/traits.rs"), &out_dir);
+
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-	let occt_root = env::var("OCCT_ROOT")
-		.map(PathBuf::from)
-		.unwrap_or_else(|_| manifest_dir.join("target").join("occt"));
+	let occt_root = env::var("OCCT_ROOT").map(PathBuf::from).unwrap_or_else(|_| manifest_dir.join("target").join("occt"));
 
 	let lib_dir = find_occt_lib_dir(&occt_root);
 	println!("cargo:rerun-if-changed={}", lib_dir.display());
@@ -53,7 +56,6 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		"TKDE",        // DE framework base (OCCT 7.8+)
 		"TKDECascade", // DE cascade bridge (OCCT 7.8+)
 		"TKOffset",    // BRepOffsetAPI_MakePipeShell (helix sweep)
-		"TKHLR",       // HLRBRep_Algo (hidden line removal for SVG export)
 		"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
 		               // TKService is NOT linked here: it contains Image_AlienPixMap (WIC image I/O)
 		               // which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
@@ -112,12 +114,8 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	}
 
 	// Build cxx bridge + C++ wrapper
-	let mut build = cxx_build::bridge("src/ffi.rs");
-	build
-		.file("cpp/wrapper.cpp")
-		.include(occt_include)
-		.std("c++17")
-		.define("_USE_MATH_DEFINES", None);
+	let mut build = cxx_build::bridge("src/occt/ffi.rs");
+	build.file("cpp/wrapper.cpp").include(occt_include).std("c++17").define("_USE_MATH_DEFINES", None);
 
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	if color {
@@ -132,15 +130,13 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	// Standard_ErrorHandler.hxx only generates the inline stubs when OCC_CONVERT_SIGNALS
 	// is NOT defined (via `#if !defined(OCC_CONVERT_SIGNALS)`).  Defining it here
 	// suppresses those stubs in wrapper.o so only TKernel.a's implementation is linked.
-	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-		&& env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu")
-	{
+	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
 		build.define("OCC_CONVERT_SIGNALS", None);
 	}
 
 	build.compile("cadrum_cpp");
 
-	println!("cargo:rerun-if-changed=src/ffi.rs");
+	println!("cargo:rerun-if-changed=src/occt/ffi.rs");
 	println!("cargo:rerun-if-changed=cpp/wrapper.h");
 	println!("cargo:rerun-if-changed=cpp/wrapper.cpp");
 }
@@ -148,10 +144,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 /// Download OCCT 7.9.3 source, patch, and build with CMake into `install_prefix`.
 fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, PathBuf) {
 	let occt_version = "V7_9_3";
-	let occt_url = format!(
-		"https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz",
-		occt_version
-	);
+	let occt_url = format!("https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz", occt_version);
 
 	let download_dir = out_dir.join("occt-source");
 
@@ -175,26 +168,17 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 		eprintln!("Downloading OCCT {} ...", occt_version);
 
 		// Download using ureq (pure Rust HTTP client)
-		let response = ureq::get(&occt_url)
-			.call()
-			.expect("Failed to download OCCT source tarball");
+		let response = ureq::get(&occt_url).call().expect("Failed to download OCCT source tarball");
 
 		let mut body = Vec::new();
-		response
-			.into_body()
-			.into_reader()
-			.read_to_end(&mut body)
-			.expect("Failed to read OCCT download response body");
+		response.into_body().into_reader().read_to_end(&mut body).expect("Failed to read OCCT download response body");
 
 		eprintln!("Downloaded {} bytes. Extracting...", body.len());
 
 		// Extract using libflate + tar (pure Rust)
-		let gz_decoder =
-			libflate::gzip::Decoder::new(&body[..]).expect("Failed to initialize gzip decoder");
+		let gz_decoder = libflate::gzip::Decoder::new(&body[..]).expect("Failed to initialize gzip decoder");
 		let mut archive = tar::Archive::new(gz_decoder);
-		archive
-			.unpack(&download_dir)
-			.expect("Failed to extract OCCT source tarball");
+		archive.unpack(&download_dir).expect("Failed to extract OCCT source tarball");
 
 		// Write sentinel to mark successful extraction
 		std::fs::write(&extraction_sentinel, "done").unwrap();
@@ -203,12 +187,7 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 
 	// Auto-detect the extracted OCCT directory name
 	// (GitHub archives may name it OCCT-V7_9_3 or OCCT-7_9_3 depending on the tag)
-	let source_dir = std::fs::read_dir(&download_dir)
-		.expect("Failed to read occt-source directory")
-		.flatten()
-		.find(|e| e.file_name().to_string_lossy().starts_with("OCCT") && e.path().is_dir())
-		.map(|e| e.path())
-		.expect("OCCT source directory not found after extraction");
+	let source_dir = std::fs::read_dir(&download_dir).expect("Failed to read occt-source directory").flatten().find(|e| e.file_name().to_string_lossy().starts_with("OCCT") && e.path().is_dir()).map(|e| e.path()).expect("OCCT source directory not found after extraction");
 
 	// Patch OCCT sources to remove TKService (Visualization) dependencies.
 	// XCAFDoc_VisMaterial.cxx and XCAFPrs_Texture.cxx reference Graphic3d_* symbols
@@ -276,11 +255,7 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 
 /// Find the OCCT include directory, checking common install layouts.
 fn find_occt_include_dir(occt_root: &Path) -> PathBuf {
-	let candidates = [
-		occt_root.join("include").join("opencascade"),
-		occt_root.join("inc"),
-		occt_root.join("include"),
-	];
+	let candidates = [occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")];
 	for dir in &candidates {
 		if dir.exists() {
 			return dir.clone();
@@ -293,11 +268,7 @@ fn find_occt_include_dir(occt_root: &Path) -> PathBuf {
 /// Find the OCCT lib directory, checking common install layouts.
 /// CMake on Windows/MinGW installs to win64/gcc/lib; on Linux to lib.
 fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
-	let candidates = [
-		occt_root.join("lib"),
-		occt_root.join("win64").join("gcc").join("lib"),
-		occt_root.join("win64").join("vc14").join("lib"),
-	];
+	let candidates = [occt_root.join("lib"), occt_root.join("win64").join("gcc").join("lib"), occt_root.join("win64").join("vc14").join("lib")];
 	for dir in &candidates {
 		if dir.exists() {
 			return dir.clone();
@@ -306,7 +277,6 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	// Default fallback
 	occt_root.join("lib")
 }
-
 
 /// Patch two OCCT source files that pull in Graphic3d_* (TKService) symbols even
 /// when BUILD_MODULE_Visualization=OFF:
@@ -357,11 +327,7 @@ fn stub_out_methods(path: &Path, keep_signatures: bool) {
 			format!("{:02}:{:02}:{:02} UTC", h, mi, s)
 		})
 		.unwrap_or_else(|_| "unknown".to_string());
-	let description = if keep_signatures {
-		"all method bodies replaced with empty stubs"
-	} else {
-		"file emptied"
-	};
+	let description = if keep_signatures { "all method bodies replaced with empty stubs" } else { "file emptied" };
 	let header = format!(
 		"// Stubbed by cadrum build.rs: {}.\n\
 		 // Stubbed at: {}\n",
@@ -395,11 +361,7 @@ fn stub_all_top_level_bodies(content: &str) -> String {
 			b'{' if depth == 0 => {
 				// Top-level block start: check the preceding signature for return type.
 				let prefix = &content[last_end..i];
-				let stub_body = if is_void_return(prefix) {
-					"{}"
-				} else {
-					"{ return {}; }"
-				};
+				let stub_body = if is_void_return(prefix) { "{}" } else { "{ return {}; }" };
 
 				// Walk forward with brace counting to find the matching closing brace.
 				depth = 1;
@@ -442,16 +404,10 @@ fn stub_all_top_level_bodies(content: &str) -> String {
 /// Returns `false` otherwise → stub as `{ return {}; }` (value-initialize).
 fn is_void_return(prefix: &str) -> bool {
 	// Only examine the signature after the last definition terminator (';' or '}').
-	let sig = prefix
-		.rfind(|c| c == ';' || c == '}')
-		.map(|p| &prefix[p + 1..])
-		.unwrap_or(prefix);
+	let sig = prefix.rfind(|c| c == ';' || c == '}').map(|p| &prefix[p + 1..]).unwrap_or(prefix);
 
 	// 1. void return type
-	if sig
-		.split(|c: char| !c.is_alphanumeric() && c != '_')
-		.any(|w| w == "void")
-	{
+	if sig.split(|c: char| !c.is_alphanumeric() && c != '_').any(|w| w == "void") {
 		return true;
 	}
 
@@ -466,11 +422,7 @@ fn is_void_return(prefix: &str) -> bool {
 		let before_paren = sig[..paren].trim_end();
 		if let Some(dc) = before_paren.rfind("::") {
 			let method_name = before_paren[dc + 2..].trim();
-			let class_name = before_paren[..dc]
-				.split(|c: char| !c.is_alphanumeric() && c != '_')
-				.filter(|s| !s.is_empty())
-				.last()
-				.unwrap_or("");
+			let class_name = before_paren[..dc].split(|c: char| !c.is_alphanumeric() && c != '_').filter(|s| !s.is_empty()).last().unwrap_or("");
 			if !method_name.is_empty() && method_name == class_name {
 				return true;
 			}

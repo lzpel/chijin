@@ -6,7 +6,7 @@
 //!
 //! Output: stretched.brep (BRep text format)
 
-use cadrum::{Shape, Solid};
+use cadrum::Solid;
 use cadrum::utils::stretch_vector;
 use glam::DVec3;
 
@@ -16,14 +16,14 @@ fn stretch(shape: Vec<Solid>, cx: f64, cy: f64, cz: f64, dx: f64, dy: f64, dz: f
     let shape = if dx > eps { stretch_vector(&shape, DVec3::new(cx, 0.0, 0.0), DVec3::new(dx, 0.0, 0.0))? } else { shape };
     let shape = if dy > eps { stretch_vector(&shape, DVec3::new(0.0, cy, 0.0), DVec3::new(0.0, dy, 0.0))? } else { shape };
     let shape = if dz > eps { stretch_vector(&shape, DVec3::new(0.0, 0.0, cz), DVec3::new(0.0, 0.0, dz))? } else { shape };
-    shape.clean()
+    shape.iter().map(|s| s.clean()).collect()
 }
 
 fn main() {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
     let radius = 20.0_f64;
     let height = 80.0_f64;
-    let cylinder: Vec<Solid> = vec![Solid::cylinder(DVec3::ZERO, radius, DVec3::Z, height)];
+    let cylinder: Vec<Solid> = vec![Solid::cylinder(radius, DVec3::Z, height)];
     let center = DVec3::new(0.0, 0.0, height / 2.0);
     let (dx, dy, dz) = (30.0, 20.0, 40.0);
 
@@ -35,10 +35,10 @@ fn main() {
 
     let out_path = format!("{example_name}.brep");
     let mut buf = Vec::new();
-    cadrum::write_brep_text(&result, &mut buf).expect("failed to write BRep");
+    cadrum::io::write_brep_text(&result, &mut buf).expect("failed to write BRep");
     std::fs::write(out_path, &buf).expect("failed to write file");
 
-    let mesh = result.mesh_with_tolerance(0.5).expect("mesh failed");
+    let mesh = cadrum::io::mesh(&result, 0.5).expect("mesh failed");
     println!(
         "done: ({} bytes) — vertices: {}, triangles: {}",
         buf.len(),

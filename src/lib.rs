@@ -4,36 +4,35 @@
 //!
 //! ## Core Types
 //! - [`Solid`] — a single solid shape (wraps `TopoDS_Shape` / `TopAbs_SOLID`)
-//! - [`Shape`] — trait with operations on `[Solid]` / `Vec<Solid>` (import to use methods)
+//! - [`Solid`] has all methods directly (no trait import needed)
 
-mod edge;
-mod error;
-mod face;
-mod ffi;
-mod io;
-mod iterators;
-mod mesh;
-mod shape;
-mod solid;
-mod color;
-pub mod stream;
-pub mod utils;
+pub mod common;
+#[cfg(not(feature = "pure"))]
+pub mod occt;
+#[cfg(feature = "pure")]
+pub mod pure;
+pub(crate) mod traits;
+pub use traits::{is_shape_face, is_tool_face, SolidExt};
 
-pub use edge::Edge;
-pub use error::Error;
-pub use face::Face;
-pub use iterators::{ApproximationSegmentIterator, EdgeIterator, FaceIterator};
-pub use mesh::Mesh;
-pub use shape::{Boolean, Shape};
-pub use shape::TShapeId;
-pub use solid::Solid;
-#[cfg(feature = "color")]
-pub use color::Color;
+// Re-export backend types at crate root
+#[cfg(not(feature = "pure"))]
+pub use occt::edge::Edge;
+#[cfg(not(feature = "pure"))]
+pub use occt::face::Face;
+#[cfg(not(feature = "pure"))]
+use occt::io::Io; // private: used by generated delegation, not exposed to users
+#[cfg(not(feature = "pure"))]
+pub use occt::solid::Solid;
 
-// I/O functions
-pub use io::{read_step, read_brep_bin, read_brep_text};
-pub use io::{write_step, write_brep_bin, write_brep_text};
+// Re-export common types
 #[cfg(feature = "color")]
-pub use io::{read_step_with_colors, read_brep_color};
-#[cfg(feature = "color")]
-pub use io::{write_step_with_colors, write_brep_color};
+pub use common::color::Color;
+pub use common::error::Error;
+pub use common::mesh::{EdgeData, Mesh};
+pub use glam::DVec3;
+
+// Re-export submodules
+pub use occt::utils;
+
+// Auto-generated inherent method delegations (trait methods → pub fn on concrete types)
+include!(concat!(env!("OUT_DIR"), "/generated_delegation.rs"));

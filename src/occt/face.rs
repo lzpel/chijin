@@ -1,7 +1,26 @@
-use crate::error::Error;
-use crate::ffi;
-use crate::solid::Solid;
+use super::ffi;
+use super::solid::Solid;
+use crate::common::error::Error;
+use crate::traits::FaceStruct;
 use glam::DVec3;
+
+impl FaceStruct for Face {
+	fn normal_at_center(&self) -> DVec3 {
+		let mut nx = 0.0;
+		let mut ny = 0.0;
+		let mut nz = 0.0;
+		ffi::face_normal_at_center(&self.inner, &mut nx, &mut ny, &mut nz);
+		DVec3::new(nx, ny, nz)
+	}
+
+	fn center_of_mass(&self) -> DVec3 {
+		let mut cx = 0.0;
+		let mut cy = 0.0;
+		let mut cz = 0.0;
+		ffi::face_center_of_mass(&self.inner, &mut cx, &mut cy, &mut cz);
+		DVec3::new(cx, cy, cz)
+	}
+}
 
 impl Face {
 	/// Create a planar face from a polygon defined by 3D points.
@@ -36,36 +55,12 @@ impl Face {
 		Face { inner }
 	}
 
-	/// Return the `TShapeId` (underlying `TopoDS_TShape*` address) of this face.
+	/// Return the underlying `TopoDS_TShape*` address as a `u64`.
 	///
-	/// Use this to look up or set entries in `Shape::colormap`,
-	/// or to match faces against [`BooleanShape::new_face_ids`].
-	pub fn tshape_id(&self) -> crate::shape::TShapeId {
-		crate::shape::TShapeId(ffi::face_tshape_id(&self.inner))
-	}
-
-	/// Get the normal vector at the center of mass of this face.
-	///
-	/// The center of mass is computed using surface-area-weighted integration,
-	/// and the normal is evaluated at that point on the surface.
-	pub fn normal_at_center(&self) -> DVec3 {
-		let mut nx = 0.0;
-		let mut ny = 0.0;
-		let mut nz = 0.0;
-		ffi::face_normal_at_center(&self.inner, &mut nx, &mut ny, &mut nz);
-		DVec3::new(nx, ny, nz)
-	}
-
-	/// Get the center of mass of this face.
-	///
-	/// Computed using `BRepGProp::SurfaceProperties`, which gives the
-	/// surface-area-weighted centroid.
-	pub fn center_of_mass(&self) -> DVec3 {
-		let mut cx = 0.0;
-		let mut cy = 0.0;
-		let mut cz = 0.0;
-		ffi::face_center_of_mass(&self.inner, &mut cx, &mut cy, &mut cz);
-		DVec3::new(cx, cy, cz)
+	/// Use this to look up or set entries in `Solid::colormap`,
+	/// or to match faces against boolean operation results.
+	pub fn tshape_id(&self) -> u64 {
+		ffi::face_tshape_id(&self.inner)
 	}
 
 	/// Extrude this face along the given direction vector to create a solid.
@@ -98,12 +93,7 @@ impl Face {
 	/// Returns [`Error::RevolveFailed`] if the operation fails (e.g. the face
 	/// crosses the rotation axis, causing self-intersection).
 	pub fn revolve(&self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Result<Solid, Error> {
-		let shape = ffi::face_revolve(
-			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
-			angle,
-		);
+		let shape = ffi::face_revolve(&self.inner, axis_origin.x, axis_origin.y, axis_origin.z, axis_direction.x, axis_direction.y, axis_direction.z, angle);
 		if shape.is_null() {
 			return Err(Error::RevolveFailed);
 		}
@@ -127,20 +117,8 @@ impl Face {
 	/// - `align_to_spine`: if `true`, the profile is rotated to be perpendicular
 	///   to the spine tangent (pipe-sweep); if `false`, the profile keeps its
 	///   original orientation (preserves cross-section shape)
-	pub fn helix(
-		&self,
-		axis_origin: DVec3,
-		axis_direction: DVec3,
-		pitch: f64,
-		turns: f64,
-		align_to_spine: bool,
-	) -> Result<Solid, Error> {
-		let shape = ffi::face_helix(
-			&self.inner,
-			axis_origin.x, axis_origin.y, axis_origin.z,
-			axis_direction.x, axis_direction.y, axis_direction.z,
-			pitch, turns, align_to_spine,
-		);
+	pub fn helix(&self, axis_origin: DVec3, axis_direction: DVec3, pitch: f64, turns: f64, align_to_spine: bool) -> Result<Solid, Error> {
+		let shape = ffi::face_helix(&self.inner, axis_origin.x, axis_origin.y, axis_origin.z, axis_direction.x, axis_direction.y, axis_direction.z, pitch, turns, align_to_spine);
 		if shape.is_null() {
 			return Err(Error::HelixFailed);
 		}

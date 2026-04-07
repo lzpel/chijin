@@ -24,13 +24,7 @@ impl RustReader {
 		// SAFETY: Caller must ensure `reader` outlives this RustReader.
 		// The `'static` bound is required by the raw pointer type, so we
 		// use transmute to erase the lifetime (lifetimes are compile-time only).
-		RustReader {
-			inner: unsafe {
-				std::mem::transmute::<*mut (dyn Read + 'a), *mut (dyn Read + 'static)>(
-					reader as *mut (dyn Read + 'a),
-				)
-			},
-		}
+		RustReader { inner: unsafe { std::mem::transmute::<*mut (dyn Read + 'a), *mut (dyn Read + 'static)>(reader as *mut (dyn Read + 'a)) } }
 	}
 }
 
@@ -50,13 +44,7 @@ impl RustWriter {
 	pub fn from_ref<'a>(writer: &'a mut (dyn Write + 'a)) -> Self {
 		// SAFETY: Caller must ensure `writer` outlives this RustWriter.
 		// See RustReader::from_ref for the same rationale.
-		RustWriter {
-			inner: unsafe {
-				std::mem::transmute::<*mut (dyn Write + 'a), *mut (dyn Write + 'static)>(
-					writer as *mut (dyn Write + 'a),
-				)
-			},
-		}
+		RustWriter { inner: unsafe { std::mem::transmute::<*mut (dyn Write + 'a), *mut (dyn Write + 'static)>(writer as *mut (dyn Write + 'a)) } }
 	}
 }
 

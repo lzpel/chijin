@@ -8,7 +8,7 @@ pub struct Color {
 
 #[cfg(feature = "color")]
 impl std::str::FromStr for Color {
-	type Err = crate::error::Error;
+	type Err = super::error::Error;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		Self::from_str(s)
@@ -16,41 +16,48 @@ impl std::str::FromStr for Color {
 }
 
 #[cfg(feature = "color")]
+impl From<&str> for Color {
+	fn from(s: &str) -> Self {
+		Color::from_str(s).unwrap_or_else(|_| panic!("invalid color: {s:?}"))
+	}
+}
+
+#[cfg(feature = "color")]
 impl Color {
 	/// Parse a color string: CSS named colors (e.g. `"red"`) or hex (`"#f00"`, `"#ff0000"`).
-	pub fn from_str(s: &str) -> Result<Self, crate::error::Error> {
+	pub fn from_str(s: &str) -> Result<Self, super::error::Error> {
 		if s.starts_with('#') {
 			return Self::from_hex(s);
 		}
 		let hex = match s.to_ascii_lowercase().as_str() {
-			"black"               => "#000",
-			"white"               => "#fff",
-			"red"                 => "#f00",
-			"lime"                => "#0f0",
-			"blue"                => "#00f",
-			"yellow"              => "#ff0",
-			"cyan" | "aqua"       => "#0ff",
+			"black" => "#000",
+			"white" => "#fff",
+			"red" => "#f00",
+			"lime" => "#0f0",
+			"blue" => "#00f",
+			"yellow" => "#ff0",
+			"cyan" | "aqua" => "#0ff",
 			"magenta" | "fuchsia" => "#f0f",
-			"silver"              => "#c0c0c0",
-			"gray" | "grey"       => "#808080",
-			"maroon"              => "#800000",
-			"olive"               => "#808000",
-			"green"               => "#008000",
-			"purple"              => "#800080",
-			"teal"                => "#008080",
-			"navy"                => "#000080",
-			"orange"              => "#ffa500",
-			"coral"               => "#ff7f50",
-			"tomato"              => "#ff6347",
-			"salmon"              => "#fa8072",
-			"gold"                => "#ffd700",
-			"pink"                => "#ffc0cb",
-			"violet"              => "#ee82ee",
-			"indigo"              => "#4b0082",
-			"brown"               => "#a52a2a",
-			"tan"                 => "#d2b48c",
-			"skyblue"             => "#87ceeb",
-			_ => return Err(crate::error::Error::InvalidColor(s.to_string())),
+			"silver" => "#c0c0c0",
+			"gray" | "grey" => "#808080",
+			"maroon" => "#800000",
+			"olive" => "#808000",
+			"green" => "#008000",
+			"purple" => "#800080",
+			"teal" => "#008080",
+			"navy" => "#000080",
+			"orange" => "#ffa500",
+			"coral" => "#ff7f50",
+			"tomato" => "#ff6347",
+			"salmon" => "#fa8072",
+			"gold" => "#ffd700",
+			"pink" => "#ffc0cb",
+			"violet" => "#ee82ee",
+			"indigo" => "#4b0082",
+			"brown" => "#a52a2a",
+			"tan" => "#d2b48c",
+			"skyblue" => "#87ceeb",
+			_ => return Err(super::error::Error::InvalidColor(s.to_string())),
 		};
 		Self::from_hex(hex)
 	}
@@ -59,11 +66,11 @@ impl Color {
 	///
 	/// The leading `#` is required. The remaining characters must be hex digits,
 	/// either 6 (RRGGBB) or 3 (RGB, each digit is doubled).
-	fn from_hex(s: &str) -> Result<Self, crate::error::Error> {
-		let err = || crate::error::Error::InvalidColor(s.to_string());
+	fn from_hex(s: &str) -> Result<Self, super::error::Error> {
+		let err = || super::error::Error::InvalidColor(s.to_string());
 		let hex = s.strip_prefix('#').ok_or_else(err)?;
 		if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-			return Err(crate::error::Error::InvalidColor(s.to_string()));
+			return Err(super::error::Error::InvalidColor(s.to_string()));
 		}
 		let (r, g, b) = match hex.len() {
 			6 => {
@@ -78,13 +85,9 @@ impl Color {
 				let b = u8::from_str_radix(&hex[2..3], 16).unwrap() * 17;
 				(r, g, b)
 			}
-			_ => return Err(crate::error::Error::InvalidColor(s.to_string())),
+			_ => return Err(super::error::Error::InvalidColor(s.to_string())),
 		};
-		Ok(Color {
-			r: r as f32 / 255.0,
-			g: g as f32 / 255.0,
-			b: b as f32 / 255.0,
-		})
+		Ok(Color { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0 })
 	}
 
 	/// Create an `Color` from HSV values (all in `0.0..=1.0`).
