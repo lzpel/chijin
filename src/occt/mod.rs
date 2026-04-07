@@ -1,4 +1,3 @@
-pub mod boolean;
 pub(crate) mod compound;
 pub mod edge;
 pub mod face;

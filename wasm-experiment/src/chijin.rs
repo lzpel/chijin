@@ -6,14 +6,14 @@
 //!
 //! Output: out/chijin.step (AP214 STEP, colored), out/chijin.svg
 
-use cadrum::{Boolean, Face, Color, Shape, Solid};
+use cadrum::{Face, Color, Shape, Solid, SolidExt};
 use glam::DVec3;
 use std::f64::consts::PI;
 
 pub fn chijin() -> Solid {
 	// ── Body (cylinder): r=15, h=8, centered at origin (z=-4..+4) ────────
 	let cylinder: Solid =
-		Solid::cylinder(15.0, DVec3::Z, 8.0).translate(DVec3::new(0.0, 0.0, -4.0)).color_paint(Some(Color::from_str("#999").unwrap()));
+		Solid::cylinder(15.0, DVec3::Z, 8.0).translate(DVec3::new(0.0, 0.0, -4.0)).color("#999");
 
 	// ── Rim: cross-section polygon in the x=0 plane, revolved 360° around Z
 	// to form a ring with outer radius 17 at z=3..5.
@@ -30,7 +30,7 @@ pub fn chijin() -> Solid {
 	let sheet = cross_section
 		.revolve(DVec3::ZERO, DVec3::Z, 2.0 * PI)
 		.unwrap()
-		.color_paint(Some(Color::from_str("#fff").unwrap()));
+		.color("#fff");
 	let sheets = [sheet.clone().mirror(DVec3::ZERO, DVec3::Z), sheet];
 
 	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
@@ -53,27 +53,26 @@ pub fn chijin() -> Solid {
 			block_proto
 				.clone()
 				.rotate(DVec3::ZERO, DVec3::Z, angle)
-				.color_paint(Some(color)),
+				.color(color),
 		);
 		holes.push(hole_proto.clone().rotate(DVec3::ZERO, DVec3::Z, angle));
 	}
 	let blocks = blocks
 		.into_iter()
 		.map(|v| vec![v])
-		.reduce(|a, b| Boolean::union(&a, &b).unwrap().solids)
+		.reduce(|a, b| a.union(&b).unwrap())
 		.unwrap();
 	let holes = holes
 		.into_iter()
 		.map(|v| vec![v])
-		.reduce(|a, b| Boolean::union(&a, &b).unwrap().solids)
+		.reduce(|a, b| a.union(&b).unwrap())
 		.unwrap();
 
 	// ── Assemble with boolean operations: union, subtract, union ─────────
-	let combined: Vec<Solid> = Boolean::union(&[cylinder], &sheets)
-		.expect("cylinder + sheet union failed")
-		.into();
-	let result: Vec<Solid> = Boolean::subtract(&combined, &holes).unwrap().into(); // drill holes
-	let result: Vec<Solid> = Boolean::union(&result, &blocks).unwrap().into(); // attach blocks
+	let combined: Vec<Solid> = vec![cylinder].union(&sheets)
+		.expect("cylinder + sheet union failed");
+	let result: Vec<Solid> = combined.subtract(&holes).unwrap(); // drill holes
+	let result: Vec<Solid> = result.union(&blocks).unwrap(); // attach blocks
 	assert!(result.len() == 1);
 	result.into_iter().next().unwrap()
 }

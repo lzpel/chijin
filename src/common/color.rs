@@ -16,6 +16,13 @@ impl std::str::FromStr for Color {
 }
 
 #[cfg(feature = "color")]
+impl From<&str> for Color {
+	fn from(s: &str) -> Self {
+		Color::from_str(s).unwrap_or_else(|_| panic!("invalid color: {s:?}"))
+	}
+}
+
+#[cfg(feature = "color")]
 impl Color {
 	/// Parse a color string: CSS named colors (e.g. `"red"`) or hex (`"#f00"`, `"#ff0000"`).
 	pub fn from_str(s: &str) -> Result<Self, super::error::Error> {

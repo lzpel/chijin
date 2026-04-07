@@ -1,4 +1,4 @@
-use cadrum::{Boolean, Solid};
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 
 #[test]
@@ -10,15 +10,15 @@ fn test_union_cylinders() {
 	let c = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(0.0, 1.0, 0.0));
 	let d = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(0.0, -1.0, 0.0));
 
-	let union_a_b = Boolean::union(&[a.clone()], &[b.clone()]).unwrap();
-	println!("union([A], [B]) solid count: {}", union_a_b.solids().len());
+	let union_a_b = vec![a.clone()].union(&[b.clone()]).unwrap();
+	println!("union([A], [B]) solid count: {}", union_a_b.len());
 
-	let union_ab_cd = Boolean::union(&[a.clone(), b.clone()], &[c.clone(), d.clone()]).unwrap();
-	println!("union([A, B], [C, D]) solid count: {}", union_ab_cd.solids().len());
+	let union_ab_cd = vec![a.clone(), b.clone()].union(&[c.clone(), d.clone()]).unwrap();
+	println!("union([A, B], [C, D]) solid count: {}", union_ab_cd.len());
 
 	let all = vec![a, b, c, d];
-	let union_all_all = Boolean::union(&all, &all).unwrap();
-	println!("union([ABCD], [ABCD]) solid count: {}", union_all_all.solids().len());
+	let union_all_all = all.clone().union(&all).unwrap();
+	println!("union([ABCD], [ABCD]) solid count: {}", union_all_all.len());
 
 	//
 }
@@ -31,8 +31,8 @@ fn test_union_shifted() {
 	let c = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(0.0, 1.0, 0.0));
 	let d = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(2.0, 1.0, 0.0));
 
-	let union_ab_cd = Boolean::union(&[a.clone(), b.clone()], &[c.clone(), d.clone()]).unwrap();
-	println!("union([A(0,0), B(2,0)], [C(0,1), D(2,1)]) solid count: {}", union_ab_cd.solids().len());
+	let union_ab_cd = vec![a.clone(), b.clone()].union(&[c.clone(), d.clone()]).unwrap();
+	println!("union([A(0,0), B(2,0)], [C(0,1), D(2,1)]) solid count: {}", union_ab_cd.len());
 
 	// 完全にグループ内が自己交差しない座標 (AとBの距離=4.0 > 2.2)
 	let a_sep = Solid::cylinder(1.1, DVec3::Z, 1.0);
@@ -40,8 +40,8 @@ fn test_union_shifted() {
 	let c_sep = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(0.0, 1.0, 0.0));
 	let d_sep = Solid::cylinder(1.1, DVec3::Z, 1.0).translate(DVec3::new(4.0, 1.0, 0.0));
 
-	let union_sep = Boolean::union(&[a_sep.clone(), b_sep.clone()], &[c_sep.clone(), d_sep.clone()]).unwrap();
-	println!("union([A(0,0), B(4.0,0)], [C(0,1), D(4.0,1)]) solid count: {}", union_sep.solids().len());
+	let union_sep = vec![a_sep.clone(), b_sep.clone()].union(&[c_sep.clone(), d_sep.clone()]).unwrap();
+	println!("union([A(0,0), B(4.0,0)], [C(0,1), D(4.0,1)]) solid count: {}", union_sep.len());
 
 	// 結論をプリントする
 	println!("\n=== 結論 (Conclusion) ===");

@@ -5,7 +5,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::Solid;
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 use std::fs;
 
@@ -70,13 +70,13 @@ fn intersect_colored_step_preserves_colors() {
 
 	// Half-space keeping z > 0 side.
 	let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::Z)];
-	let result = cadrum::Boolean::intersect(&cube, &half).expect("intersect should succeed");
+	let solids: Vec<Solid> = cube.intersect(&half).expect("intersect should succeed");
 
 	// At least one face should have kept its color.
-	assert!(colormap_len(result.solids()) >= 1, "at least one face should keep its color after intersect, got 0");
-	assert!(colormap_len(result.solids()) < original_colors + 1, "intersect should not invent new colors");
+	assert!(colormap_len(&solids) >= 1, "at least one face should keep its color after intersect, got 0");
+	assert!(colormap_len(&solids) < original_colors + 1, "intersect should not invent new colors");
 
-	write_colored(result.solids(), "out/colored_box_intersect.step");
+	write_colored(&solids, "out/colored_box_intersect.step");
 }
 
 /// Translate the colored box and verify colors survive the move.

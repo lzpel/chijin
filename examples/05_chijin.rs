@@ -1,4 +1,4 @@
-//! Chijin example: build a chijin (hand drum from Amami Oshima) using the chijin library.
+//! Chijin example: build a chijin (hand drum from Amami Oshima).
 //!
 //! ```
 //! cargo run --example chijin
@@ -6,18 +6,17 @@
 //!
 //! Output: chijin.step (AP214 STEP, colored), chijin.svg
 
-use cadrum::{Boolean, Face, Color, Solid};
+use cadrum::{Face, Color, Solid, SolidExt};
 use glam::DVec3;
 use std::f64::consts::PI;
 
-pub fn chijin() -> Solid {
+pub fn chijin() -> Result<Solid, cadrum::Error> {
 	// ── Body (cylinder): r=15, h=8, centered at origin (z=-4..+4) ────────
-	let cylinder: Solid =
-		Solid::cylinder(15.0, DVec3::Z, 8.0).translate(DVec3::new(0.0, 0.0, -4.0)).color_paint(Some(Color::from_str("#999").unwrap()));
+	let cylinder = Solid::cylinder(15.0, DVec3::Z, 8.0)
+		.translate(DVec3::new(0.0, 0.0, -4.0))
+		.color("#999");
 
 	// ── Rim: cross-section polygon in the x=0 plane, revolved 360° around Z
-	// to form a ring with outer radius 17 at z=3..5.
-	// Mirrored across z=0 to create rims on both top and bottom.
 	let cross_section = Face::from_polygon(&[
 		DVec3::new(0.0, 0.0, 5.0),
 		DVec3::new(0.0, 15.0, 5.0),
@@ -25,17 +24,16 @@ pub fn chijin() -> Solid {
 		DVec3::new(0.0, 15.0, 4.0),
 		DVec3::new(0.0, 0.0, 4.0),
 		DVec3::new(0.0, 0.0, 5.0),
-	])
-	.unwrap();
+	])?;
 	let sheet = cross_section
-		.revolve(DVec3::ZERO, DVec3::Z, 2.0 * PI)
-		.unwrap()
-		.color_paint(Some(Color::from_str("#fff").unwrap()));
+		.revolve(DVec3::ZERO, DVec3::Z, 2.0 * PI)?
+		.color("#fff");
 	let sheets = [sheet.clone().mirror(DVec3::ZERO, DVec3::Z), sheet];
 
 	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
-	let block_proto = Solid::cube(2.0, 8.0, 1.0).translate(DVec3::new(-1.0, -4.0, -0.5))
-		.rotate(DVec3::ZERO, DVec3::Z, 60.0_f64.to_radians())
+	let block_proto = Solid::cube(2.0, 8.0, 1.0)
+		.translate(DVec3::new(-1.0, -4.0, -0.5))
+		.rotate_z(60.0_f64.to_radians())
 		.translate(DVec3::new(0.0, 15.0, 0.0));
 
 	// ── Lacing holes: thin cylinders through each block ──────────────────
@@ -44,52 +42,45 @@ pub fn chijin() -> Solid {
 
 	// Distribute 20 blocks and holes evenly around Z, each block in a rainbow color
 	let n = 20usize;
-	let mut blocks: Vec<Solid> = Vec::with_capacity(n);
-	let mut holes: Vec<Solid> = Vec::with_capacity(n);
+	let mut blocks = Vec::with_capacity(n);
+	let mut holes = Vec::with_capacity(n);
 	for i in 0..n {
 		let angle = 2.0 * PI * (i as f64) / (n as f64);
 		let color = Color::from_hsv(i as f32 / n as f32, 1.0, 1.0);
-		blocks.push(
-			block_proto
-				.clone()
-				.rotate(DVec3::ZERO, DVec3::Z, angle)
-				.color_paint(Some(color)),
-		);
-		holes.push(hole_proto.clone().rotate(DVec3::ZERO, DVec3::Z, angle));
+		blocks.push(block_proto.clone().rotate_z(angle).color(color));
+		holes.push(hole_proto.clone().rotate_z(angle));
 	}
-	let blocks = blocks
-		.into_iter()
+	let blocks = blocks.into_iter()
 		.map(|v| vec![v])
-		.reduce(|a, b| Boolean::union(&a, &b).unwrap().into_solids())
+		.reduce(|a, b| a.union(&b).unwrap())
 		.unwrap();
-	let holes = holes
-		.into_iter()
+	let holes = holes.into_iter()
 		.map(|v| vec![v])
-		.reduce(|a, b| Boolean::union(&a, &b).unwrap().into_solids())
+		.reduce(|a, b| a.union(&b).unwrap())
 		.unwrap();
 
 	// ── Assemble with boolean operations: union, subtract, union ─────────
-	let combined: Vec<Solid> = Boolean::union(&[cylinder], &sheets)
-		.expect("cylinder + sheet union failed")
-		.into();
-	let result: Vec<Solid> = Boolean::subtract(&combined, &holes).unwrap().into(); // drill holes
-	let result: Vec<Solid> = Boolean::union(&result, &blocks).unwrap().into(); // attach blocks
+	let result = [cylinder]
+		.union(&sheets)?
+		.subtract(&holes)?
+		.union(&blocks)?;
 	assert!(result.len() == 1);
-	result.into_iter().next().unwrap()
+	Ok(result.into_iter().next().unwrap())
 }
 
-fn main() {
+fn main() -> Result<(), cadrum::Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-	let result = vec![chijin()];
-	// ── Write STEP ───────────────────────────────────────────────────────
+	let result = [chijin()?];
+
 	let step_path = format!("{example_name}.step");
 	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
 	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
-	println!("wrote {}", &step_path);
+	println!("wrote {step_path}");
 
-	// ── Write SVG (isometric view from (1,1,1)) ─────────────────────────
-	let svg_path = format!("{}.svg", example_name);
+	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
 	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, &mut f).expect("failed to write SVG");
-	println!("wrote {}", &svg_path);
+	println!("wrote {svg_path}");
+
+	Ok(())
 }

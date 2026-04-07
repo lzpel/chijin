@@ -1,6 +1,6 @@
 use cadrum::{
 	utils::{helix_section, revolve_section, stretch_vector},
-	Error, Solid,
+	Error, Solid, SolidExt,
 };
 use glam::DVec3;
 use std::panic::{self, AssertUnwindSafe};
@@ -145,13 +145,13 @@ fn diagnose_new_faces() {
 	let delta = DVec3::new(1.0, 0.0, 0.0);
 
 	let half: Vec<Solid> = vec![Solid::half_space(origin, -delta.normalize())];
-	let r_half = cadrum::Boolean::intersect(&shape, &half).expect("intersect(half_space) failed");
-	println!("  intersect result: tool_face count={}", r_half.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_half.is_tool_face(f)).count());
+	let (r_half_solids, r_half_meta) = shape.clone().intersect_with_metadata(&half).expect("intersect(half_space) failed");
+	println!("  intersect result: tool_face count={}", r_half_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_half_meta, f)).count());
 
 	let big_box: Vec<Solid> = vec![Solid::cube(1001.0, 2000.0, 2000.0).translate(DVec3::new(-1000.0, -1000.0, -1000.0))];
-	let r_box = cadrum::Boolean::intersect(&shape, &big_box).expect("intersect(big_box) failed");
-	println!("  intersect result: tool_face count={}", r_box.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_box.is_tool_face(f)).count());
-	for (i, face) in r_box.solids().iter().flat_map(|s| s.face_iter()).filter(|f| r_box.is_tool_face(f)).enumerate() {
+	let (r_box_solids, r_box_meta) = shape.intersect_with_metadata(&big_box).expect("intersect(big_box) failed");
+	println!("  intersect result: tool_face count={}", r_box_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_box_meta, f)).count());
+	for (i, face) in r_box_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_box_meta, f)).enumerate() {
 		let n = face.normal_at_center();
 		let c = face.center_of_mass();
 		println!("    face[{i}]: normal=({:.3},{:.3},{:.3}) center=({:.3},{:.3},{:.3})", n.x, n.y, n.z, c.x, c.y, c.z);

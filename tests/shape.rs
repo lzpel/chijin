@@ -1,4 +1,4 @@
-use cadrum::Solid;
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -35,18 +35,18 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 	let b_moved: Vec<Solid> = b.clone().into_iter().map(|s| s.translate(dvec3(-100.0, 0.0, 0.0))).collect();
 
 	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
-	let result_no_move: Vec<Solid> = cadrum::Boolean::union(&a, &b).expect("union should succeed").into();
+	let result_no_move: Vec<Solid> = a.clone().union(&b).expect("union should succeed");
 	let volume_no_move: f64 = result_no_move.iter().map(|s| s.volume()).sum();
 	assert!((volume_no_move - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_no_move}");
 
 	// b_moved は a と完全に重なるので union すると1つ分（1000）。
-	let result: Vec<Solid> = cadrum::Boolean::union(&a, &b_moved).expect("union should succeed").into();
+	let result: Vec<Solid> = a.clone().union(&b_moved).expect("union should succeed");
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((volume - 1000.0).abs() < 1e-3, "expected volume ~1000, got {volume}");
 
 	// b_moved を作っても b は変化していないことを確認:
 	// result（x=0付近, volume=1000）と b（x=100付近, volume=1000）を union すると2000になるはず。
-	let result_with_b: Vec<Solid> = cadrum::Boolean::union(&result, &b).expect("union should succeed").into();
+	let result_with_b: Vec<Solid> = result.union(&b).expect("union should succeed");
 	let volume_with_b: f64 = result_with_b.iter().map(|s| s.volume()).sum();
 	assert!((volume_with_b - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_with_b}");
 }
@@ -57,7 +57,7 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 fn test_rotated_preserves_volume() {
 	let shape = test_box();
 	// Z 軸周りに 45° 回転
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate(DVec3::ZERO, DVec3::Z, std::f64::consts::FRAC_PI_4)).collect();
+	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::FRAC_PI_4)).collect();
 	assert!((rotated.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-3);
 }
 
@@ -65,14 +65,14 @@ fn test_rotated_preserves_volume() {
 fn test_rotated_full_turn_preserves_volume() {
 	let shape = test_box();
 	// 360° 回転（元に戻る）
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate(DVec3::ZERO, DVec3::Z, std::f64::consts::TAU)).collect();
+	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::TAU)).collect();
 	assert!((rotated.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-3);
 }
 
 #[test]
 fn test_rotated_preserves_shell_count() {
 	let shape = test_box();
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate(DVec3::ZERO, DVec3::Y, std::f64::consts::FRAC_PI_2)).collect();
+	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_y(std::f64::consts::FRAC_PI_2)).collect();
 	assert_eq!(rotated.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
 }
 
@@ -119,7 +119,7 @@ fn test_preserves_face_ids() {
 	let shape = test_box();
 	let solid_id = shape[0].tshape_id();
 	let ids = face_ids(&shape);
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate(DVec3::ZERO, DVec3::Z, std::f64::consts::FRAC_PI_4)).collect();
+	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::FRAC_PI_4)).collect();
 	assert_eq!(solid_id, rotated[0].tshape_id(), "rotate should preserve solid tshape_id");
 	assert_eq!(ids, face_ids(&rotated), "rotate should preserve face IDs");
 }
@@ -133,8 +133,8 @@ fn test_new_faces_subtract_b_inside_a() {
 	// 新実装（from_b post_ids）では unchanged 面も from_b に入る → tool faces = 6
 	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
 	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
-	let result = cadrum::Boolean::subtract(&big, &small).unwrap();
-	assert_eq!(result.solids().iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
+	let (solids, meta) = big.subtract_with_metadata(&small).unwrap();
+	assert_eq!(solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
 }
 
 #[test]
@@ -143,10 +143,10 @@ fn test_new_faces_intersect_b_inside_a() {
 	// small の 6 面はすべて unchanged → tool faces = 結果の全フェイス = 6
 	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
 	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
-	let result = cadrum::Boolean::intersect(&big, &small).unwrap();
-	let tool_count = result.solids().iter().flat_map(|s| s.face_iter()).filter(|f| result.is_tool_face(f)).count();
+	let (solids, meta) = big.intersect_with_metadata(&small).unwrap();
+	let tool_count = solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count();
 	assert_eq!(tool_count, 6, "intersect with B fully inside A: tool faces should equal all faces of result");
-	assert_eq!(result.solids().iter().flat_map(|s| s.face_iter()).count(), tool_count, "intersect with B fully inside A: tool faces should cover all result faces");
+	assert_eq!(solids.iter().flat_map(|s| s.face_iter()).count(), tool_count, "intersect with B fully inside A: tool faces should cover all result faces");
 }
 
 // ==================== bounding_box ====================

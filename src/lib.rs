@@ -12,10 +12,9 @@ pub mod occt;
 #[cfg(feature = "pure")]
 pub mod pure;
 pub(crate) mod traits;
+pub use traits::{is_shape_face, is_tool_face, SolidExt};
 
 // Re-export backend types at crate root
-#[cfg(not(feature = "pure"))]
-pub use occt::boolean::Boolean;
 #[cfg(not(feature = "pure"))]
 pub use occt::edge::Edge;
 #[cfg(not(feature = "pure"))]

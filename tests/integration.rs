@@ -13,7 +13,7 @@
 //!   T-07: I/O  — read/write 中に一時ファイルが生成されない（ストリームAPI）
 //!   T-08: API設計 — boolean の戻り値が中間型でなく Shape（現 Vec<Solid>）に変換可能
 
-use cadrum::Solid;
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -48,7 +48,7 @@ fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 fn test_t01_union_drop_result_first() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = cadrum::Boolean::union(&a, &b).unwrap();
+	let result = a.clone().union(&b).unwrap();
 	drop(result);
 	drop(a);
 	drop(b);
@@ -58,7 +58,7 @@ fn test_t01_union_drop_result_first() {
 fn test_t01_union_drop_result_last() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = cadrum::Boolean::union(&a, &b).unwrap();
+	let result = a.clone().union(&b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -68,7 +68,7 @@ fn test_t01_union_drop_result_last() {
 fn test_t01_subtract_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = cadrum::Boolean::subtract(&a, &b).unwrap();
+	let result = a.clone().subtract(&b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -78,7 +78,7 @@ fn test_t01_subtract_drop_order() {
 fn test_t01_intersect_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = cadrum::Boolean::intersect(&a, &b).unwrap();
+	let result = a.clone().intersect(&b).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -89,8 +89,8 @@ fn test_t01_chained_boolean_drops() {
 	let a = test_box();
 	let b = test_box_2();
 	let c = test_box_3();
-	let r1 = cadrum::Boolean::union(&a, &b).unwrap();
-	let r2 = cadrum::Boolean::subtract(r1.solids(), &c).unwrap();
+	let r1 = a.clone().union(&b).unwrap();
+	let r2 = r1.clone().subtract(&c).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -150,7 +150,7 @@ fn test_t04_approximation_tolerance() {
 fn test_t05_translated_compound() {
 	let a = test_box();
 	let b = test_box_2();
-	let compound: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
+	let compound: Vec<Solid> = a.union(&b).unwrap();
 	let v = dvec3(100.0, 0.0, 0.0);
 	let orig_mesh = cadrum::io::mesh(&compound, 0.1).unwrap();
 	let shifted: Vec<Solid> = compound.into_iter().map(|s| s.translate(v)).collect();
@@ -184,17 +184,16 @@ fn test_t06_brep_roundtrip() {
 	}
 }
 
-// ==================== T-08: Boolean returns BooleanShape, convertible to Shape ====================
-// boolean の戻り値が中間型 BooleanShape ではなく Vec<Solid> に変換可能であること。
-// （旧 API では BooleanShape という中間型が必要だった）
+// ==================== T-08: Boolean returns Vec<Solid> ====================
+// boolean の戻り値が Vec<Solid> であること。
 
 #[test]
 fn test_t08_boolean_returns_shape() {
 	let a = test_box();
 	let b = test_box_2();
-	let _union: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
-	let _sub: Vec<Solid> = cadrum::Boolean::subtract(&a, &b).unwrap().into();
-	let _inter: Vec<Solid> = cadrum::Boolean::intersect(&a, &b).unwrap().into();
+	let _union: Vec<Solid> = a.clone().union(&b).unwrap();
+	let _sub: Vec<Solid> = a.clone().subtract(&b).unwrap();
+	let _inter: Vec<Solid> = a.intersect(&b).unwrap();
 }
 
 // ==================== STEP export ====================
@@ -204,7 +203,7 @@ fn test_t08_boolean_returns_shape() {
 fn test_hollow_cube_write_step() {
 	let outer: Vec<Solid> = vec![Solid::cube(20.0, 20.0, 20.0).translate(dvec3(-10.0, -10.0, -10.0))];
 	let inner: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(-5.0, -5.0, -5.0))];
-	let hollow_cube: Vec<Solid> = cadrum::Boolean::subtract(&outer, &inner).unwrap().into();
+	let hollow_cube: Vec<Solid> = outer.subtract(&inner).unwrap();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/hollow_cube.step").unwrap();
@@ -216,8 +215,8 @@ fn test_hollow_cube_write_step() {
 fn test_half_space_intersect() {
 	let shape = test_box();
 	let half: Vec<Solid> = vec![Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
-	let result = cadrum::Boolean::intersect(&shape, &half).unwrap();
-	assert!(!result.solids().iter().all(|s| s.is_null()));
+	let result: Vec<Solid> = shape.intersect(&half).unwrap();
+	assert!(!result.iter().all(|s| s.is_null()));
 }
 
 // cylinder プリミティブの体積が πr²h と一致することを確認。

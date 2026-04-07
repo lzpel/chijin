@@ -22,16 +22,16 @@ enum DelegationKind {
 	ModBlock { mod_name: String, struct_path: String },
 }
 
-fn delegation_kind(trait_name: &str) -> DelegationKind {
+fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
 	if trait_name.ends_with("Struct") {
 		let type_name = &trait_name[..trait_name.len() - 6];
-		DelegationKind::InherentImpl { concrete_type: format!("crate::{}", type_name) }
+		Some(DelegationKind::InherentImpl { concrete_type: format!("crate::{}", type_name) })
 	} else if trait_name.ends_with("Module") {
 		let base = &trait_name[..trait_name.len() - 6];
 		let mod_name = base[..1].to_lowercase() + &base[1..];
-		DelegationKind::ModBlock { mod_name, struct_path: format!("crate::{}", base) }
+		Some(DelegationKind::ModBlock { mod_name, struct_path: format!("crate::{}", base) })
 	} else {
-		panic!("build_delegation: trait '{}' must end with 'Struct' or 'Module'.", trait_name);
+		None // skip traits with unrecognized suffix (e.g. SolidExt)
 	}
 }
 
@@ -54,7 +54,10 @@ pub fn build_delegation(traits_src: &str, out_dir: &Path) {
 	let traits = parse_traits(traits_src);
 
 	for (trait_name, methods) in &traits {
-		let kind = delegation_kind(trait_name);
+		let kind = match delegation_kind(trait_name) {
+			Some(k) => k,
+			None => continue, // skip traits with unrecognized suffix
+		};
 		let trait_path = format!("crate::traits::{}", trait_name);
 
 		match &kind {

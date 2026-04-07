@@ -1,6 +1,6 @@
 #[cfg(feature = "color")]
 use cadrum::Color;
-use cadrum::Solid;
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -57,7 +57,7 @@ fn test_svg_cylinder() {
 fn test_svg_has_hidden_lines() {
 	let a: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
 	let b: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 0.0))];
-	let shape: Vec<Solid> = cadrum::Boolean::union(&a, &b).unwrap().into();
+	let shape: Vec<Solid> = a.union(&b).unwrap();
 	let svg = svg_string(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1);
 
 	assert!(svg.contains("#999"), "should contain hidden line color");

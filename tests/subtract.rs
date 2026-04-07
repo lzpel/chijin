@@ -1,4 +1,4 @@
-use cadrum::{Boolean, Solid};
+use cadrum::{Solid, SolidExt};
 use glam::DVec3;
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,7 @@ fn run_subtract(offset: DVec3, optimized: bool) -> (Duration, Vec<Solid>) {
 	let b = make_toruses(offset);
 	let t0 = Instant::now();
 	let (results, skipped) = if !optimized {
-		(Boolean::subtract(&a, &b).unwrap().into_solids(), 0)
+		(a.subtract(&b).unwrap(), 0)
 	} else {
 		let bboxes_b: Vec<[DVec3; 2]> = b.iter().map(|s| s.bounding_box()).collect();
 
@@ -27,13 +27,13 @@ fn run_subtract(offset: DVec3, optimized: bool) -> (Duration, Vec<Solid>) {
 
 		for sa in &a {
 			let bb_a = sa.bounding_box();
-			let tools = b.iter().zip(&bboxes_b).filter(|(sb, &bb_b)| bboxes_overlap(bb_a, bb_b)).map(|(sb, _)| sb);
-			if tools.clone().count() == 0 {
+			let tools: Vec<&Solid> = b.iter().zip(&bboxes_b).filter(|(_sb, &bb_b)| bboxes_overlap(bb_a, bb_b)).map(|(sb, _)| sb).collect();
+			if tools.is_empty() {
 				skipped += 1;
 				results.push(sa.clone());
 			} else {
-				let r = Boolean::subtract(&[sa.clone()], tools).unwrap();
-				results.extend(r.into_solids());
+				let r = vec![sa.clone()].subtract(tools.iter().copied()).unwrap();
+				results.extend(r);
 			}
 		}
 		(results, skipped)
