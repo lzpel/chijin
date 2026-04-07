@@ -50,8 +50,8 @@ pub trait SolidTrait: Sized + Clone {
 	fn rotate_x(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::X, angle) }
 	fn rotate_y(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::Y, angle) }
 	fn rotate_z(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::Z, angle) }
-	fn scaled(&self, center: DVec3, factor: f64) -> Self;
-	fn mirrored(&self, plane_origin: DVec3, plane_normal: DVec3) -> Self;
+	fn scale(self, center: DVec3, factor: f64) -> Self;
+	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self;
 	fn clean(&self) -> Result<Self, Error>;
 
 	// --- Queries ---

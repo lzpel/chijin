@@ -28,13 +28,13 @@ fn main() {
     // scaled — 1.5x from its local origin
     let scaled = base()
         .color_paint(Some(Color::from_str("#2ecc71").unwrap()))
-        .scaled(DVec3::ZERO, 1.5)
+        .scale(DVec3::ZERO, 1.5)
         .translate(DVec3::new(120.0, 0.0, 0.0));
 
-    // mirrored — flip across Z=0 plane so the tip points down
+    // mirror — flip across Z=0 plane so the tip points down
     let mirrored = base()
         .color_paint(Some(Color::from_str("#e74c3c").unwrap()))
-        .mirrored(DVec3::ZERO, DVec3::Z)
+        .mirror(DVec3::ZERO, DVec3::Z)
         .translate(DVec3::new(160.0, 0.0, 0.0));
 
     let shapes = vec![original, translated, rotated, scaled, mirrored];

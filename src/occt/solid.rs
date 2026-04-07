@@ -164,7 +164,17 @@ impl SolidTrait for Solid {
 		}
 	}
 
-	fn scaled(&self, center: DVec3, factor: f64) -> Self {
+	// scale/mirror consume self for API consistency, but internally clone the geometry.
+	// Unlike translate/rotate which use gp_Trsf + shape.Moved() (preserving TShape),
+	// scale/mirror cannot use Moved(): since OCCT Fix 0027457 (v7.6), TopLoc_Location
+	// rejects gp_Trsf with scale != 1 or negative determinant, because downstream
+	// algorithms (meshing, booleans) break on non-rigid transforms in locations.
+	// Therefore BRepBuilderAPI_Transform is required, which rebuilds topology.
+	// C++ impl: cpp/wrapper.cpp scale_shape() / mirror_shape()
+	// See: https://dev.opencascade.org/content/how-scale-or-mirror-shape
+	//      BRepBuilderAPI_Transform.cxx:48-49 (myUseModif branch)
+
+	fn scale(self, center: DVec3, factor: f64) -> Self {
 		let inner = ffi::scale_shape(&self.inner, center.x, center.y, center.z, factor);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
@@ -175,7 +185,7 @@ impl SolidTrait for Solid {
 		)
 	}
 
-	fn mirrored(&self, plane_origin: DVec3, plane_normal: DVec3) -> Self {
+	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self {
 		let inner = ffi::mirror_shape(&self.inner, plane_origin.x, plane_origin.y, plane_origin.z, plane_normal.x, plane_normal.y, plane_normal.z);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);

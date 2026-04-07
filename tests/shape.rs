@@ -96,28 +96,28 @@ fn test_rotated_preserves_shell_count() {
 	assert_eq!(rotated.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
 }
 
-// ==================== scaled ====================
+// ==================== scale ====================
 
 #[test]
-fn test_scaled_volume() {
+fn test_scale_volume() {
 	let shape = test_box();
 	// 均一 2 倍スケール → 体積は 2³ = 8 倍
-	let scaled: Vec<Solid> = shape.iter().map(|s| s.scaled(DVec3::ZERO, 2.0)).collect();
+	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 2.0)).collect();
 	assert!((scaled.iter().map(|s| s.volume()).sum::<f64>() - 8000.0).abs() < 1e-3);
 }
 
 #[test]
-fn test_scaled_half_volume() {
+fn test_scale_half_volume() {
 	let shape = test_box();
 	// 均一 0.5 倍スケール → 体積は (0.5)³ = 0.125 倍 = 125
-	let scaled: Vec<Solid> = shape.iter().map(|s| s.scaled(DVec3::ZERO, 0.5)).collect();
+	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 0.5)).collect();
 	assert!((scaled.iter().map(|s| s.volume()).sum::<f64>() - 125.0).abs() < 1e-3);
 }
 
 #[test]
-fn test_scaled_preserves_shell_count() {
+fn test_scale_preserves_shell_count() {
 	let shape = test_box();
-	let scaled: Vec<Solid> = shape.iter().map(|s| s.scaled(DVec3::ZERO, 3.0)).collect();
+	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 3.0)).collect();
 	assert_eq!(scaled.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
 }
 
@@ -144,20 +144,20 @@ fn test_preserves_face_ids() {
 	assert_eq!(ids, face_ids(&rotated), "rotate should preserve face IDs");
 }
 
-// ==================== mirrored / scaled independence ====================
+// ==================== mirror / scale independence ====================
 
 #[test]
-fn test_mirrored_octants_union_volume_is_eight() {
+fn test_mirror_octants_union_volume_is_eight() {
 	// (1,1,1)→(2,2,2) のboxを全8方向に鏡像コピーして8辺体を作る。
 	// 実態が独立していない（同一インスタンスなど）場合は重複で体積が8を下回る。
 	let b = vec![Solid::cube(1.0, 1.0, 1.0).translate(dvec3(1.0, 1.0, 1.0))];
-	let bx: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::X)).collect();
-	let by: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Y)).collect();
-	let bz: Vec<Solid> = b.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Z)).collect();
-	let bxy: Vec<Solid> = bx.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Y)).collect();
-	let bxz: Vec<Solid> = bx.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Z)).collect();
-	let byz: Vec<Solid> = by.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Z)).collect();
-	let bxyz: Vec<Solid> = bxy.iter().map(|s| s.mirrored(DVec3::ZERO, DVec3::Z)).collect();
+	let bx: Vec<Solid> = b.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::X)).collect();
+	let by: Vec<Solid> = b.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Y)).collect();
+	let bz: Vec<Solid> = b.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Z)).collect();
+	let bxy: Vec<Solid> = bx.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Y)).collect();
+	let bxz: Vec<Solid> = bx.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Z)).collect();
+	let byz: Vec<Solid> = by.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Z)).collect();
+	let bxyz: Vec<Solid> = bxy.iter().map(|s| s.clone().mirror(DVec3::ZERO, DVec3::Z)).collect();
 	let octants = [b, bx, by, bz, bxy, bxz, byz, bxyz];
 	let mut result = octants[0].clone();
 	for other in &octants[1..] {
@@ -168,12 +168,12 @@ fn test_mirrored_octants_union_volume_is_eight() {
 }
 
 #[test]
-fn test_scaled_union_with_original_volume_is_nine() {
+fn test_scale_union_with_original_volume_is_nine() {
 	// (1,1,1)→(2,2,2) のbox（体積1）と原点中心2倍スケール（→(2,2,2)→(4,4,4), 体積8）は
 	// 角のみ接するので union 体積 = 1 + 8 = 9。
-	// scaled が実態を変化させていた場合は体積がこれより小さくなる。
+	// scale が実態を変化させていた場合は体積がこれより小さくなる。
 	let b = vec![Solid::cube(1.0, 1.0, 1.0).translate(dvec3(1.0, 1.0, 1.0))];
-	let b_scaled: Vec<Solid> = b.iter().map(|s| s.scaled(DVec3::ZERO, 2.0)).collect();
+	let b_scaled: Vec<Solid> = b.iter().map(|s| s.clone().scale(DVec3::ZERO, 2.0)).collect();
 	let result: Vec<Solid> = cadrum::Boolean::union(&b, &b_scaled).expect("union failed").into();
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((volume - 9.0).abs() < 1e-3, "expected volume ~9 (1 + 8), got {volume}");

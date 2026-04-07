@@ -31,7 +31,7 @@ pub fn chijin() -> Solid {
 		.revolve(DVec3::ZERO, DVec3::Z, 2.0 * PI)
 		.unwrap()
 		.color_paint(Some(Color::from_str("#fff").unwrap()));
-	let sheets = [sheet.mirrored(DVec3::ZERO, DVec3::Z), sheet];
+	let sheets = [sheet.clone().mirror(DVec3::ZERO, DVec3::Z), sheet];
 
 	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
 	let block_proto = Solid::cube(2.0, 8.0, 1.0).translate(DVec3::new(-1.0, -4.0, -0.5))
