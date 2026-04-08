@@ -32,7 +32,7 @@ pub use common::mesh::{EdgeData, Mesh};
 pub use glam::DVec3;
 
 // Re-export submodules
-pub use occt::utils;
+pub use common::utils;
 
 // Auto-generated inherent method delegations (trait methods → pub fn on concrete types)
 include!(concat!(env!("OUT_DIR"), "/generated_delegation.rs"));

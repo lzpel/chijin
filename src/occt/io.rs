@@ -267,8 +267,4 @@ impl IoModule for Io {
 		})
 	}
 
-	fn write_svg<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, direction: glam::DVec3, tolerance: f64, writer: &mut W) -> Result<(), Error> {
-		let combined = Self::mesh(solids, tolerance)?;
-		writer.write_all(combined.to_svg(direction).as_bytes()).map_err(|_| Error::SvgExportFailed)
-	}
-} // impl ioTrait for io
+} // impl IoModule for Io
