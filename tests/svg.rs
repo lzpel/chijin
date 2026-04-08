@@ -90,3 +90,35 @@ fn test_svg_colored_box() {
 	std::fs::create_dir_all("out").unwrap();
 	std::fs::write("out/colored_box.svg", &svg).unwrap();
 }
+
+/// 球を+Xから描画したSVGと、Z軸180°回転後に+Xから描画したSVGで
+/// polygon(面)の数が10%以上変わらないことを検証する。
+/// 対称な球なので見え方はほぼ同じはず。
+#[test]
+fn test_svg_rotated_sphere_face_count_stable() {
+	fn count_polygons(svg: &str) -> usize {
+		svg.matches("<polygon ").count()
+	}
+
+	let shape: Vec<Solid> = vec![Solid::sphere(5.0)];
+	let svg_a = svg_string(&shape, DVec3::X, 0.1);
+	let count_a = count_polygons(&svg_a);
+
+	let rotated: Vec<Solid> = shape.rotate_y(std::f64::consts::PI);
+	let svg_b = svg_string(&rotated, DVec3::X, 0.1);
+	let count_b = count_polygons(&svg_b);
+
+	assert!(count_a > 0, "元のSVGにpolygonがない");
+	assert!(count_b > 0, "回転後のSVGにpolygonがない");
+
+	std::fs::create_dir_all("out").unwrap();
+	std::fs::write("out/sphere_plus_x.svg", &svg_a).unwrap();
+	std::fs::write("out/sphere_plus_x_rotated.svg", &svg_b).unwrap();
+
+	let ratio = count_a as f64 / count_b as f64;
+	assert!(
+		(0.9..=1.1).contains(&ratio),
+		"+X描画のpolygon数が回転前後で10%以上変化: {} → {} (ratio={:.3})",
+		count_a, count_b, ratio
+	);
+}
