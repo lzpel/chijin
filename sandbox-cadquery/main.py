@@ -1,70 +1,95 @@
-"""M2ネジ（軸のみ）を CadQuery で生成し STEP + SVG 出力する。"""
+"""M2ネジを CadQuery で生成し STEP + STL + PNG出力する。PNGを見てネジになっているかを確認する。らせん構造の再現が必要"""
+
+import math
+from pathlib import Path
 
 import cadquery as cq
-import math
+import pyvista as pv
 
-# ---- M2 パラメータ (ISO 724 / JIS B 0205) ----
-d = 2.0          # 呼び径 (mm)
-pitch = 0.4      # ピッチ (mm)
-length = 6.0     # ネジ部長さ (mm)
+# ISO M2 概略仕様 (mm)
+D = 2.0          # 呼び径 (外径)
+PITCH = 0.4      # ピッチ
+THREAD_LEN = 6.0 # ねじ部長さ
+HEAD_D = 3.5     # 頭部直径
+HEAD_H = 1.3     # 頭部厚さ
 
-# ネジ山パラメータ
-H = pitch * math.sqrt(3) / 2          # 理論山高さ
-d_minor = d - 2 * (5 / 8) * H         # 谷径
-thread_depth = (d - d_minor) / 2       # 実際の山深さ
+# ISO メートルねじ山高さ H = (sqrt(3)/2) * p, 実効高さ ~ 5/8 H
+H_TRI = (math.sqrt(3) / 2.0) * PITCH
 
-# ---- 1. ネジ軸 (谷径の円柱) ----
-shaft = (
-    cq.Workplane("XY")
-    .circle(d_minor / 2)
-    .extrude(length)
-)
 
-# ---- 2. ネジ山: 螺旋パス + 三角断面 sweep ----
-helix = cq.Wire.makeHelix(
-    pitch=pitch,
-    height=length,
-    radius=d / 2,
-)
+def build_m2_screw() -> cq.Workplane:
+    radius_major = D / 2.0
+    # 軸部 (谷径より少し小さい円柱を中心に、ねじ山を盛る)
+    root_radius = radius_major - (5.0 / 8.0) * H_TRI
+    shaft = cq.Workplane("XY").circle(root_radius).extrude(THREAD_LEN)
 
-# ネジ山の三角断面
-tri_pts = [
-    (0, 0),
-    (-pitch / 2, -thread_depth),
-    (pitch / 2, -thread_depth),
-]
-thread_profile = (
-    cq.Workplane("XZ")
-    .workplane(offset=d / 2)
-    .polyline(tri_pts)
-    .close()
-    .wire()
-)
+    # ヘリックス (path) を作成
+    helix_wire = cq.Wire.makeHelix(
+        pitch=PITCH,
+        height=THREAD_LEN,
+        radius=root_radius,
+    )
+    helix_path = cq.Workplane(obj=helix_wire)
 
-thread_solid = cq.Solid.sweep(
-    thread_profile.val(),
-    [],
-    helix,
-    True,   # makeSolid
-    True,   # isFrenet
-)
+    # ねじ山断面: 半径方向 X、高さ方向 Z の三角形
+    # 始点はヘリックス始点 (root_radius, 0, 0) に一致させる
+    thread_height = (5.0 / 8.0) * H_TRI
+    half_p = PITCH / 2.0
+    profile = (
+        cq.Workplane("XZ")
+        .moveTo(root_radius, -half_p)
+        .lineTo(root_radius + thread_height, 0)
+        .lineTo(root_radius, half_p)
+        .close()
+    )
 
-# ---- 3. 合成 ----
-bolt = shaft.union(cq.Workplane("XY").add(thread_solid))
+    thread = profile.sweep(helix_path, isFrenet=True)
 
-# ---- 4. 出力 ----
-import os
-out = os.path.join(os.path.dirname(__file__), "out")
-os.makedirs(out, exist_ok=True)
+    threaded_shaft = shaft.union(thread)
 
-cq.exporters.export(bolt, os.path.join(out, "m2_thread.step"))
-cq.exporters.export(bolt, os.path.join(out, "m2_thread.stl"))
-cq.exporters.export(bolt, os.path.join(out, "m2_thread.svg"), opt={
-    "width": 400,
-    "height": 400,
-    "projectionDir": (1, 1, 0.5),
-    "showHidden": False,
-    "showAxes": False,
-    "strokeWidth": 0.5,
-})
-print(f"Exported to {out}: m2_thread.step, m2_thread.stl, m2_thread.svg")
+    # 上下端を平らに整える (ねじ部の長さで box intersect)
+    bbox_clip = (
+        cq.Workplane("XY")
+        .box(D * 2, D * 2, THREAD_LEN, centered=(True, True, False))
+    )
+    threaded_shaft = threaded_shaft.intersect(bbox_clip)
+
+    # 頭部 (なべ頭簡略: 円柱)
+    head = (
+        cq.Workplane("XY")
+        .workplane(offset=THREAD_LEN)
+        .circle(HEAD_D / 2.0)
+        .extrude(HEAD_H)
+    )
+
+    screw = threaded_shaft.union(head)
+    return screw
+
+
+def export_step_stl(model: cq.Workplane, stem: Path) -> None:
+    cq.exporters.export(model, str(stem.with_suffix(".step")))
+    cq.exporters.export(
+        model,
+        str(stem.with_suffix(".stl")),
+        tolerance=0.01,
+        angularTolerance=0.1,
+    )
+
+
+def render_png(stl_path: Path, png_path: Path) -> None:
+    mesh = pv.read(str(stl_path))
+    pl = pv.Plotter(off_screen=True, window_size=(800, 800))
+    pl.add_mesh(mesh, color="lightgray", smooth_shading=True, show_edges=False)
+    pl.camera_position = "iso"
+    pl.enable_shadows()
+    pl.screenshot(str(png_path))
+
+
+if __name__ == "__main__":
+    out_dir = Path(__file__).parent
+    stem = out_dir / "m2_screw"
+
+    model = build_m2_screw()
+    export_step_stl(model, stem)
+    render_png(stem.with_suffix(".stl"), stem.with_suffix(".png"))
+    print(f"wrote: {stem}.step / .stl / .png")

@@ -37,7 +37,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	// Required OCC toolkit libraries to link against (OCCT 7.8+ / 7.9.x naming).
 	// In OCCT 7.8+: TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into
 	// TKDESTEP/TKBin/TKShHealing respectively.
-	let occ_libs = &[
+	let mut occ_libs = [
 		"TKernel",
 		"TKMath",
 		"TKBRep",
@@ -61,13 +61,8 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 		               // which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
 		               // the base API.  TKService is added below only when "color" is enabled because
 		               // TKXCAF references Graphic3d_* symbols that live in TKService.
-	];
+	].to_vec();
 
-	// Link OCC libraries
-	println!("cargo:rustc-link-search=native={}", occt_lib_dir.display());
-	for lib in occ_libs {
-		println!("cargo:rustc-link-lib=static={}", lib);
-	}
 
 	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
 	// In OCCT 7.9.3, library layout (verified by nm):
@@ -79,9 +74,13 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	//   TKDESTEP — STEPCAFControl_Reader / Writer (already in OCC_LIBS above)
 	//   TKService — Graphic3d_* symbols referenced by TKXCAF (XCAFDoc_VisMaterial etc.)
 	if color {
-		for lib in &["TKLCAF", "TKXCAF", "TKCAF", "TKCDF"] {
-			println!("cargo:rustc-link-lib=static={}", lib);
-		}
+		occ_libs.extend(["TKLCAF", "TKXCAF", "TKCAF", "TKCDF"]);
+	}
+
+	// Link OCC libraries
+	println!("cargo:rustc-link-search=native={}", occt_lib_dir.display());
+	for lib in occ_libs {
+		println!("cargo:rustc-link-lib=static={}", lib);
 	}
 
 	// Safety-net: suppress any residual duplicate-symbol errors when linking

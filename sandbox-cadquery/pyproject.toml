@@ -5,5 +5,6 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "cadquery>=2.7.0",
-    "cadquery-ocp-novtk>=7.9.3.1",
+    "cadquery-ocp>=7.8.1,<7.9",
+    "pyvista>=0.44",
 ]
