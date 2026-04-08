@@ -36,6 +36,53 @@ pub struct Mesh {
 	pub edges: EdgeData,
 }
 
+// ==================== STL ====================
+
+impl Mesh {
+	/// Write this mesh as binary STL to a writer.
+	/// このメッシュをバイナリ STL 形式で書き出す。
+	pub fn write_stl<W: std::io::Write>(&self, writer: &mut W) -> Result<(), super::error::Error> {
+		let tri_count = self.indices.len() / 3;
+		// 80-byte header
+		writer.write_all(&[0u8; 80]).map_err(|_| super::error::Error::StlWriteFailed)?;
+		// Triangle count (u32 LE)
+		writer.write_all(&(tri_count as u32).to_le_bytes()).map_err(|_| super::error::Error::StlWriteFailed)?;
+		for ti in 0..tri_count {
+			let i0 = self.indices[ti * 3];
+			let i1 = self.indices[ti * 3 + 1];
+			let i2 = self.indices[ti * 3 + 2];
+			let v0 = self.vertices[i0];
+			let v1 = self.vertices[i1];
+			let v2 = self.vertices[i2];
+			// Face normal from cross product / 外積から面法線を計算
+			let n = (v1 - v0).cross(v2 - v0).normalize_or_zero();
+			// Normal (3 x f32 LE)
+			for c in [n.x, n.y, n.z] { writer.write_all(&(c as f32).to_le_bytes()).map_err(|_| super::error::Error::StlWriteFailed)?; }
+			// Vertices (3 x 3 x f32 LE)
+			for v in [v0, v1, v2] {
+				for c in [v.x, v.y, v.z] { writer.write_all(&(c as f32).to_le_bytes()).map_err(|_| super::error::Error::StlWriteFailed)?; }
+			}
+			// Attribute byte count — RGB555 color (SolidView/MeshLab convention)
+			#[cfg(feature = "color")]
+			let attr = {
+				let face_id = self.face_ids[ti];
+				if let Some(c) = self.colormap.get(&face_id) {
+					let r = (c.r * 31.0) as u16;
+					let g = (c.g * 31.0) as u16;
+					let b = (c.b * 31.0) as u16;
+					0x8000 | r | (g << 5) | (b << 10)
+				} else {
+					0u16
+				}
+			};
+			#[cfg(not(feature = "color"))]
+			let attr = 0u16;
+			writer.write_all(&attr.to_le_bytes()).map_err(|_| super::error::Error::StlWriteFailed)?;
+		}
+		Ok(())
+	}
+}
+
 // ==================== SVG ====================
 
 impl Mesh {

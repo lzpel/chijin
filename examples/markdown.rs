@@ -107,7 +107,7 @@ fn assets_for<'a>(outputs: &'a HashMap<PathBuf, Vec<u8>>, stem: &str) -> Vec<&'a
 	let mut names: Vec<&PathBuf> = outputs.keys()
 		.filter(|p| {
 			let name = p.to_str().unwrap_or("");
-			name.starts_with(stem) && p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png" | "step" | "brep")))
+			name.starts_with(stem) && p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png" | "step" | "brep" | "stl")))
 		})
 		.collect();
 	names.sort();

@@ -1119,7 +1119,7 @@ bool write_step_color_stream(
             }
 
             const auto& c = it->second;
-            Quantity_Color color(c[0], c[1], c[2], Quantity_TOC_sRGB);
+            Quantity_Color color(c[0], c[1], c[2], Quantity_TOC_RGB);
             colorTool->SetColor(faceLabel, color, XCAFDoc_ColorSurf);
         }
 

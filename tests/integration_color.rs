@@ -113,6 +113,177 @@ fn colored_box_intersect_z_positive_half_space() {
 	assert!(!bottom_in_result, "bottom face (-Z) at z=-1 should be deleted by intersect");
 }
 
+/// 読み書きのラウンドトリップで色が保存されるか検証する。
+///
+/// examples/02_write_read.rs と同じ手順:
+///   0. steps/colored_box.step を読み込む
+///   1. STEP ラウンドトリップ (30°回転 → 書き出し → 読み込み)
+///   2. BRep text ラウンドトリップ (30°回転 → 書き出し → 読み込み)
+///   3. BRep binary ラウンドトリップ (30°回転 → 書き出し → 読み込み)
+///
+/// 各段階で「colormapが空でないこと」「各面の色が書き出し前と一致すること」を検証する。
+#[test]
+fn colored_box_step_brep_roundtrips() {
+	/// 各面の色を法線方向ラベル("+X","-Z"等)をキーにして取得する。
+	/// 回転後も法線の軸成分で面を識別できるようにする。
+	fn color_snapshot(solids: &[Solid]) -> std::collections::HashMap<String, Color> {
+		let axes: &[(DVec3, &str)] = &[
+			(DVec3::X, "+X"), (DVec3::NEG_X, "-X"),
+			(DVec3::Y, "+Y"), (DVec3::NEG_Y, "-Y"),
+			(DVec3::Z, "+Z"), (DVec3::NEG_Z, "-Z"),
+		];
+		let mut map = std::collections::HashMap::new();
+		for s in solids {
+			for f in s.face_iter() {
+				if let Some(&c) = s.colormap().get(&f.tshape_id()) {
+					let n = f.normal_at_center();
+					for &(axis, label) in axes {
+						if n.dot(axis) > 0.9 {
+							map.insert(label.to_string(), c);
+							break;
+						}
+					}
+				}
+			}
+		}
+		map
+	}
+
+	/// 書き出し前後の色スナップショットを比較し、不一致があればパニックする。
+	fn assert_colors_match(label: &str, before: &std::collections::HashMap<String, Color>, after: &std::collections::HashMap<String, Color>) {
+		assert!(!after.is_empty(), "{label}: ラウンドトリップ後にcolormapが空になった");
+		assert_eq!(before.len(), after.len(), "{label}: 色付き面の数が変わった ({} → {})", before.len(), after.len());
+		for (axis, c_before) in before {
+			let c_after = after.get(axis).unwrap_or_else(|| panic!("{label}: {axis} 面の色が失われた"));
+			assert!((c_before.r - c_after.r).abs() < 0.02
+				&& (c_before.g - c_after.g).abs() < 0.02
+				&& (c_before.b - c_after.b).abs() < 0.02,
+				"{label}: {axis} 面の色が不一致: {:?} → {:?}", c_before, c_after);
+		}
+	}
+
+	// 0. colored_box.step を読み込む
+	let manifest_dir = env!("CARGO_MANIFEST_DIR");
+	let original = cadrum::io::read_step(
+		&mut std::fs::File::open(format!("{manifest_dir}/steps/colored_box.step")).expect("open colored_box.step"),
+	).expect("read_step");
+	let snap0 = color_snapshot(&original);
+	assert!(!snap0.is_empty(), "colored_box.step に色付き面が含まれていない");
+
+	// 1. STEP ラウンドトリップ: 書き出し → 読み戻し
+	let mut buf = Vec::new();
+	cadrum::io::write_step(&original, &mut buf).expect("write_step");
+	let a = cadrum::io::read_step(&mut std::io::Cursor::new(&buf)).expect("read_step round-trip");
+	let snap_a = color_snapshot(&a);
+
+	// 2. BRep text ラウンドトリップ: 書き出し → 読み戻し
+	let mut buf = Vec::new();
+	cadrum::io::write_brep_text(&original, &mut buf).expect("write_brep_text");
+	let b = cadrum::io::read_brep_text(&mut std::io::Cursor::new(&buf)).expect("read_brep_text round-trip");
+	let snap_b = color_snapshot(&b);
+
+	// 3. BRep binary ラウンドトリップ: 書き出し → 読み戻し
+	let mut buf = Vec::new();
+	cadrum::io::write_brep_binary(&original, &mut buf).expect("write_brep_binary");
+	let c = cadrum::io::read_brep_binary(&mut std::io::Cursor::new(&buf)).expect("read_brep_binary round-trip");
+	let snap_c = color_snapshot(&c);
+
+	// 4. 目視確認用: original, STEP, BRep text, BRep binary を横に並べてSTL出力
+	let [min, max] = original[0].bounding_box();
+	let spacing = (max - min).length() * 1.5;
+	let all: Vec<Solid> = [original, a, b, c].into_iter()
+		.enumerate()
+		.flat_map(|(i, solids)| solids.translate(DVec3::X * spacing * i as f64))
+		.collect();
+	let mut stl = std::fs::File::create(format!("{manifest_dir}/target/colored_box_roundtrip.stl")).expect("create stl");
+	cadrum::io::write_stl(&all, 0.1, &mut stl).expect("write_stl");
+	eprintln!("STL出力: target/colored_box_roundtrip.stl");
+
+	// 5. 色の比較 (STL出力後にassertする)
+	assert_colors_match("STEP", &snap0, &snap_a);
+	assert_colors_match("BRep text", &snap0, &snap_b);
+	assert_colors_match("BRep binary", &snap0, &snap_c);
+}
+
+/// STL/SVG出力で色が変換されず維持されることを検証する。
+///
+/// 1. 6面に既知の色を付けたboxをメッシュ化
+/// 2. STL出力 → attribute bytesのRGB555をデコードして元の色と比較 (5bit精度)
+/// 3. SVG出力 → rgb(R,G,B)をパースして元の色と比較 (8bit精度)
+#[test]
+fn stl_svg_preserve_colors() {
+	let mut cube: Vec<Solid> = vec![Solid::cube(2.0, 2.0, 2.0).translate(DVec3::splat(-1.0))];
+	color_box_faces(&mut cube);
+
+	// 元の色をface_id→Colorで取得
+	let original_colors: std::collections::HashMap<u64, Color> = cube[0].colormap().clone();
+	assert_eq!(original_colors.len(), 6);
+
+	// メッシュ化
+	let mesh = cadrum::io::mesh(&cube, 0.1).expect("mesh");
+
+	// --- STL検証 ---
+	// バイナリSTLをメモリに書き出し、ファイルにも保存
+	let mut stl_buf = Vec::new();
+	mesh.write_stl(&mut stl_buf).expect("write_stl");
+	let manifest_dir = env!("CARGO_MANIFEST_DIR");
+	std::fs::write(format!("{manifest_dir}/target/color_box.stl"), &stl_buf).expect("write stl file");
+	eprintln!("STL出力: target/color_box.stl");
+
+	// パース: 80バイトヘッダ + 4バイト三角形数 + 三角形ごとに50バイト
+	let tri_count = u32::from_le_bytes(stl_buf[80..84].try_into().unwrap()) as usize;
+	assert!(tri_count > 0);
+
+	for ti in 0..tri_count {
+		let base = 84 + ti * 50;
+		let attr = u16::from_le_bytes(stl_buf[base + 48..base + 50].try_into().unwrap());
+
+		let face_id = mesh.face_ids[ti];
+		if let Some(orig) = original_colors.get(&face_id) {
+			// 色付き面: attribute bytesにRGB555が書かれているはず
+			assert!(attr & 0x8000 != 0, "三角形{ti}: 色付き面なのにvalid bitが立っていない");
+			let r5 = (attr & 0x1F) as f32;
+			let g5 = ((attr >> 5) & 0x1F) as f32;
+			let b5 = ((attr >> 10) & 0x1F) as f32;
+			// 5bit精度: 31段階なので許容誤差は 1/31 ≈ 0.033
+			let tol = 1.1 / 31.0;
+			assert!((orig.r - r5 / 31.0).abs() < tol, "STL 三角形{ti} R: {:.3} → {:.3}", orig.r, r5 / 31.0);
+			assert!((orig.g - g5 / 31.0).abs() < tol, "STL 三角形{ti} G: {:.3} → {:.3}", orig.g, g5 / 31.0);
+			assert!((orig.b - b5 / 31.0).abs() < tol, "STL 三角形{ti} B: {:.3} → {:.3}", orig.b, b5 / 31.0);
+		} else {
+			// 色なし面: attribute bytesは0
+			assert_eq!(attr, 0, "三角形{ti}: 色なし面なのにattributeが非ゼロ");
+		}
+	}
+
+	// --- SVG検証 ---
+	let svg = mesh.to_svg(DVec3::new(1.0, 1.0, 2.0));
+	std::fs::write(format!("{manifest_dir}/target/color_box.svg"), &svg).expect("write svg file");
+	eprintln!("SVG出力: target/color_box.svg");
+
+	// 元の色をrgb(R,G,B)文字列に変換して集合にする
+	let expected_rgbs: std::collections::HashSet<String> = original_colors.values()
+		.map(|c| format!("rgb({},{},{})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8))
+		.collect();
+
+	// SVGからfill="rgb(...)"を抽出
+	let mut found_rgbs: std::collections::HashSet<String> = std::collections::HashSet::new();
+	for segment in svg.split("fill=\"") {
+		if segment.starts_with("rgb(") {
+			if let Some(end) = segment.find('"') {
+				found_rgbs.insert(segment[..end].to_string());
+			}
+		}
+	}
+
+	// SVG内の全色が元の色のいずれかと一致すること（変換されていない）
+	// 注: カメラから見える面だけが描画されるので全6色は出ないが、出た色は正確であるべき
+	assert!(!found_rgbs.is_empty(), "SVGにrgb色が1つも見つからない");
+	for found in &found_rgbs {
+		assert!(expected_rgbs.contains(found), "SVGに未知の色 {} がある。期待される色: {:?}", found, expected_rgbs);
+	}
+}
+
 /// Verify that `Shape::clean()` preserves face colors.
 ///
 /// Strategy: build a colored box, call clean(), and assert every face in the

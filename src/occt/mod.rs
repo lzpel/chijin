@@ -6,4 +6,3 @@ pub mod io;
 pub(crate) mod iterators;
 pub mod solid;
 pub mod stream;
-pub mod utils;
