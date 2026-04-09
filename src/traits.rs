@@ -22,6 +22,41 @@
 //!   walking the supertrait chain so all `SolidExt` and `Transform` methods are also
 //!   exposed inherently. Trait name follows `<Type>Struct` convention (SolidStruct → Solid).
 //!
+//! ## 関連型による型ヒエラルキー（バックエンド非依存ルール）
+//!
+//! このファイルはバックエンド（occt / pure）の具象型を一切名指ししない。具象型への
+//! 参照はすべて **関連型** 経由にすること。`use crate::{Edge, Face, Solid};` を
+//! このファイルに書いてはいけない（書くと、両バックエンドが同時に存在する将来構成で
+//! どちらの型を指すか曖昧になる）。
+//!
+//! ### 階層と関連型の向き
+//!
+//! 型同士の依存に **一方向の階層** を導入し、上位が下位を関連型として参照する：
+//!
+//! ```text
+//!   FaceStruct       ← 単独。下位を一切知らない
+//!   EdgeStruct       ← 単独。下位を一切知らない
+//!   SolidStruct      ← type Edge: EdgeStruct;  type Face: FaceStruct;
+//!   IoModule         ← type Solid: SolidStruct;
+//! ```
+//!
+//! 下位（Edge/Face）→ 上位（Solid）への参照は持たせない。例えば「Edge を sweep して
+//! Solid を作る」操作は `EdgeStruct::sweep` ではなく `SolidStruct::sweep(profile, spine)`
+//! として上位側に置き、ヒエラルキーを保つ。逆向き参照を導入する瞬間に associated type
+//! の循環や Backend バンドルトレイトが必要になり、build_delegation.rs のテキスト処理が
+//! 追従できなくなる。
+//!
+//! ### 命名と build_delegation の対応
+//!
+//! - `SolidStruct` の `type Edge` / `type Face`、`IoModule` の `type Solid` という名前は
+//!   build_delegation.rs の `TYPE_MAP` と一致させること。`Self::Edge` / `Self::Face` /
+//!   `Self::Solid` は生成時にバックエンドの具象型名（`Edge` / `Face` / `Solid`）へ
+//!   置換され、`lib.rs` の `pub use occt::{Solid, Edge, Face};` により実体に解決される。
+//! - 戻り型・引数型は `Vec<Self::Edge>`、`impl IntoIterator<Item = &'a Self::Solid>` の
+//!   ように常に関連型経由で書く。
+//! - associated type 宣言（`type Foo: Bound;`）はパーサーが行頭でスキップするので、
+//!   メソッドと同じインデントで 1 行に収めること。
+//!
 //! パーサー挙動と制約（build_delegation.rs — 行ベースのテキスト処理）:
 //!
 //! トレイトヘッダ:
@@ -40,8 +75,9 @@
 //! - ライフタイム引数 `<'a, 'b>` および `where Self: 'a` のような句はそのまま保持される。
 //!   `Self` は inherent impl 文脈では具象型と等価なので置換せず残す（`Self::Elem` のような
 //!   関連型のみ事前に concrete type へ置換される）
-//! - `Self::Elem` は impl 対象の具象型へ置換される。`Self::Face`/`Self::Edge` は
-//!   `Face`/`Edge` へ置換される
+//! - `Self::Elem` は impl 対象の具象型へ置換される。`Self::Face` / `Self::Edge` /
+//!   `Self::Solid` はそれぞれ `Face` / `Edge` / `Solid` へ置換され、`lib.rs` の
+//!   バックエンド再エクスポートで解決される
 //!
 //! その他:
 //! - `#[cfg(...)]` は直前1行のみ認識し、続く fn に付与される
@@ -51,7 +87,6 @@
 use crate::common::color::Color;
 use crate::common::error::Error;
 use crate::common::mesh::Mesh;
-use crate::{Edge, Face, Solid};
 use glam::{DMat3, DQuat, DVec3};
 
 // ==================== Transform ====================
@@ -121,7 +156,13 @@ pub trait EdgeStruct {
 ///
 /// build_delegation.rs generates `impl Solid { pub fn ... }` from this trait
 /// and walks the supertrait chain to expose `SolidExt` methods inherently as well.
+///
+/// Associated types `Edge`/`Face` keep this trait backend-independent: each
+/// backend (occt / pure) binds them to its own concrete types in the impl.
 pub trait SolidStruct: Sized + Clone + SolidExt {
+	type Edge: EdgeStruct;
+	type Face: FaceStruct;
+
 	// --- Constructors ---
 	fn cube(x: f64, y: f64, z: f64) -> Self;
 	fn sphere(radius: f64) -> Self;
@@ -131,8 +172,8 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
 
 	// --- Topology ---
-	fn faces(&self) -> Vec<Face>;
-	fn edges(&self) -> Vec<Edge>;
+	fn faces(&self) -> Vec<Self::Face>;
+	fn edges(&self) -> Vec<Self::Edge>;
 
 	// --- Boolean primitives (consumed by SolidExt::*_with_metadata wrappers) ---
 	fn boolean_union<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;
@@ -259,30 +300,22 @@ impl<T: SolidStruct, const N: usize> SolidExt for [T; N] {
 	}
 }
 
-// ==================== Boolean metadata helpers ====================
-
-/// Check if a face came from the tool (b-side) of a boolean operation.
-pub fn is_tool_face(metadata: &[Vec<u64>; 2], face: &Face) -> bool {
-	metadata[1].contains(&face.tshape_id())
-}
-
-/// Check if a face came from the shape (a-side) of a boolean operation.
-pub fn is_shape_face(metadata: &[Vec<u64>; 2], face: &Face) -> bool {
-	metadata[0].contains(&face.tshape_id())
-}
-
 // ==================== I/O ====================
 
 /// Backend-independent I/O trait.
+///
+/// `Solid` is an associated type so this trait does not depend on a concrete
+/// backend type. Each backend's `Io` impl binds `type Solid = ...;`.
 #[allow(non_camel_case_types)]
 pub trait IoModule {
-	fn read_step<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
-	fn read_brep_binary<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
-	fn read_brep_text<R: std::io::Read>(reader: &mut R) -> Result<Vec<Solid>, Error>;
-	fn write_step<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
-	fn write_brep_binary<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
-	fn write_brep_text<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error>;
-	fn mesh<'a>(solids: impl IntoIterator<Item = &'a Solid>, tolerance: f64) -> Result<Mesh, Error>;
-	fn write_svg<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, direction: DVec3, tolerance: f64, writer: &mut W) -> Result<(), Error> { writer.write_all(Self::mesh(solids, tolerance)?.to_svg(direction).as_bytes()).map_err(|_| Error::SvgExportFailed) }
-	fn write_stl<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Solid>, tolerance: f64, writer: &mut W) -> Result<(), Error> { Self::mesh(solids, tolerance)?.write_stl(writer) }
+	type Solid: SolidStruct;
+	fn read_step<R: std::io::Read>(reader: &mut R) -> Result<Vec<Self::Solid>, Error>;
+	fn read_brep_binary<R: std::io::Read>(reader: &mut R) -> Result<Vec<Self::Solid>, Error>;
+	fn read_brep_text<R: std::io::Read>(reader: &mut R) -> Result<Vec<Self::Solid>, Error>;
+	fn write_step<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Self::Solid>, writer: &mut W) -> Result<(), Error> where Self::Solid: 'a;
+	fn write_brep_binary<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Self::Solid>, writer: &mut W) -> Result<(), Error> where Self::Solid: 'a;
+	fn write_brep_text<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Self::Solid>, writer: &mut W) -> Result<(), Error> where Self::Solid: 'a;
+	fn mesh<'a>(solids: impl IntoIterator<Item = &'a Self::Solid>, tolerance: f64) -> Result<Mesh, Error> where Self::Solid: 'a;
+	fn write_svg<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Self::Solid>, direction: DVec3, tolerance: f64, writer: &mut W) -> Result<(), Error> where Self::Solid: 'a { writer.write_all(Self::mesh(solids, tolerance)?.to_svg(direction).as_bytes()).map_err(|_| Error::SvgExportFailed) }
+	fn write_stl<'a, W: std::io::Write>(solids: impl IntoIterator<Item = &'a Self::Solid>, tolerance: f64, writer: &mut W) -> Result<(), Error> where Self::Solid: 'a { Self::mesh(solids, tolerance)?.write_stl(writer) }
 }

@@ -44,7 +44,12 @@ fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
 
 /// Type replacements: only associated types need resolving.
 /// Short names (DVec3, Mesh, Error, Color) are already in scope via pub use in lib.rs.
-const TYPE_MAP: &[(&str, &str)] = &[("Self::Face", "Face"), ("Self::Edge", "Edge")];
+///
+/// `Self::Edge` / `Self::Face` (from `SolidStruct`) and `Self::Solid` (from
+/// `IoModule`) become bare type names, which resolve to the active backend's
+/// concrete types via `pub use` re-exports in `lib.rs`. This keeps `traits.rs`
+/// itself free of backend-specific type references.
+const TYPE_MAP: &[(&str, &str)] = &[("Self::Face", "Face"), ("Self::Edge", "Edge"), ("Self::Solid", "Solid")];
 
 struct Method {
 	cfg: Option<String>,

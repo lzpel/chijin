@@ -21,7 +21,9 @@ fn build_m2_screw()->Solid{
         ]
     );
     let profile=profile.align_z(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
-    let thread=profile.sweep(helix);
+    // sweep は Edge → Solid の逆向き依存になるため、Edge 側ではなく Solid 側の
+    // コンストラクタとして配置する（案C / 関連型ヒエラルキー保持）。
+    let thread=Solid::sweep(&profile, &helix);
     let thread_shaft=thread.union(Solid::cylinder(r_root, DVec3::Z, h_thread)).subtract(Solid::cylinder(r_root*2.0, DVec3::Z, h_thread));
     let head=Solid::cylinder(r_head, DVec3::Z, h_head).translate(DVec3::Z*h_thread);
     return thread_shaft.union(head);

@@ -72,6 +72,8 @@ fn write_color_trailer<W: Write>(compound: &Compound, writer: &mut W) -> Result<
 // ==================== IoTrait implementation ====================
 
 impl IoModule for Io {
+	type Solid = Solid;
+
 	fn read_step<R: Read>(reader: &mut R) -> Result<Vec<Solid>, Error> {
 		#[cfg(feature = "color")]
 		{

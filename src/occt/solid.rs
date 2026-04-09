@@ -89,6 +89,9 @@ impl Solid {
 }
 
 impl SolidStruct for Solid {
+	type Edge = Edge;
+	type Face = Face;
+
 	// ==================== Constructors ====================
 
 	fn cube(x: f64, y: f64, z: f64) -> Solid {
