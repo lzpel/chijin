@@ -67,7 +67,7 @@ fn main() {
 ```
 
 <p align="center">
-  <img src="figure/examples/01_primitives.svg" alt="01_primitives" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/01_primitives.svg" alt="01_primitives" width="360"/>
 </p>
 
 ## Requirements
@@ -98,6 +98,16 @@ cargo build
 - `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
   `read_step_with_colors`, and per-face color on `Solid`.
   Colors are preserved through boolean operations and other transformations.
+
+## Showcase
+
+[Try it now →](https://katachiform.com/out/21)
+
+<p align="center">
+  <a href="https://katachiform.com/out/21"><img src="figure/katachiform.png" alt="cadrum showcase" width="360"/></a>
+</p>
+
+A browser-based configurator that lets you tweak dimensions of a STEP model and get an instant 3D preview and quote. cadrum powers the parametric reshaping and meshing on the backend.
 
 ## Other examples <!--02+-->
 
@@ -170,7 +180,7 @@ fn main() -> Result<(), cadrum::Error> {
 ```
 
 <p align="center">
-  <img src="figure/examples/02_write_read.svg" alt="02_write_read" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/02_write_read.svg" alt="02_write_read" width="360"/>
 </p>
 
 #### Transform
@@ -228,7 +238,7 @@ fn main() {
 ```
 
 <p align="center">
-  <img src="figure/examples/03_transform.svg" alt="03_transform" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/03_transform.svg" alt="03_transform" width="360"/>
 </p>
 
 #### Boolean
@@ -282,7 +292,7 @@ fn main() -> Result<(), cadrum::Error> {
 ```
 
 <p align="center">
-  <img src="figure/examples/04_boolean.svg" alt="04_boolean" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/04_boolean.svg" alt="04_boolean" width="360"/>
 </p>
 
 #### Chijin
@@ -366,7 +376,7 @@ fn main() -> Result<(), cadrum::Error> {
 ```
 
 <p align="center">
-  <img src="figure/examples/05_chijin.svg" alt="05_chijin" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/05_chijin.svg" alt="05_chijin" width="360"/>
 </p>
 
 ## License

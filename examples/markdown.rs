@@ -153,9 +153,10 @@ fn write_summary(summary_path: &Path, entries: &[Entry], outputs: &HashMap<PathB
 	eprintln!("generated: {}", summary_path.display());
 }
 
-/// Render a single example as full markdown (code + image) for README.
-/// 1つの example をソースコード + 画像付きの markdown として生成する。
-fn render_full(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+/// Render a single example as markdown (description + run command + code + image) for README.
+/// README 用に 1つの example を説明 + 実行コマンド + ソース + 画像の markdown として生成する。
+/// 画像は GitHub Pages (mdbook 出力) の URL を参照する。
+fn render_example(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
 	let (stem, desc) = (entry.stem(), entry.description());
 	let mut s = String::new();
 	if !desc.is_empty() {
@@ -165,26 +166,7 @@ fn render_full(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
 	s.push_str(&format!("\n```rust\n{}\n```\n", entry.content));
 	if let Some(img) = first_image(outputs, stem) {
 		s.push_str(&format!(
-			"\n<p align=\"center\">\n  <img src=\"figure/examples/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
-			img, stem
-		));
-	}
-	s
-}
-
-/// Render a single example as compact markdown (description + link + image) for README.
-/// 1つの example を説明 + リンク + 画像の簡潔な markdown として生成する。
-fn render_compact(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
-	let (stem, desc) = (entry.stem(), entry.description());
-	let mut s = String::new();
-	if !desc.is_empty() {
-		s.push_str(&format!("\n{}\n", desc));
-	}
-	s.push_str(&format!("\n```sh\ncargo run --example {}\n```\n", stem));
-	s.push_str(&format!("\n```rust\n{}\n```\n", entry.content));
-	if let Some(img) = first_image(outputs, stem) {
-		s.push_str(&format!(
-			"\n<p align=\"center\">\n  <img src=\"figure/examples/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
+			"\n<p align=\"center\">\n  <img src=\"https://lzpel.github.io/cadrum/{}\" alt=\"{}\" width=\"360\"/>\n</p>\n",
 			img, stem
 		));
 	}
@@ -222,15 +204,6 @@ fn resolve_marker<'a>(marker: &str, entries: &'a [Entry]) -> Vec<&'a Entry> {
 ///   複数 example を簡潔に表示（#### タイトル付き）
 fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) {
 	let readme = fs::read_to_string(readme_path).expect("failed to read README.md");
-
-	// Write SVG/PNG assets to figure/examples/ / SVG/PNG を figure/examples/ に書き出す
-	let figure_dir = readme_path.parent().unwrap().join("figure").join("examples");
-	clean_dir(&figure_dir);
-	for (path, contents) in outputs {
-		if path.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png"))) {
-			fs::write(figure_dir.join(path), contents).unwrap();
-		}
-	}
 
 	// Find ## headings with <!--NN--> or <!--NN+--> markers and replace their content
 	// <!--NN--> マーカー付きの ## 見出しを検索し、内容を置換する
@@ -271,11 +244,7 @@ fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf
 			if !is_single {
 				new_readme.push_str(&format!("\n#### {}\n", entry.title()));
 			}
-			new_readme.push_str(&if is_single {
-				render_full(entry, outputs)
-			} else {
-				render_compact(entry, outputs)
-			});
+			new_readme.push_str(&render_example(entry, outputs));
 		}
 		new_readme.push('\n');
 

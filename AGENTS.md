@@ -16,7 +16,7 @@
     - 番号付きexample (NN_*.rs) を実行し、mdbook用markdownとREADMEのExamples節を生成する
     - 使い方: `cargo run --example markdown -- out/markdown/SUMMARY.md ./README.md`
     - 第1引数: SUMMARY.mdパス → mdbook用markdown一式を出力
-    - 第2引数: README.mdパス → ## Examples節を最新のソースコードと生成物で更新、SVGをfigure/examples/に配置
+    - 第2引数: README.mdパス → ## Examples節を最新のソースコードと生成物で更新（画像は GitHub Pages 上の `https://lzpel.github.io/cadrum/<name>.svg` を参照）
 - src/traits.rs
     - traits.rsはバックエンド共通のトレイト定義（pub(crate)、ユーザーに非公開）
     - トレイト名は`<Type>Struct`の命名規則に従う（SolidStruct→Solid, FaceStruct→Face等）
