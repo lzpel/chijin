@@ -99,6 +99,16 @@ cargo build
   `read_step_with_colors`, and per-face color on `Solid`.
   Colors are preserved through boolean operations and other transformations.
 
+## Showcase
+
+[Try it now →](https://katachiform.com/out/21)
+
+<p align="center">
+  <a href="https://katachiform.com/out/21"><img src="figure/katachiform.png" alt="cadrum showcase" width="360"/></a>
+</p>
+
+A browser-based configurator that lets you tweak dimensions of a STEP model and get an instant 3D preview and quote. cadrum powers the parametric reshaping and meshing on the backend.
+
 ## Other examples <!--02+-->
 
 #### Write read
