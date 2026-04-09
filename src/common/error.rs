@@ -38,6 +38,11 @@ pub enum Error {
 	/// Face creation from polygon points failed (non-planar or degenerate points).
 	InvalidPolygon,
 
+	/// Edge construction failed due to degenerate input (e.g. collinear arc
+	/// points, zero-length line, negative radius). The string describes which
+	/// constructor failed and with which parameters.
+	InvalidEdge(String),
+
 	/// SVG export (HLR projection) failed.
 	SvgExportFailed,
 
@@ -66,6 +71,7 @@ impl std::fmt::Display for Error {
 			Error::HelixFailed => write!(f, "Helix failed"),
 			Error::SweepFailed => write!(f, "Sweep failed"),
 			Error::InvalidPolygon => write!(f, "Invalid polygon"),
+			Error::InvalidEdge(msg) => write!(f, "Invalid edge: {}", msg),
 			Error::SvgExportFailed => write!(f, "SVG export failed"),
 			Error::StlWriteFailed => write!(f, "STL write failed"),
 			Error::InvalidColor(s) => write!(f, "Invalid color: \"{}\"", s),

@@ -51,7 +51,11 @@ impl Iterator for EdgeIterator {
 		}
 		let edge = ffi::explorer_current_edge(&self.explorer);
 		ffi::explorer_next(self.explorer.pin_mut());
-		Some(Edge::new(edge))
+		// TopExp_Explorer は探索中の有効な edge のみを返すので null は想定外。
+		Some(
+			Edge::try_from_ffi(edge, "EdgeIterator: explorer_current_edge returned null".into())
+				.expect("EdgeIterator: unexpected null from explorer_current_edge (this is a bug)"),
+		)
 	}
 }
 

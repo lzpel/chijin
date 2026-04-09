@@ -112,7 +112,7 @@ cargo run --example 02_write_read
 ```rust
 //! Read and write: chain STEP, BRep text, and BRep binary round-trips with progressive rotation.
 
-use cadrum::{Solid, SolidExt};
+use cadrum::{Solid, Transform};
 use glam::DVec3;
 use std::f64::consts::FRAC_PI_8;
 
@@ -242,7 +242,7 @@ cargo run --example 04_boolean
 ```rust
 //! Boolean operations: union, subtract, and intersect between a box and a cylinder.
 
-use cadrum::{Solid, SolidExt};
+use cadrum::{Solid, Transform};
 use glam::DVec3;
 
 fn main() -> Result<(), cadrum::Error> {
@@ -285,12 +285,175 @@ fn main() -> Result<(), cadrum::Error> {
   <img src="figure/examples/04_boolean.svg" alt="04_boolean" width="360"/>
 </p>
 
+#### Sweep
+
+Edge construction showcase: M2 screw + U-shaped pipe.
+
+```sh
+cargo run --example 05_sweep
+```
+
+```rust
+//! Edge construction showcase: M2 screw + U-shaped pipe.
+//!
+//! 両コンポーネントとも「Edge で spine を作って profile を sweep」する同じ
+//! パターンで構築されるが、spine 構築手段が helix (ねじ) vs line+arc+line
+//! (U字パイプ) で異なる。Edge API の多様性を視覚的に対比する。
+
+use cadrum::{Edge, Error, ProfileOrient, Solid, SolidExt, Transform};
+use glam::DVec3;
+
+// ==================== Component 1: M2 ISO screw ====================
+
+fn build_m2_screw() -> Result<Vec<Solid>, Error> {
+	// iso m2 screw
+	let r = 1.0;
+	let h_pitch = 0.4;
+	let h_thread = 6.0;
+	let r_head = 1.75;
+	let h_head = 1.3;
+	// ISO M ねじの基本三角形高さ H = √3/2 × P (60° 等辺三角形)。
+	// 山頂・谷底とも鋭利な fundamental triangle をそのまま用いる
+	// (basic profile の山頂 P/8・谷底 P/4 切り詰めは省略)。これにより
+	// 谷底半径 = r - r_delta、山頂半径 = r、半フランク角 = atan((P/2)/H) = 30°。
+	let r_delta = 3f64.sqrt() / 2.0 * h_pitch;
+
+	// 単一エッジのヘリックス (spine)。半径は谷底に取る。
+	// x_ref=DVec3::X を渡しているので、ヘリックスは確定的に (r - r_delta, 0, 0)
+	// から始まり、+Z 方向に上昇しつつ +X→+Y→-X→-Y… の順に巻いていく。
+	let helix = Edge::helix(r - r_delta, h_pitch, h_thread, DVec3::Z, DVec3::X)?;
+
+	// 閉じた三角形プロファイル (Vec<Edge> = Wire)。プロファイルはローカル座標で、
+	// x が放射方向の突き出し量、y が軸方向 (= ヘリックス始点接線方向)。
+	// 外側頂点の x = r_delta なので、sweep 後の山頂は半径 r ぴったりに到達する。
+	// polygon は常に閉じる: 最後の点 → 最初の点が自動補完される。
+	let profile = Edge::polygon([DVec3::new(0.0, -h_pitch / 2.0, 0.0), DVec3::new(r_delta, 0.0, 0.0), DVec3::new(0.0, h_pitch / 2.0, 0.0)])?;
+
+	// プロファイルを XY 平面 (法線 Z) からヘリックス始点の接線方向に
+	// 回転し、そのまま始点へ平行移動する。Vec<Edge> は Vec<T: Transform>
+	// 経由で align_z / translate を持つ。
+	let profile = profile.align_z(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
+
+	// ヘリックスに沿って sweep。Up(helix 軸) は helix では Torsion と等価で
+	// 正しいねじ山を作る。
+	let thread = Solid::sweep(&profile, &[helix], ProfileOrient::Up(DVec3::Z))?;
+
+	// 三段構成で sharp 三角形プロファイルから ISO 68-1 basic profile (台形) を再現する:
+	//   1. sweep で sharp 三角形のねじ山を生成 (主径 r、谷 r - r_delta、平坦なし)
+	//   2. union(shaft) で下から H/4 を埋める → 谷底に幅 P/4 の平坦が生まれる
+	//   3. intersect(crest) で上から H/8 を削る → 山頂に幅 P/8 の平坦が生まれる
+	// 結果: 山頂平坦 P/8、谷底平坦 P/4、フランク全角 60°、ねじ深さ 5H/8 の
+	// 厳密な ISO 基本山形。主径 = 2(r - H/8) = 2 - H/4 ≈ 1.913 mm は M2 6g
+	// 主径下限 (≈ 1.913 mm) と一致するので、規格内の M2 として通る。
+	let shaft = Solid::cylinder(r - r_delta * 6.0 / 8.0, DVec3::Z, h_thread);
+	let crest = Solid::cylinder(r - r_delta / 8.0,       DVec3::Z, h_thread);
+	let thread_shaft = thread.union([&shaft])?.intersect([&crest])?;
+
+	// 平頭を上に重ねる。
+	let head = Solid::cylinder(r_head, DVec3::Z, h_head).translate(DVec3::Z * h_thread);
+	thread_shaft.union([&head])
+}
+
+// ==================== Component 2: U-shaped pipe ====================
+
+fn build_u_pipe() -> Result<Vec<Solid>, Error> {
+	// パイプ寸法
+	let pipe_radius = 0.4;        // 円断面の半径
+	let leg_length = 6.0;         // 直線脚の長さ (ねじの全高 ≈ 7.3 に近い値)
+	let gap = 3.0;                // 両脚の間隔 = 半円の直径
+	let bend_radius = gap / 2.0;  // 半円の半径
+
+	// U 字パス in XZ 平面 (Y = 0):
+	//
+	//     B --arc_mid-- C
+	//     |              |
+	//     ↑              ↓
+	//     |              |
+	//     A              D
+	//
+	// A = (0,     0, 0)            spine 始点
+	// B = (0,     0, leg_length)   第1脚の頂点
+	// arc_mid = (bend_radius, 0, leg_length + bend_radius)  半円の中央点
+	// C = (gap,   0, leg_length)   第2脚の頂点
+	// D = (gap,   0, 0)            spine 終点
+	let a = DVec3::ZERO;
+	let b = DVec3::new(0.0, 0.0, leg_length);
+	let arc_mid = DVec3::new(bend_radius, 0.0, leg_length + bend_radius);
+	let c = DVec3::new(gap, 0.0, leg_length);
+	let d = DVec3::new(gap, 0.0, 0.0);
+
+	// 3 本のエッジで構成される spine wire: 直線 → 半円 → 直線
+	let up_leg = Edge::line(a, b)?;
+	let bend = Edge::arc_3pts(b, arc_mid, c)?;
+	let down_leg = Edge::line(c, d)?;
+
+	// 円プロファイル in XY 平面 (法線 +Z)。
+	// 原点中心、法線 +Z は spine 始点 A = 原点、開始接線 +Z と一致するので
+	// 追加の align_z / translate は恒等変換。明示せずそのまま sweep に渡す。
+	let profile = Edge::circle(pipe_radius, DVec3::Z)?;
+
+	// ProfileOrient::Up(+Y) で、U 字パスの平面 (XZ) の法線 +Y を固定 binormal に。
+	// 平面内の sweep なので Frenet の特異性 (直線部分で曲率ゼロ) を回避でき、
+	// 曲げ区間では円プロファイルが滑らかに追従する。
+	let pipe = Solid::sweep(&[profile], &[up_leg, bend, down_leg], ProfileOrient::Up(DVec3::Y))?;
+	Ok(vec![pipe])
+}
+
+// ==================== main: side-by-side layout ====================
+
+fn main() {
+	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+
+	// ねじ: 原点に配置 (red)
+	// U字パイプ: +X 方向に offset して右側に並置 (blue)
+	// ねじの最大半径 = r_head = 1.75、パイプ幅 = gap + 2*pipe_radius = 3.8
+	// 間隔 ≈ 2.5 を確保するため x_offset = 6.0 とする
+	let x_offset = 6.0;
+
+	let mut all: Vec<Solid> = Vec::new();
+
+	match build_m2_screw() {
+		Ok(screw) => {
+			all.extend(screw.color("red"));
+			println!("✓ screw built (red, centered at origin)");
+		}
+		Err(e) => eprintln!("✗ screw failed: {e}"),
+	}
+
+	match build_u_pipe() {
+		Ok(pipe) => {
+			let placed: Vec<Solid> = pipe.translate(DVec3::X * x_offset).color("blue");
+			all.extend(placed);
+			println!("✓ U-pipe built (blue, offset x={x_offset})");
+		}
+		Err(e) => eprintln!("✗ U-pipe failed: {e}"),
+	}
+
+	if all.is_empty() {
+		eprintln!("nothing to write");
+		return;
+	}
+
+	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
+	cadrum::io::write_step(&all, &mut f).expect("failed to write STEP");
+	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
+	// 螺旋ねじは隠線が密で SVG が読めなくなるので、hidden-line 表示を off にする。
+	cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, -1.0), 0.5, false, &mut f_svg).expect("failed to write SVG");
+	println!("wrote {example_name}.step / {example_name}.svg ({} solids)", all.len());
+}
+
+```
+
+<p align="center">
+  <img src="figure/examples/05_sweep.svg" alt="05_sweep" width="360"/>
+</p>
+
 #### Chijin
 
 Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
 
 ```sh
-cargo run --example 05_chijin
+cargo run --example 10_chijin
 ```
 
 ```rust

@@ -170,7 +170,7 @@ pub enum ProfileOrient {
 	///
 	/// 注意: helix にこれを適用すると profile が回転しないのでねじ山にならない。
 	/// その「壊れ方」自体は仕様どおりで、`Fixed` のデモンストレーションとして
-	/// `examples/05_screw.rs` で確認できる。
+	/// `examples/05_sweep.rs` で確認できる。
 	Fixed,
 
 	/// Profile rotates following the spine's principal normal direction
@@ -244,6 +244,11 @@ pub trait EdgeExt: Transform {
 ///
 /// Single-edge constructors only. Wire/edge-list operations live on `EdgeExt`
 /// and are inherited via the supertrait bound, in symmetry with `SolidStruct`.
+///
+/// All constructors return `Result<..., Error>`. Invalid inputs (degenerate
+/// geometry, zero/negative radius, collinear arc points, etc.) yield
+/// `Error::InvalidEdge(String)` with a message that identifies the failing
+/// constructor and the offending parameters.
 pub trait EdgeStruct: Sized + Clone + EdgeExt {
 	/// Construct a single helical edge on a cylindrical surface centered at
 	/// the world origin.
@@ -260,14 +265,14 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 	/// Making `x_ref` explicit guarantees the start point is deterministic
 	/// rather than depending on whatever orthogonal direction OCCT picks
 	/// from `axis` alone.
-	fn helix(radius: f64, pitch: f64, height: f64, axis: DVec3, x_ref: DVec3) -> Self;
+	fn helix(radius: f64, pitch: f64, height: f64, axis: DVec3, x_ref: DVec3) -> Result<Self, Error>;
 
 	/// Build a closed polygon from a sequence of points and return its
 	/// constituent edges in order. The polygon is **always closed**: the
 	/// last point is automatically connected back to the first.
 	// 非平面の点列も受理する (検証しない) — `Solid::sweep` で face 化に失敗
 	// したとき `Error::SweepFailed` で気付ける想定なので、入力側での事前検査は省略。
-	fn polygon(points: impl IntoIterator<Item = DVec3>) -> Vec<Self>;
+	fn polygon(points: impl IntoIterator<Item = DVec3>) -> Result<Vec<Self>, Error>;
 
 	/// Closed circle of radius `r` centered at the world origin, lying in
 	/// the plane normal to `axis`. Returns a single edge (one Geom_Circle
@@ -278,7 +283,18 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 	/// arbitrary orthogonal direction to `axis`. Callers that need a
 	/// deterministic start point should translate/rotate the resulting
 	/// edge into place rather than relying on the implicit choice.
-	fn circle(radius: f64, axis: DVec3) -> Self;
+	fn circle(radius: f64, axis: DVec3) -> Result<Self, Error>;
+
+	/// Straight line segment from `a` to `b`. Fails with `InvalidEdge` if
+	/// `a == b` (zero-length segment).
+	fn line(a: DVec3, b: DVec3) -> Result<Self, Error>;
+
+	/// Circular arc through three points: start, mid, end. The unique circle
+	/// passing through the three points defines the arc; `mid` disambiguates
+	/// which of the two possible arcs is returned (the one passing through
+	/// `mid`). Fails with `InvalidEdge` if `mid` is collinear with `start`
+	/// and `end`, or if any pair of points coincides.
+	fn arc_3pts(start: DVec3, mid: DVec3, end: DVec3) -> Result<Self, Error>;
 }
 
 /// Backend-independent solid trait (pub(crate) — not exposed to users).

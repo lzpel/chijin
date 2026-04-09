@@ -225,6 +225,19 @@ std::unique_ptr<std::vector<TopoDS_Edge>> make_polygon_edges(
 std::unique_ptr<TopoDS_Edge> make_circle_edge(
     double ax, double ay, double az, double radius);
 
+// Construct a straight line segment edge from point a to point b.
+std::unique_ptr<TopoDS_Edge> make_line_edge(
+    double ax, double ay, double az,
+    double bx, double by, double bz);
+
+// Construct a circular arc edge through three points (start, mid, end).
+// `mid` must not be collinear with `start` and `end`. On degenerate input
+// OCCT returns nullptr.
+std::unique_ptr<TopoDS_Edge> make_arc_edge(
+    double sx, double sy, double sz,
+    double mx, double my, double mz,
+    double ex, double ey, double ez);
+
 // Edge query helpers.
 void edge_start_point(const TopoDS_Edge& edge, double& x, double& y, double& z);
 void edge_start_tangent(const TopoDS_Edge& edge, double& x, double& y, double& z);

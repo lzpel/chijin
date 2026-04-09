@@ -29,6 +29,8 @@
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
+#include <gp_Lin.hxx>
+#include <GC_MakeArcOfCircle.hxx>
 
 #include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -964,6 +966,43 @@ std::unique_ptr<TopoDS_Edge> make_circle_edge(
         gp_Ax2 ax2(gp_Pnt(0.0, 0.0, 0.0), axis_dir);
         gp_Circ circ(ax2, radius);
         BRepBuilderAPI_MakeEdge edgeMaker(circ);
+        if (!edgeMaker.IsDone()) return nullptr;
+        return std::make_unique<TopoDS_Edge>(edgeMaker.Edge());
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<TopoDS_Edge> make_line_edge(
+    double ax, double ay, double az,
+    double bx, double by, double bz)
+{
+    try {
+        gp_Pnt a(ax, ay, az);
+        gp_Pnt b(bx, by, bz);
+        if (a.Distance(b) < Precision::Confusion()) return nullptr;
+        BRepBuilderAPI_MakeEdge edgeMaker(a, b);
+        if (!edgeMaker.IsDone()) return nullptr;
+        return std::make_unique<TopoDS_Edge>(edgeMaker.Edge());
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<TopoDS_Edge> make_arc_edge(
+    double sx, double sy, double sz,
+    double mx, double my, double mz,
+    double ex, double ey, double ez)
+{
+    try {
+        gp_Pnt p_start(sx, sy, sz);
+        gp_Pnt p_mid(mx, my, mz);
+        gp_Pnt p_end(ex, ey, ez);
+        // Standard_False: do not wrap around; the arc goes from start through
+        // mid to end on the unique circle defined by those three points.
+        GC_MakeArcOfCircle maker(p_start, p_mid, p_end);
+        if (!maker.IsDone()) return nullptr;
+        BRepBuilderAPI_MakeEdge edgeMaker(maker.Value());
         if (!edgeMaker.IsDone()) return nullptr;
         return std::make_unique<TopoDS_Edge>(edgeMaker.Edge());
     } catch (const Standard_Failure&) {
