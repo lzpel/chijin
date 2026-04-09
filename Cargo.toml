@@ -34,3 +34,26 @@ cmake = "0.1"
 [package.metadata.docs.rs]
 targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
 rustdoc-args = ["--cfg", "docsrs"]
+
+# Examples that depend on the `color` feature. Cargo will skip building these
+# under `--no-default-features`. Examples without a `[[example]]` entry
+# (02_write_read, markdown) build under all feature configurations.
+[[example]]
+name = "01_primitives"
+required-features = ["color"]
+
+[[example]]
+name = "03_transform"
+required-features = ["color"]
+
+[[example]]
+name = "04_boolean"
+required-features = ["color"]
+
+[[example]]
+name = "05_sweep"
+required-features = ["color"]
+
+[[example]]
+name = "10_chijin"
+required-features = ["color"]

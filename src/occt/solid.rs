@@ -379,6 +379,10 @@ fn merge_colormaps(from_a: &[u64], from_b: &[u64], colormap_a: &std::collections
 	result
 }
 
+// `ca` / `cb` carry the source colormaps and are only consulted by the
+// `color` feature; the boolean result and metadata are derived purely from
+// the FFI BooleanShape, so they go unused without `color`.
+#[cfg_attr(not(feature = "color"), allow(unused_variables))]
 fn build_boolean_result(r: cxx::UniquePtr<ffi::BooleanShape>, ca: Compound, cb: Compound) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
 	let from_a = ffi::boolean_shape_from_a(&r);
 	let from_b = ffi::boolean_shape_from_b(&r);
@@ -396,28 +400,29 @@ fn build_boolean_result(r: cxx::UniquePtr<ffi::BooleanShape>, ca: Compound, cb: 
 	Ok((compound.decompose(), [from_a, from_b]))
 }
 
+// Op kind tags matching the C++ side `boolean_op` switch.
+const BOOLEAN_OP_FUSE: u32 = 0;
+const BOOLEAN_OP_CUT: u32 = 1;
+const BOOLEAN_OP_COMMON: u32 = 2;
+
 impl Solid {
-	pub(crate) fn boolean_union_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+	fn boolean_op_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>, op_kind: u32) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
 		let ca = Compound::new(a);
 		let cb = Compound::new(b);
-		let r = ffi::boolean_fuse(ca.inner(), cb.inner());
+		let r = ffi::boolean_op(ca.inner(), cb.inner(), op_kind);
 		if r.is_null() { return Err(Error::BooleanOperationFailed); }
 		build_boolean_result(r, ca, cb)
+	}
+
+	pub(crate) fn boolean_union_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+		Self::boolean_op_impl(a, b, BOOLEAN_OP_FUSE)
 	}
 
 	pub(crate) fn boolean_subtract_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let ca = Compound::new(a);
-		let cb = Compound::new(b);
-		let r = ffi::boolean_cut(ca.inner(), cb.inner());
-		if r.is_null() { return Err(Error::BooleanOperationFailed); }
-		build_boolean_result(r, ca, cb)
+		Self::boolean_op_impl(a, b, BOOLEAN_OP_CUT)
 	}
 
 	pub(crate) fn boolean_intersect_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let ca = Compound::new(a);
-		let cb = Compound::new(b);
-		let r = ffi::boolean_common(ca.inner(), cb.inner());
-		if r.is_null() { return Err(Error::BooleanOperationFailed); }
-		build_boolean_result(r, ca, cb)
+		Self::boolean_op_impl(a, b, BOOLEAN_OP_COMMON)
 	}
 }

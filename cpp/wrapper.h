@@ -69,12 +69,16 @@ private:
 
 // ==================== Shape I/O (streambuf callback) ====================
 
+// Plain STEP I/O — only built without CADRUM_COLOR; with color, STEP goes
+// through XCAF (`read_step_color_stream` etc.) instead.
+#ifndef CADRUM_COLOR
 std::unique_ptr<TopoDS_Shape> read_step_stream(RustReader& reader);
+bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer);
+#endif
 std::unique_ptr<TopoDS_Shape> read_brep_bin_stream(RustReader& reader);
 bool write_brep_bin_stream(const TopoDS_Shape& shape, RustWriter& writer);
 std::unique_ptr<TopoDS_Shape> read_brep_text_stream(RustReader& reader);
 bool write_brep_text_stream(const TopoDS_Shape& shape, RustWriter& writer);
-bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer);
 
 // ==================== Shape Constructors ====================
 
@@ -123,12 +127,9 @@ public:
     std::vector<uint64_t> from_b;  // pairs: [post_id, src_b_id, ...]
 };
 
-std::unique_ptr<BooleanShape> boolean_fuse(
-    const TopoDS_Shape& a, const TopoDS_Shape& b);
-std::unique_ptr<BooleanShape> boolean_cut(
-    const TopoDS_Shape& a, const TopoDS_Shape& b);
-std::unique_ptr<BooleanShape> boolean_common(
-    const TopoDS_Shape& a, const TopoDS_Shape& b);
+// Unified boolean operation: 0=Fuse(union), 1=Cut(a−b), 2=Common(intersect).
+std::unique_ptr<BooleanShape> boolean_op(
+    const TopoDS_Shape& a, const TopoDS_Shape& b, uint32_t op_kind);
 
 std::unique_ptr<TopoDS_Shape> boolean_shape_shape(const BooleanShape& r);
 rust::Vec<uint64_t> boolean_shape_from_a(const BooleanShape& r);
@@ -136,7 +137,11 @@ rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r);
 
 // ==================== Shape Methods ====================
 
+// Plain clean — only built without CADRUM_COLOR; with color, clean goes
+// through `clean_shape_full` to remap face IDs onto the colormap.
+#ifndef CADRUM_COLOR
 std::unique_ptr<TopoDS_Shape> clean_shape(const TopoDS_Shape& shape);
+#endif
 std::unique_ptr<TopoDS_Shape> translate_shape(
     const TopoDS_Shape& shape, double tx, double ty, double tz);
 std::unique_ptr<TopoDS_Shape> rotate_shape(
@@ -157,7 +162,6 @@ bool shape_is_solid(const TopoDS_Shape& shape);
 uint32_t shape_shell_count(const TopoDS_Shape& shape);
 double shape_volume(const TopoDS_Shape& shape);
 bool shape_contains_point(const TopoDS_Shape& shape, double x, double y, double z);
-uint64_t shape_tshape_id(const TopoDS_Shape& shape);
 void shape_bounding_box(const TopoDS_Shape& shape,
     double& xmin, double& ymin, double& zmin,
     double& xmax, double& ymax, double& zmax);
@@ -180,22 +184,12 @@ void explorer_next(TopExp_Explorer& explorer);
 std::unique_ptr<TopoDS_Face> explorer_current_face(const TopExp_Explorer& explorer);
 std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explorer);
 
-// ==================== Face Methods ====================
-
-void face_center_of_mass(const TopoDS_Face& face,
-    double& cx, double& cy, double& cz);
-void face_normal_at_center(const TopoDS_Face& face,
-    double& nx, double& ny, double& nz);
-std::unique_ptr<TopoDS_Face> face_from_polygon(rust::Slice<const double> coords);
-std::unique_ptr<TopoDS_Shape> face_extrude(const TopoDS_Face& face,
-    double dx, double dy, double dz);
-std::unique_ptr<TopoDS_Shape> face_revolve(const TopoDS_Face& face,
-    double ox, double oy, double oz,
-    double dx, double dy, double dz,
-    double angle);
-
 // ==================== Edge Methods ====================
 
+// Approximate an edge as a polyline. The `_ex` variant is the implementation
+// body and takes independent angular/chord deflection bounds. The plain
+// variant is a convenience wrapper that maps a single `tolerance` value to
+// both deflection bounds.
 ApproxPoints edge_approximation_segments(
     const TopoDS_Edge& edge, double tolerance);
 ApproxPoints edge_approximation_segments_ex(
@@ -287,7 +281,10 @@ void edge_vec_push(std::vector<TopoDS_Edge>& v, const TopoDS_Edge& e);
 
 // ==================== Face Methods ====================
 
+// Both helpers return the underlying TopoDS_TShape* address as a u64 — used
+// to track face/solid identity across boolean ops, color maps, and BREP I/O.
 uint64_t face_tshape_id(const TopoDS_Face& face);
+uint64_t shape_tshape_id(const TopoDS_Shape& shape);
 
 } // namespace cadrum
 

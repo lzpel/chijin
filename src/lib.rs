@@ -31,9 +31,6 @@ pub use common::error::Error;
 pub use common::mesh::{EdgeData, Mesh};
 pub use glam::DVec3;
 
-// Re-export submodules
-pub use common::utils;
-
 // ==================== Boolean metadata helpers ====================
 //
 // Free functions over the active backend's concrete `Face`. They live here

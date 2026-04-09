@@ -41,7 +41,11 @@ mod ffi_bridge {
 
 		// ==================== Shape I/O (streambuf callback) ====================
 
+		// Plain STEP I/O — used only without `color` feature.
+		// With color, STEP goes through XCAF (`read_step_color_stream` etc.).
+		#[cfg(not(feature = "color"))]
 		fn read_step_stream(reader: &mut RustReader) -> UniquePtr<TopoDS_Shape>;
+		#[cfg(not(feature = "color"))]
 		fn write_step_stream(shape: &TopoDS_Shape, writer: &mut RustWriter) -> bool;
 		fn read_brep_bin_stream(reader: &mut RustReader) -> UniquePtr<TopoDS_Shape>;
 		fn write_brep_bin_stream(shape: &TopoDS_Shape, writer: &mut RustWriter) -> bool;
@@ -69,9 +73,8 @@ mod ffi_bridge {
 
 		// ==================== Boolean Operations ====================
 
-		fn boolean_fuse(a: &TopoDS_Shape, b: &TopoDS_Shape) -> UniquePtr<BooleanShape>;
-		fn boolean_cut(a: &TopoDS_Shape, b: &TopoDS_Shape) -> UniquePtr<BooleanShape>;
-		fn boolean_common(a: &TopoDS_Shape, b: &TopoDS_Shape) -> UniquePtr<BooleanShape>;
+		// Unified boolean op. `op_kind`: 0 = fuse(union), 1 = cut(a − b), 2 = common(intersect).
+		fn boolean_op(a: &TopoDS_Shape, b: &TopoDS_Shape, op_kind: u32) -> UniquePtr<BooleanShape>;
 
 		fn boolean_shape_shape(r: &BooleanShape) -> UniquePtr<TopoDS_Shape>;
 		fn boolean_shape_from_a(r: &BooleanShape) -> Vec<u64>;
@@ -100,6 +103,9 @@ mod ffi_bridge {
 
 		// ==================== Shape Methods ====================
 
+		// Plain clean — used only without `color` feature.
+		// With color, clean goes through `clean_shape_full` to remap face IDs.
+		#[cfg(not(feature = "color"))]
 		fn clean_shape(shape: &TopoDS_Shape) -> UniquePtr<TopoDS_Shape>;
 
 		#[cfg(feature = "color")]
@@ -150,11 +156,6 @@ mod ffi_bridge {
 
 		fn face_tshape_id(face: &TopoDS_Face) -> u64;
 		fn shape_tshape_id(shape: &TopoDS_Shape) -> u64;
-		fn face_from_polygon(coords: &[f64]) -> UniquePtr<TopoDS_Face>;
-		fn face_center_of_mass(face: &TopoDS_Face, cx: &mut f64, cy: &mut f64, cz: &mut f64);
-		fn face_normal_at_center(face: &TopoDS_Face, nx: &mut f64, ny: &mut f64, nz: &mut f64);
-		fn face_extrude(face: &TopoDS_Face, dx: f64, dy: f64, dz: f64) -> UniquePtr<TopoDS_Shape>;
-		fn face_revolve(face: &TopoDS_Face, ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64, angle: f64) -> UniquePtr<TopoDS_Shape>;
 
 		// ==================== Edge Methods ====================
 
