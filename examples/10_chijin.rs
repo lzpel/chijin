@@ -61,7 +61,7 @@ fn main() -> Result<(), cadrum::Error> {
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, &mut f).expect("failed to write SVG");
+	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())

@@ -61,7 +61,7 @@ fn main() {
     cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut svg).expect("failed to write SVG");
 }
 
 ```
@@ -152,7 +152,7 @@ fn main() -> Result<(), cadrum::Error> {
         .collect();
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("create file");
-    cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, 2.0), 0.5, &mut svg)?;
+    cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, 2.0), 0.5, true, &mut svg)?;
 
     let mut stl = std::fs::File::create(format!("{example_name}.stl")).expect("create file");
     cadrum::io::write_stl(&all, 0.1, &mut stl)?;
@@ -222,7 +222,7 @@ fn main() {
     cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut svg).expect("failed to write SVG");
 }
 
 ```
@@ -274,7 +274,7 @@ fn main() -> Result<(), cadrum::Error> {
     cadrum::io::write_step(&shapes, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5, true, &mut svg).expect("failed to write SVG");
 
     Ok(())
 }
@@ -357,7 +357,7 @@ fn main() -> Result<(), cadrum::Error> {
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, &mut f).expect("failed to write SVG");
+	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())

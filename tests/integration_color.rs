@@ -257,7 +257,7 @@ fn stl_svg_preserve_colors() {
 	}
 
 	// --- SVG検証 ---
-	let svg = mesh.to_svg(DVec3::new(1.0, 1.0, 2.0));
+	let svg = mesh.to_svg(DVec3::new(1.0, 1.0, 2.0), true);
 	std::fs::write(format!("{manifest_dir}/target/color_box.svg"), &svg).expect("write svg file");
 	eprintln!("SVG出力: target/color_box.svg");
 

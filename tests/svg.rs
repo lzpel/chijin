@@ -9,7 +9,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 fn svg_string(shape: &[Solid], direction: DVec3, tol: f64) -> String {
 	let mut buf = Vec::new();
-	cadrum::io::write_svg(shape, direction, tol, &mut buf).unwrap();
+	cadrum::io::write_svg(shape, direction, tol, true, &mut buf).unwrap();
 	String::from_utf8(buf).unwrap()
 }
 
@@ -60,7 +60,7 @@ fn test_svg_has_hidden_lines() {
 	let shape: Vec<Solid> = a.union(&b).unwrap();
 	let svg = svg_string(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1);
 
-	assert!(svg.contains("#999"), "should contain hidden line color");
+	assert!(svg.contains("#bbb"), "should contain hidden line color");
 
 	std::fs::create_dir_all("out").unwrap();
 	std::fs::write("out/two_boxes.svg", &svg).unwrap();

@@ -6,7 +6,8 @@ use std::collections::HashMap;
 /// 3D edge polylines for SVG rendering.
 ///
 /// Stores topological edges as 3D polylines. Visibility classification
-/// (visible vs hidden) is computed automatically by [`Mesh::to_svg`].
+/// (visible vs hidden) is computed by [`Mesh::to_svg`] when hidden line
+/// rendering is enabled.
 #[derive(Debug, Clone, Default)]
 pub struct EdgeData {
 	/// 3D polylines representing topological edges.
@@ -91,32 +92,38 @@ impl Mesh {
 	/// `direction` is the viewing direction (the direction the camera looks from;
 	/// points with higher `dot(direction)` are closer to the camera).
 	///
+	/// `hidden_lines` controls whether occluded edges are rendered as faint dashed
+	/// lines. Set to `false` for cleaner output on dense models (e.g. helical
+	/// sweeps) where hidden lines dominate the image.
+	///
 	/// The method:
 	/// 1. Projects triangles onto the plane perpendicular to `direction`
 	/// 2. Detects silhouette edges from mesh adjacency
-	/// 3. Classifies all edges (topological + silhouette) as visible or hidden
-	/// 4. Renders colored triangles, visible edges (black), and hidden edges (gray dashed)
-	pub fn to_svg(&self, direction: DVec3) -> String {
+	/// 3. Classifies edges as visible or hidden (only when `hidden_lines`)
+	/// 4. Renders colored triangles, visible edges (black), and optionally hidden edges
+	pub fn to_svg(&self, direction: DVec3, hidden_lines: bool) -> String {
 		let dir = direction.normalize();
 		let (u, v) = projection_basis(dir);
 
 		// 1. Project and sort triangles for rendering
 		let face_triangles = project_and_sort_triangles(self, dir, u, v);
 
-		// 2. Build occlusion data (front-facing triangles for visibility testing)
-		let occlusion_tris = build_occlusion_data(self, dir, u, v);
-
-		// 3. Detect silhouette edges from mesh adjacency
+		// 2. Detect silhouette edges from mesh adjacency
 		let silhouette_edges = detect_silhouette_edges(self, dir);
 
-		// 4. Combine topological edges + silhouette edges
+		// 3. Combine topological edges + silhouette edges
 		let all_edges: Vec<&Vec<DVec3>> = self.edges.polylines.iter().chain(silhouette_edges.iter()).collect();
 
-		// 5. Classify edges as visible/hidden
-		let (visible_lines, hidden_lines) = classify_edges(&all_edges, &occlusion_tris, dir, u, v);
+		// 4. Classify edges. When hidden lines are disabled we still need to
+		//    drop occluded segments from the visible set, so build occlusion
+		//    data and reuse the same classifier — only the hidden output is
+		//    discarded.
+		let occlusion_tris = build_occlusion_data(self, dir, u, v);
+		let (visible, hidden) = classify_edges(&all_edges, &occlusion_tris, dir, u, v);
+		let hidden = if hidden_lines { hidden } else { Vec::new() };
 
-		// 6. Build SVG
-		build_svg(&face_triangles, &visible_lines, &hidden_lines)
+		// 5. Build SVG
+		build_svg(&face_triangles, &visible, &hidden)
 	}
 }
 
@@ -388,7 +395,7 @@ fn barycentric_2d(p: (f64, f64), t: [(f64, f64); 3]) -> Option<(f64, f64, f64)> 
 
 // ==================== SVG generation ====================
 
-fn polylines_to_svg(svg: &mut String, polylines: &[Vec<(f64, f64)>], stroke: &str, dash: &str) {
+fn polylines_to_svg(svg: &mut String, polylines: &[Vec<(f64, f64)>], stroke: &str, dash: &str, width: Option<f64>) {
 	for line in polylines {
 		svg.push_str("<polyline points=\"");
 		for (i, &(x, y)) in line.iter().enumerate() {
@@ -401,6 +408,9 @@ fn polylines_to_svg(svg: &mut String, polylines: &[Vec<(f64, f64)>], stroke: &st
 		svg.push_str("\" fill=\"none\" stroke=\"");
 		svg.push_str(stroke);
 		svg.push('"');
+		if let Some(w) = width {
+			svg.push_str(&format!(" stroke-width=\"{w:.4}\""));
+		}
 		if !dash.is_empty() {
 			svg.push_str(" stroke-dasharray=\"");
 			svg.push_str(dash);
@@ -470,7 +480,11 @@ fn build_svg(triangles: &[SvgTriangle], visible_lines: &[Vec<(f64, f64)>], hidde
 	let vw = w + margin * 2.0;
 	let vh = h + margin * 2.0;
 	let sw = (if w > h { w } else { h }) * 0.003;
-	let dash_len = sw * 3.0;
+	// Hidden lines: thinner stroke and longer dashes to reduce visual clutter
+	// on dense models (e.g. helical sweeps).
+	let hidden_sw = sw * 0.6;
+	let dash_len = sw * 5.0;
+	let dash_gap = sw * 4.0;
 
 	let mut svg = String::with_capacity(4096 + triangles.len() * 120);
 	svg.push_str(&format!(
@@ -490,8 +504,8 @@ fn build_svg(triangles: &[SvgTriangle], visible_lines: &[Vec<(f64, f64)>], hidde
 		));
 	}
 
-	polylines_to_svg(&mut svg, visible_lines, "black", "");
-	polylines_to_svg(&mut svg, hidden_lines, "#999", &format!("{dash_len:.4},{dash_len:.4}"));
+	polylines_to_svg(&mut svg, visible_lines, "black", "", None);
+	polylines_to_svg(&mut svg, hidden_lines, "#bbb", &format!("{dash_len:.4},{dash_gap:.4}"), Some(hidden_sw));
 
 	svg.push_str("</svg>\n");
 	svg
