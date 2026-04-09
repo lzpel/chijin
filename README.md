@@ -445,7 +445,7 @@ cargo run --example 10_chijin
 ```rust
 //! Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
 
-use cadrum::{Face, Color, Solid, SolidExt};
+use cadrum::{Color, Edge, ProfileOrient, Solid, SolidExt};
 use glam::DVec3;
 use std::f64::consts::PI;
 
@@ -455,17 +455,21 @@ pub fn chijin() -> Result<Solid, cadrum::Error> {
 		.translate(DVec3::new(0.0, 0.0, -4.0))
 		.color("#999");
 
-	// ── Rim: cross-section polygon in the x=0 plane, revolved 360° around Z
-	let cross_section = Face::from_polygon(&[
+	// ── Sheet: closed polygon in the XZ plane (y=0), swept 360° around Z
+	// により面と縁を一体で生成する。Face::from_polygon + Face::revolve の置換版:
+	//   - Edge::polygon は最後の点 → 最初の点を自動補完して閉じる
+	//   - spine は Z 軸まわりの円。半径によらずプロファイルを Z 周りに純粋回転
+	//     させるだけなので任意の正の値で可
+	//   - ProfileOrient::Up(Z) でプロファイルの上方向を Z 固定 → 回転(revolve)と等価
+	let cross_section = Edge::polygon([
 		DVec3::new(0.0, 0.0, 5.0),
-		DVec3::new(0.0, 15.0, 5.0),
-		DVec3::new(0.0, 17.0, 3.0),
-		DVec3::new(0.0, 15.0, 4.0),
+		DVec3::new(15.0, 0.0, 5.0),
+		DVec3::new(17.0, 0.0, 3.0),
+		DVec3::new(15.0, 0.0, 4.0),
 		DVec3::new(0.0, 0.0, 4.0),
-		DVec3::new(0.0, 0.0, 5.0),
 	])?;
-	let sheet = cross_section
-		.revolve(DVec3::ZERO, DVec3::Z, 2.0 * PI)?
+	let spine = Edge::circle(1.0, DVec3::Z)?;
+	let sheet = Solid::sweep(&cross_section, &[spine], ProfileOrient::Up(DVec3::Z))?
 		.color("#fff");
 	let sheets = [sheet.clone().mirror(DVec3::ZERO, DVec3::Z), sheet];
 

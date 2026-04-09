@@ -1,15 +1,42 @@
 #include "cadrum/src/occt/ffi.rs.h"
 
-// Implementation-only OCCT headers (not exposed via wrapper.h)
+// ==================== OCCT headers (impl only — not exposed via wrapper.h) ====================
+//
+// Grouped by responsibility. Anything used in wrapper.h is included there;
+// here we only pull in what the implementations need.
+
+// --- Standard / exceptions ---
 #include <Standard_Failure.hxx>
-#include <TopoDS_Solid.hxx>
+
+// --- Topology types & navigation ---
+#include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopAbs_ShapeEnum.hxx>
-#include <TopoDS.hxx>
+#include <TopExp.hxx>
+#include <TopLoc_Location.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 
+// --- Geometry primitives (gp / Geom / 2d) ---
+#include <gp_Ax1.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Lin.hxx>
+#include <gp_Pln.hxx>
+#include <gp_Trsf.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom2d_Line.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+
+// --- BRep builders (faces / wires / edges / solid primitives) ---
+#include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
+#include <BRepLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
@@ -17,31 +44,20 @@
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
-#include <BRepPrimAPI_MakePrism.hxx>
-#include <BRepPrimAPI_MakeRevol.hxx>
-#include <BRepOffsetAPI_MakePipeShell.hxx>
-#include <BRepBuilderAPI_MakeEdge.hxx>
-#include <BRepBuilderAPI_MakeWire.hxx>
-#include <Geom_CylindricalSurface.hxx>
-#include <Geom2d_Line.hxx>
-#include <BRepTools.hxx>
-#include <BRepLib.hxx>
-#include <gp_Ax1.hxx>
-#include <gp_Ax2.hxx>
-#include <gp_Circ.hxx>
-#include <gp_Lin.hxx>
-#include <GC_MakeArcOfCircle.hxx>
 
+// --- Boolean operations & shape cleanup ---
 #include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
-
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepTools_History.hxx>
 
+// --- Sweep / pipe ---
+#include <BRepOffsetAPI_MakePipeShell.hxx>
+
+// --- Mesh, classification, mass / surface properties ---
 #include <BRepMesh_IncrementalMesh.hxx>
-#include <BRep_Tool.hxx>
 #include <Poly_Triangulation.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepBndLib.hxx>
@@ -49,33 +65,26 @@
 #include <BRepGProp.hxx>
 #include <BRepGProp_Face.hxx>
 #include <GProp_GProps.hxx>
-#include <GeomAPI_ProjectPointOnSurf.hxx>
 
+// --- Curve adaptation / approximation ---
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_TangentialDeflection.hxx>
 
-#include <BRep_Builder.hxx>
-#include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
-#include <gp_Pln.hxx>
-#include <gp_Ax2.hxx>
-#include <gp_Trsf.hxx>
-#include <TopLoc_Location.hxx>
-
-#include <BinTools.hxx>
+// --- I/O (BREP / STEP / progress) ---
 #include <BRepTools.hxx>
+#include <BinTools.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <Message_ProgressRange.hxx>
 
+// --- C++ standard library ---
 #include <istream>
 #include <ostream>
 #include <sstream>
 #include <cmath>
 #include <cstring>
-#include <algorithm>
 #include <cstdint>
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <array>
@@ -136,11 +145,20 @@ bool RustWriteStreambuf::flush_buf() {
 
 // ==================== Shape I/O (streambuf callback) ====================
 
+#ifndef CADRUM_COLOR
+// Plain STEP I/O — used only when CADRUM_COLOR is not defined.
+// With color, STEP routes through XCAF (`read_step_color_stream` /
+// `write_step_color_stream`) instead.
+
 std::unique_ptr<TopoDS_Shape> read_step_stream(RustReader& reader) {
     RustReadStreambuf sbuf(reader);
     std::istream is(&sbuf);
 
-    // Allocate reader on the heap and leak it (Bug 2 fix).
+    // OCCT 7.x bug workaround: STEPControl_Reader::~STEPControl_Reader()
+    // crashes when the reader was constructed on the stack and destroyed
+    // after a successful TransferRoots(). Allocating on the heap and never
+    // freeing avoids the destructor path entirely. The leaked memory is
+    // bounded (one reader per STEP read) and accepted as a known cost.
     auto* step_reader = new STEPControl_Reader();
     IFSelect_ReturnStatus status = step_reader->ReadStream("stream", is);
 
@@ -150,8 +168,19 @@ std::unique_ptr<TopoDS_Shape> read_step_stream(RustReader& reader) {
 
     step_reader->TransferRoots(Message_ProgressRange());
     return std::make_unique<TopoDS_Shape>(step_reader->OneShape());
-    // Intentionally leak step_reader to prevent destructor crash.
+    // step_reader is intentionally leaked — see comment above.
 }
+
+bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer) {
+    RustWriteStreambuf sbuf(writer);
+    std::ostream os(&sbuf);
+    STEPControl_Writer step_writer;
+    if (step_writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone) {
+        return false;
+    }
+    return step_writer.WriteStream(os) == IFSelect_RetDone;
+}
+#endif // !CADRUM_COLOR
 
 std::unique_ptr<TopoDS_Shape> read_brep_bin_stream(RustReader& reader) {
     // BinTools::Read requires a seekable stream: the binary format stores
@@ -409,69 +438,38 @@ static void emit_from_pairs(
     }
 }
 
-std::unique_ptr<BooleanShape> boolean_fuse(
-    const TopoDS_Shape& a, const TopoDS_Shape& b)
+// Unified boolean operation. `op_kind` selects the OCCT algorithm:
+//   0 = Fuse (union)
+//   1 = Cut  (subtract: a − b)
+//   2 = Common (intersect)
+// Any other value returns nullptr.
+//
+// All three OCCT operations derive from BRepAlgoAPI_BooleanOperation, so the
+// post-build relay/copy logic is identical. Branching only at construction
+// avoids triplicating the bookkeeping.
+std::unique_ptr<BooleanShape> boolean_op(
+    const TopoDS_Shape& a, const TopoDS_Shape& b, uint32_t op_kind)
 {
     try {
-        BRepAlgoAPI_Fuse fuse(a, b);
-        fuse.Build();
-        if (!fuse.IsDone()) return nullptr;
+        std::unique_ptr<BRepAlgoAPI_BooleanOperation> op;
+        switch (op_kind) {
+            case 0: op = std::make_unique<BRepAlgoAPI_Fuse>(a, b); break;
+            case 1: op = std::make_unique<BRepAlgoAPI_Cut>(a, b); break;
+            case 2: op = std::make_unique<BRepAlgoAPI_Common>(a, b); break;
+            default: return nullptr;
+        }
+        op->Build();
+        if (!op->IsDone()) return nullptr;
 
         std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
-        collect_relay_mapping(fuse, a, relay_a);
-        collect_relay_mapping(fuse, b, relay_b);
+        collect_relay_mapping(*op, a, relay_a);
+        collect_relay_mapping(*op, b, relay_b);
 
-        BRepBuilderAPI_Copy copier(fuse.Shape(), Standard_True, Standard_False);
+        BRepBuilderAPI_Copy copier(op->Shape(), Standard_True, Standard_False);
         auto r = std::make_unique<BooleanShape>();
         r->shape = copier.Shape();
-        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_a, r->from_a);
-        emit_from_pairs(fuse.Shape(), copier.Shape(), relay_b, r->from_b);
-        return r;
-    } catch (const Standard_Failure&) {
-        return nullptr;
-    }
-}
-
-std::unique_ptr<BooleanShape> boolean_cut(
-    const TopoDS_Shape& a, const TopoDS_Shape& b)
-{
-    try {
-        BRepAlgoAPI_Cut cut(a, b);
-        cut.Build();
-        if (!cut.IsDone()) return nullptr;
-
-        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
-        collect_relay_mapping(cut, a, relay_a);
-        collect_relay_mapping(cut, b, relay_b);
-
-        BRepBuilderAPI_Copy copier(cut.Shape(), Standard_True, Standard_False);
-        auto r = std::make_unique<BooleanShape>();
-        r->shape = copier.Shape();
-        emit_from_pairs(cut.Shape(), copier.Shape(), relay_a, r->from_a);
-        emit_from_pairs(cut.Shape(), copier.Shape(), relay_b, r->from_b);
-        return r;
-    } catch (const Standard_Failure&) {
-        return nullptr;
-    }
-}
-
-std::unique_ptr<BooleanShape> boolean_common(
-    const TopoDS_Shape& a, const TopoDS_Shape& b)
-{
-    try {
-        BRepAlgoAPI_Common common(a, b);
-        common.Build();
-        if (!common.IsDone()) return nullptr;
-
-        std::unordered_map<uint64_t, uint64_t> relay_a, relay_b;
-        collect_relay_mapping(common, a, relay_a);
-        collect_relay_mapping(common, b, relay_b);
-
-        BRepBuilderAPI_Copy copier(common.Shape(), Standard_True, Standard_False);
-        auto r = std::make_unique<BooleanShape>();
-        r->shape = copier.Shape();
-        emit_from_pairs(common.Shape(), copier.Shape(), relay_a, r->from_a);
-        emit_from_pairs(common.Shape(), copier.Shape(), relay_b, r->from_b);
+        emit_from_pairs(op->Shape(), copier.Shape(), relay_a, r->from_a);
+        emit_from_pairs(op->Shape(), copier.Shape(), relay_b, r->from_b);
         return r;
     } catch (const Standard_Failure&) {
         return nullptr;
@@ -496,6 +494,10 @@ rust::Vec<uint64_t> boolean_shape_from_b(const BooleanShape& r) {
 
 // ==================== Shape Methods ====================
 
+#ifndef CADRUM_COLOR
+// Plain clean — used only when CADRUM_COLOR is not defined.
+// With color, clean goes through `clean_shape_full` which also returns a
+// face-id remapping table so the colormap can follow merged faces.
 std::unique_ptr<TopoDS_Shape> clean_shape(const TopoDS_Shape& shape) {
     try {
         ShapeUpgrade_UnifySameDomain unifier(shape, Standard_True, Standard_True, Standard_True);
@@ -506,6 +508,7 @@ std::unique_ptr<TopoDS_Shape> clean_shape(const TopoDS_Shape& shape) {
         return nullptr;
     }
 }
+#endif // !CADRUM_COLOR
 
 std::unique_ptr<TopoDS_Shape> translate_shape(
     const TopoDS_Shape& shape,
@@ -753,106 +756,6 @@ uint64_t face_tshape_id(const TopoDS_Face& face) {
 
 uint64_t shape_tshape_id(const TopoDS_Shape& shape) {
     return reinterpret_cast<uint64_t>(shape.TShape().get());
-}
-
-void face_center_of_mass(const TopoDS_Face& face,
-    double& cx, double& cy, double& cz)
-{
-    try {
-        GProp_GProps props;
-        BRepGProp::SurfaceProperties(face, props);
-        gp_Pnt center = props.CentreOfMass();
-        cx = center.X();
-        cy = center.Y();
-        cz = center.Z();
-    } catch (const Standard_Failure&) {
-        cx = cy = cz = 0.0;
-    }
-}
-
-void face_normal_at_center(const TopoDS_Face& face,
-    double& nx, double& ny, double& nz)
-{
-    try {
-        // Step 1: Get center of mass
-        GProp_GProps props;
-        BRepGProp::SurfaceProperties(face, props);
-        gp_Pnt center = props.CentreOfMass();
-
-        // Step 2: Get surface and project center point onto it
-        Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
-        GeomAPI_ProjectPointOnSurf projector(center, surface);
-
-        // LowerDistanceParameters throws StdFail_NotDone when NbPoints == 0
-        if (projector.NbPoints() == 0) {
-            nx = ny = nz = 0.0;
-            return;
-        }
-
-        double u, v;
-        projector.LowerDistanceParameters(u, v);
-
-        // Step 3: Get normal at (u, v)
-        BRepGProp_Face gprop_face(face);
-        gp_Pnt point;
-        gp_Vec normal;
-        gprop_face.Normal(u, v, point, normal);
-
-        if (normal.Magnitude() > 1e-10) {
-            normal.Normalize();
-        }
-
-        nx = normal.X();
-        ny = normal.Y();
-        nz = normal.Z();
-    } catch (const Standard_Failure&) {
-        nx = ny = nz = 0.0;
-    }
-}
-
-std::unique_ptr<TopoDS_Shape> face_extrude(const TopoDS_Face& face,
-    double dx, double dy, double dz)
-{
-    try {
-        gp_Vec prism_vec(dx, dy, dz);
-        BRepPrimAPI_MakePrism maker(face, prism_vec, Standard_False, Standard_True);
-        return std::make_unique<TopoDS_Shape>(maker.Shape());
-    } catch (const Standard_Failure&) {
-        return nullptr;
-    }
-}
-
-std::unique_ptr<TopoDS_Face> face_from_polygon(rust::Slice<const double> coords)
-{
-    if (coords.size() < 9 || coords.size() % 3 != 0) return nullptr;
-    try {
-        BRepBuilderAPI_MakePolygon poly;
-        for (size_t i = 0; i + 2 < coords.size(); i += 3) {
-            poly.Add(gp_Pnt(coords[i], coords[i + 1], coords[i + 2]));
-        }
-        poly.Close();
-        if (!poly.IsDone()) return nullptr;
-        BRepBuilderAPI_MakeFace face_maker(poly.Wire(), Standard_True);
-        if (!face_maker.IsDone()) return nullptr;
-        return std::make_unique<TopoDS_Face>(face_maker.Face());
-    } catch (const Standard_Failure&) {
-        return nullptr;
-    }
-}
-
-std::unique_ptr<TopoDS_Shape> face_revolve(const TopoDS_Face& face,
-    double ox, double oy, double oz,
-    double dx, double dy, double dz,
-    double angle)
-{
-    try {
-        gp_Ax1 axis(gp_Pnt(ox, oy, oz), gp_Dir(dx, dy, dz));
-        BRepPrimAPI_MakeRevol maker(face, axis, angle);
-        if (!maker.IsDone()) return nullptr;
-        return std::make_unique<TopoDS_Shape>(maker.Shape());
-    } catch (const Standard_Failure&) {
-        return nullptr;
-    }
 }
 
 // ==================== Edge Methods ====================
@@ -1195,16 +1098,6 @@ std::unique_ptr<TopoDS_Shape> make_pipe_from_edges(
     } catch (const Standard_Failure&) {
         return nullptr;
     }
-}
-
-bool write_step_stream(const TopoDS_Shape& shape, RustWriter& writer) {
-    RustWriteStreambuf sbuf(writer);
-    std::ostream os(&sbuf);
-    STEPControl_Writer step_writer;
-    if (step_writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone) {
-        return false;
-    }
-    return step_writer.WriteStream(os) == IFSelect_RetDone;
 }
 
 } // namespace cadrum

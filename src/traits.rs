@@ -5,9 +5,11 @@
 //! ```text
 //! Transform  ─┬─  SolidExt   ──  SolidStruct  (pub(crate))
 //!             └─  EdgeExt    ──  EdgeStruct   (pub(crate))
-//!
-//! FaceStruct (standalone, no Transform yet)
 //! ```
+//!
+//! `Face` 型はトレイトを持たない opaque な query handle で、`tshape_id` のみ
+//! を inherent method として公開する。`SolidStruct::type Face` の bound にも
+//! 何も付かない。
 //!
 //! `Edge` / `Vec<Edge>` の対称関係は `Solid` / `Vec<Solid>` と同じ:
 //!   - 単一エッジ向け constructor は `EdgeStruct` (cube/sphere に対応)
@@ -38,9 +40,8 @@
 //! 型同士の依存に **一方向の階層** を導入し、上位が下位を関連型として参照する：
 //!
 //! ```text
-//!   FaceStruct       ← 単独。下位を一切知らない
 //!   EdgeStruct       ← 単独。下位を一切知らない
-//!   SolidStruct      ← type Edge: EdgeStruct;  type Face: FaceStruct;
+//!   SolidStruct      ← type Edge: EdgeStruct;  type Face;  (Face は bound 無し)
 //!   IoModule         ← type Solid: SolidStruct;
 //! ```
 //!
@@ -202,14 +203,6 @@ pub enum ProfileOrient {
 	Up(DVec3),
 }
 
-// ==================== Per-type traits ====================
-
-/// Backend-independent face trait.
-pub trait FaceStruct {
-	fn normal_at_center(&self) -> DVec3;
-	fn center_of_mass(&self) -> DVec3;
-}
-
 // ==================== EdgeExt / EdgeStruct ====================
 
 /// Public trait: edge/wire-level operations on `Edge`, `Vec<Edge>` and `[Edge; N]`.
@@ -310,7 +303,7 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 /// backend (occt / pure) binds them to its own concrete types in the impl.
 pub trait SolidStruct: Sized + Clone + SolidExt {
 	type Edge: EdgeStruct;
-	type Face: FaceStruct;
+	type Face;
 
 	// --- Constructors ---
 	fn cube(x: f64, y: f64, z: f64) -> Self;

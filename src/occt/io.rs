@@ -1,12 +1,13 @@
 use super::compound::Compound;
 use super::ffi;
-use super::iterators::FaceIterator;
 use super::solid::Solid;
 use super::stream::{RustReader, RustWriter};
 use crate::common::error::Error;
 use crate::traits::IoModule;
 use std::io::{Read, Write};
 
+#[cfg(feature = "color")]
+use super::iterators::FaceIterator;
 #[cfg(feature = "color")]
 use crate::common::color::Color;
 

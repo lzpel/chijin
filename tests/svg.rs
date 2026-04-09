@@ -1,5 +1,3 @@
-#[cfg(feature = "color")]
-use cadrum::Color;
 use cadrum::{Solid, SolidExt, Transform};
 use glam::DVec3;
 
@@ -64,31 +62,6 @@ fn test_svg_has_hidden_lines() {
 
 	std::fs::create_dir_all("out").unwrap();
 	std::fs::write("out/two_boxes.svg", &svg).unwrap();
-}
-
-#[test]
-#[cfg(feature = "color")]
-fn test_svg_colored_box() {
-	let mut shape = [Solid::cube(10.0, 10.0, 10.0)];
-
-	let palette: &[(DVec3, Color)] = &[(DVec3::Z, Color { r: 1.0, g: 0.0, b: 0.0 }), (DVec3::NEG_Z, Color { r: 0.0, g: 0.0, b: 1.0 }), (DVec3::Y, Color { r: 0.0, g: 1.0, b: 0.0 }), (DVec3::NEG_Y, Color { r: 1.0, g: 1.0, b: 0.0 }), (DVec3::X, Color { r: 0.0, g: 1.0, b: 1.0 }), (DVec3::NEG_X, Color { r: 1.0, g: 0.0, b: 1.0 })];
-	let id_normal: Vec<(u64, DVec3)> = shape.iter().flat_map(|s| s.face_iter()).map(|f| (f.tshape_id(), f.normal_at_center())).collect();
-	for (id, normal) in &id_normal {
-		for (dir, color) in palette {
-			if normal.dot(*dir) > 0.9 {
-				shape[0].colormap_mut().insert(*id, *color);
-				break;
-			}
-		}
-	}
-
-	let svg = svg_string(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1);
-
-	assert!(svg.contains("rgb("), "should contain rgb fill colors");
-	assert!(!svg.contains("#ddd"), "should not contain default gray fill");
-
-	std::fs::create_dir_all("out").unwrap();
-	std::fs::write("out/colored_box.svg", &svg).unwrap();
 }
 
 /// 球を+Xから描画したSVGと、Z軸180°回転後に+Xから描画したSVGで
