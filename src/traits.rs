@@ -52,7 +52,7 @@ use crate::common::color::Color;
 use crate::common::error::Error;
 use crate::common::mesh::Mesh;
 use crate::{Edge, Face, Solid};
-use glam::DVec3;
+use glam::{DMat3, DQuat, DVec3};
 
 // ==================== Transform ====================
 
@@ -74,6 +74,30 @@ pub trait Transform: Sized {
 	fn rotate_z(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::Z, angle) }
 	fn scale(self, center: DVec3, factor: f64) -> Self;
 	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self;
+	/// Rotate so that local +X axis aligns with `new_x`, with local +Y projected toward `y_hint`.
+	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
+	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self {
+		let x = new_x.try_normalize().expect("align_x: new_x is zero");
+		let z = x.cross(y_hint).try_normalize().expect("align_x: y_hint parallel to new_x");
+		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(x, z.cross(x), z)).to_axis_angle();
+		self.rotate(DVec3::ZERO, axis, angle)
+	}
+	/// Rotate so that local +Y axis aligns with `new_y`, with local +Z projected toward `z_hint`.
+	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
+	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self {
+		let y = new_y.try_normalize().expect("align_y: new_y is zero");
+		let x = y.cross(z_hint).try_normalize().expect("align_y: z_hint parallel to new_y");
+		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(x, y, x.cross(y))).to_axis_angle();
+		self.rotate(DVec3::ZERO, axis, angle)
+	}
+	/// Rotate so that local +Z axis aligns with `new_z`, with local +X projected toward `x_hint`.
+	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
+	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self {
+		let z = new_z.try_normalize().expect("align_z: new_z is zero");
+		let y = z.cross(x_hint).try_normalize().expect("align_z: x_hint parallel to new_z");
+		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(y.cross(z), y, z)).to_axis_angle();
+		self.rotate(DVec3::ZERO, axis, angle)
+	}
 }
 
 // ==================== Per-type traits ====================

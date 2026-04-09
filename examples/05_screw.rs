@@ -20,7 +20,7 @@ fn build_m2_screw()->Solid{
             DVec3::new(r_root,h_pitch/2.0,0.0)
         ]
     );
-    let profile=profile.align_z_with_x_hint(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
+    let profile=profile.align_z(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
     let thread=profile.sweep(helix);
     let thread_shaft=thread.union(Solid::cylinder(r_root, DVec3::Z, h_thread)).subtract(Solid::cylinder(r_root*2.0, DVec3::Z, h_thread));
     let head=Solid::cylinder(r_head, DVec3::Z, h_head).translate(DVec3::Z*h_thread);
