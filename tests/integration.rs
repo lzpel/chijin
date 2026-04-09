@@ -20,20 +20,20 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 	DVec3::new(x, y, z)
 }
 
-fn test_box() -> Vec<Solid> {
-	vec![Solid::cube(10.0, 10.0, 10.0)]
+fn test_box() -> Solid {
+	Solid::cube(10.0, 10.0, 10.0)
 }
 
-fn test_box_2() -> Vec<Solid> {
-	vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 5.0))]
+fn test_box_2() -> Solid {
+	Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 5.0))
 }
 
-fn test_box_3() -> Vec<Solid> {
-	vec![Solid::cube(5.0, 5.0, 5.0).translate(dvec3(3.0, 3.0, 3.0))]
+fn test_box_3() -> Solid {
+	Solid::cube(5.0, 5.0, 5.0).translate(dvec3(3.0, 3.0, 3.0))
 }
 
 /// Helper: write shape to BRep binary bytes
-fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
+fn shape_to_brep_bytes<'a>(shape: impl IntoIterator<Item = &'a Solid>) -> Vec<u8> {
 	let mut buf = Vec::new();
 	cadrum::io::write_brep_binary(shape, &mut buf).unwrap();
 	buf
@@ -48,7 +48,7 @@ fn shape_to_brep_bytes(shape: &[Solid]) -> Vec<u8> {
 fn test_t01_union_drop_result_first() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().union(&b).unwrap();
+	let result = a.clone().union([&b]).unwrap();
 	drop(result);
 	drop(a);
 	drop(b);
@@ -58,7 +58,7 @@ fn test_t01_union_drop_result_first() {
 fn test_t01_union_drop_result_last() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().union(&b).unwrap();
+	let result = a.clone().union([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -68,7 +68,7 @@ fn test_t01_union_drop_result_last() {
 fn test_t01_subtract_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().subtract(&b).unwrap();
+	let result = a.clone().subtract([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -78,7 +78,7 @@ fn test_t01_subtract_drop_order() {
 fn test_t01_intersect_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().intersect(&b).unwrap();
+	let result = a.clone().intersect([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -89,8 +89,8 @@ fn test_t01_chained_boolean_drops() {
 	let a = test_box();
 	let b = test_box_2();
 	let c = test_box_3();
-	let r1 = a.clone().union(&b).unwrap();
-	let r2 = r1.clone().subtract(&c).unwrap();
+	let r1 = a.clone().union([&b]).unwrap();
+	let r2 = r1.clone().subtract([&c]).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -107,7 +107,7 @@ fn test_t01_chained_boolean_drops() {
 #[test]
 fn test_t02_multiple_reads_no_crash() {
 	let original = test_box();
-	let brep_data = shape_to_brep_bytes(&original);
+	let brep_data = shape_to_brep_bytes(&[original]);
 	for _ in 0..5 {
 		let _shape = cadrum::io::read_brep_binary(&mut brep_data.as_slice()).unwrap();
 	}
@@ -120,7 +120,7 @@ fn test_t02_multiple_reads_no_crash() {
 #[test]
 fn test_t03_mesh_normals_count() {
 	let shape = test_box();
-	let mesh = cadrum::io::mesh(&shape, 0.1).unwrap();
+	let mesh = cadrum::io::mesh(&[shape], 0.1).unwrap();
 	assert_eq!(mesh.normals.len(), mesh.vertices.len());
 }
 
@@ -130,7 +130,7 @@ fn test_t03_mesh_normals_count() {
 
 #[test]
 fn test_t04_approximation_tolerance() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
+	let cyl = [Solid::cylinder(10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
 	let mut has_difference = false;
 	for edge in cyl.iter().flat_map(|s| s.edges()) {
 		let coarse = edge.approximation_segments(1.0).len();
@@ -150,7 +150,7 @@ fn test_t04_approximation_tolerance() {
 fn test_t05_translated_compound() {
 	let a = test_box();
 	let b = test_box_2();
-	let compound: Vec<Solid> = a.union(&b).unwrap();
+	let compound = a.union([&b]).unwrap();
 	let v = dvec3(100.0, 0.0, 0.0);
 	let orig_mesh = cadrum::io::mesh(&compound, 0.1).unwrap();
 	let shifted: Vec<Solid> = compound.into_iter().map(|s| s.translate(v)).collect();
@@ -170,9 +170,9 @@ fn test_t05_translated_compound() {
 #[test]
 fn test_t06_brep_roundtrip() {
 	let original = test_box();
-	let orig_mesh = cadrum::io::mesh(&original, 0.1).unwrap();
+	let orig_mesh = cadrum::io::mesh([&original], 0.1).unwrap();
 
-	let brep_data = shape_to_brep_bytes(&original);
+	let brep_data = shape_to_brep_bytes([&original]);
 	let restored = cadrum::io::read_brep_binary(&mut brep_data.as_slice()).unwrap();
 	let rest_mesh = cadrum::io::mesh(&restored, 0.1).unwrap();
 
@@ -191,9 +191,9 @@ fn test_t06_brep_roundtrip() {
 fn test_t08_boolean_returns_shape() {
 	let a = test_box();
 	let b = test_box_2();
-	let _union: Vec<Solid> = a.clone().union(&b).unwrap();
-	let _sub: Vec<Solid> = a.clone().subtract(&b).unwrap();
-	let _inter: Vec<Solid> = a.intersect(&b).unwrap();
+	let _union: Vec<Solid> = a.clone().union([&b]).unwrap();
+	let _sub: Vec<Solid> = a.clone().subtract([&b]).unwrap();
+	let _inter: Vec<Solid> = a.intersect([&b]).unwrap();
 }
 
 // ==================== STEP export ====================
@@ -201,9 +201,9 @@ fn test_t08_boolean_returns_shape() {
 
 #[test]
 fn test_hollow_cube_write_step() {
-	let outer: Vec<Solid> = vec![Solid::cube(20.0, 20.0, 20.0).translate(dvec3(-10.0, -10.0, -10.0))];
-	let inner: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(-5.0, -5.0, -5.0))];
-	let hollow_cube: Vec<Solid> = outer.subtract(&inner).unwrap();
+	let outer = [Solid::cube(20.0, 20.0, 20.0).translate(dvec3(-10.0, -10.0, -10.0))];
+	let inner = [Solid::cube(10.0, 10.0, 10.0).translate(dvec3(-5.0, -5.0, -5.0))];
+	let hollow_cube = outer.subtract(&inner).unwrap();
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/hollow_cube.step").unwrap();
@@ -214,15 +214,15 @@ fn test_hollow_cube_write_step() {
 #[test]
 fn test_half_space_intersect() {
 	let shape = test_box();
-	let half: Vec<Solid> = vec![Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
-	let result: Vec<Solid> = shape.intersect(&half).unwrap();
+	let half = [Solid::half_space(dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0))];
+	let result = shape.intersect(&half).unwrap();
 	assert!(!result.iter().all(|s| s.is_null()));
 }
 
 // cylinder プリミティブの体積が πr²h と一致することを確認。
 #[test]
 fn test_cylinder() {
-	let cyl: Vec<Solid> = vec![Solid::cylinder(5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
+	let cyl = [Solid::cylinder(5.0, dvec3(0.0, 0.0, 1.0), 10.0)];
 	let expected = std::f64::consts::PI * 5.0f64.powi(2) * 10.0;
 	assert!((cyl.iter().map(|s| s.volume()).sum::<f64>() - expected).abs() < 1e-6);
 }
@@ -233,11 +233,11 @@ fn test_brep_text_roundtrip() {
 	let original = test_box();
 
 	let mut text_data = Vec::new();
-	cadrum::io::write_brep_text(&original, &mut text_data).unwrap();
+	cadrum::io::write_brep_text([&original], &mut text_data).unwrap();
 	assert!(!text_data.is_empty());
 
 	let restored = cadrum::io::read_brep_text(&mut text_data.as_slice()).unwrap();
-	let orig_mesh = cadrum::io::mesh(&original, 0.1).unwrap();
+	let orig_mesh = cadrum::io::mesh([&original], 0.1).unwrap();
 	let rest_mesh = cadrum::io::mesh(&restored, 0.1).unwrap();
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
 }

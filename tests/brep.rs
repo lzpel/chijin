@@ -5,7 +5,6 @@
 //! (count-driven parsing) and ignores trailing data, these tests pass.
 
 use cadrum::Solid;
-use glam::DVec3;
 
 fn test_box() -> Vec<Solid> {
 	vec![Solid::cube(1.0, 1.0, 1.0)]

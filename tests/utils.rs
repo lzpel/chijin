@@ -10,8 +10,8 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 	DVec3::new(x, y, z)
 }
 
-fn test_box() -> Vec<Solid> {
-	vec![Solid::cube(10.0, 10.0, 10.0)]
+fn test_box() -> Solid {
+	Solid::cube(10.0, 10.0, 10.0)
 }
 
 /// テスト用のベース形状として、外部のSTEPファイルを読み込みます。
@@ -84,7 +84,7 @@ fn write_step(shape: &Vec<Solid>, name: &str) {
 fn test_stretch_vector_volume() {
 	let shape = test_box();
 	// X=5 で切断し +X 方向に 1 引き延ばす → 10×10×11 = 1100
-	let result = stretch_vector(&shape, dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0)).unwrap();
+	let result = stretch_vector(&[shape], dvec3(5.0, 0.0, 0.0), dvec3(1.0, 0.0, 0.0)).unwrap();
 	let v: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((v - 1100.0).abs() < 1e-3, "expected volume ≈ 1100, got {v}");
 }
@@ -97,7 +97,7 @@ fn test_revolve_section_volume() {
 	// y=5 の平面（法線=Y）で切断し、Z 軸（x=0,y=5 を通る）周りに全周回転。
 	// 断面は x:0..10, z:0..10 の矩形 → 半径 10・高さ 10 の円柱。
 	// 期待体積 = π × 10² × 10 = 1000π ≈ 3141.59
-	let result = revolve_section(&shape, dvec3(0.0, 5.0, 0.0), dvec3(0.0, 0.0, 1.0), dvec3(0.0, 1.0, 0.0), std::f64::consts::TAU).unwrap();
+	let result = revolve_section(&[shape], dvec3(0.0, 5.0, 0.0), dvec3(0.0, 0.0, 1.0), dvec3(0.0, 1.0, 0.0), std::f64::consts::TAU).unwrap();
 	let v: f64 = result.iter().map(|s| s.volume()).sum();
 
 	std::fs::create_dir_all("out").unwrap();
@@ -118,11 +118,11 @@ fn diagnose_new_faces() {
 	let origin = DVec3::new(1.0, 0.0, 1.0);
 	let delta = DVec3::new(1.0, 0.0, 0.0);
 
-	let half: Vec<Solid> = vec![Solid::half_space(origin, -delta.normalize())];
+	let half = [Solid::half_space(origin, -delta.normalize())];
 	let (r_half_solids, r_half_meta) = shape.clone().intersect_with_metadata(&half).expect("intersect(half_space) failed");
 	println!("  intersect result: tool_face count={}", r_half_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_half_meta, f)).count());
 
-	let big_box: Vec<Solid> = vec![Solid::cube(1001.0, 2000.0, 2000.0).translate(DVec3::new(-1000.0, -1000.0, -1000.0))];
+	let big_box = [Solid::cube(1001.0, 2000.0, 2000.0).translate(DVec3::new(-1000.0, -1000.0, -1000.0))];
 	let (r_box_solids, r_box_meta) = shape.intersect_with_metadata(&big_box).expect("intersect(big_box) failed");
 	println!("  intersect result: tool_face count={}", r_box_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_box_meta, f)).count());
 	for (i, face) in r_box_solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&r_box_meta, f)).enumerate() {

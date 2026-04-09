@@ -8,7 +8,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Color, Solid, SolidExt};
+use cadrum::{Color, Solid, Transform, SolidExt};
 use glam::DVec3;
 
 /// Assign a distinct color to every face of `shape` based on its outward normal.

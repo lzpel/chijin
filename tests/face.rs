@@ -7,7 +7,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 #[test]
 fn test_face_iteration() {
-	let shape: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let shape = [Solid::cube(10.0, 10.0, 10.0)];
 	let faces: Vec<_> = shape.iter().flat_map(|s| s.face_iter()).collect();
 	assert_eq!(faces.len(), 6);
 	for face in &faces {

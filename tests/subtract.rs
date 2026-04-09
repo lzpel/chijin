@@ -32,7 +32,7 @@ fn run_subtract(offset: DVec3, optimized: bool) -> (Duration, Vec<Solid>) {
 				skipped += 1;
 				results.push(sa.clone());
 			} else {
-				let r = vec![sa.clone()].subtract(tools.iter().copied()).unwrap();
+				let r = sa.clone().subtract(tools.iter().copied()).unwrap();
 				results.extend(r);
 			}
 		}
@@ -45,6 +45,7 @@ fn run_subtract(offset: DVec3, optimized: bool) -> (Duration, Vec<Solid>) {
 }
 
 #[test]
+#[ignore = "slow: >60s runtime; opt-in with `cargo test -- --ignored`"]
 fn test_subtract_bbox_speedup() {
 	// non-intersecting case: offset=(15,15,0) A and B are completely separated
 	println!("[non-intersecting offset=(15,15,0)]");

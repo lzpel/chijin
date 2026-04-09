@@ -1,6 +1,6 @@
 #[cfg(feature = "color")]
 use cadrum::Color;
-use cadrum::{Solid, SolidExt};
+use cadrum::{Solid, SolidExt, Transform};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
@@ -15,7 +15,7 @@ fn svg_string(shape: &[Solid], direction: DVec3, tol: f64) -> String {
 
 #[test]
 fn test_svg_box_isometric() {
-	let shape: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let shape = [Solid::cube(10.0, 10.0, 10.0)];
 	let svg = svg_string(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1);
 
 	assert!(svg.starts_with("<svg"), "should start with <svg tag");
@@ -32,7 +32,7 @@ fn test_svg_box_isometric() {
 
 #[test]
 fn test_svg_box_top_down() {
-	let shape: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let shape = [Solid::cube(10.0, 10.0, 10.0)];
 	let svg = svg_string(&shape, DVec3::Z, 0.1);
 
 	assert!(svg.starts_with("<svg"));
@@ -44,7 +44,7 @@ fn test_svg_box_top_down() {
 
 #[test]
 fn test_svg_cylinder() {
-	let shape: Vec<Solid> = vec![Solid::cylinder(5.0, DVec3::Z, 10.0)];
+	let shape = [Solid::cylinder(5.0, DVec3::Z, 10.0)];
 	let svg = svg_string(&shape, dvec3(1.0, 0.5, 0.3).normalize(), 0.1);
 
 	assert!(svg.contains("<polyline"));
@@ -55,8 +55,8 @@ fn test_svg_cylinder() {
 
 #[test]
 fn test_svg_has_hidden_lines() {
-	let a: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
-	let b: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 0.0))];
+	let a = [Solid::cube(10.0, 10.0, 10.0)];
+	let b = [Solid::cube(10.0, 10.0, 10.0).translate(dvec3(5.0, 5.0, 0.0))];
 	let shape: Vec<Solid> = a.union(&b).unwrap();
 	let svg = svg_string(&shape, dvec3(1.0, 1.0, 1.0).normalize(), 0.1);
 
@@ -69,7 +69,7 @@ fn test_svg_has_hidden_lines() {
 #[test]
 #[cfg(feature = "color")]
 fn test_svg_colored_box() {
-	let mut shape: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
+	let mut shape = [Solid::cube(10.0, 10.0, 10.0)];
 
 	let palette: &[(DVec3, Color)] = &[(DVec3::Z, Color { r: 1.0, g: 0.0, b: 0.0 }), (DVec3::NEG_Z, Color { r: 0.0, g: 0.0, b: 1.0 }), (DVec3::Y, Color { r: 0.0, g: 1.0, b: 0.0 }), (DVec3::NEG_Y, Color { r: 1.0, g: 1.0, b: 0.0 }), (DVec3::X, Color { r: 0.0, g: 1.0, b: 1.0 }), (DVec3::NEG_X, Color { r: 1.0, g: 0.0, b: 1.0 })];
 	let id_normal: Vec<(u64, DVec3)> = shape.iter().flat_map(|s| s.face_iter()).map(|f| (f.tshape_id(), f.normal_at_center())).collect();
@@ -100,11 +100,11 @@ fn test_svg_rotated_sphere_face_count_stable() {
 		svg.matches("<polygon ").count()
 	}
 
-	let shape: Vec<Solid> = vec![Solid::sphere(5.0)];
+	let shape = [Solid::sphere(5.0)];
 	let svg_a = svg_string(&shape, DVec3::X, 0.1);
 	let count_a = count_polygons(&svg_a);
 
-	let rotated: Vec<Solid> = shape.rotate_y(std::f64::consts::PI);
+	let rotated = shape.rotate_y(std::f64::consts::PI);
 	let svg_b = svg_string(&rotated, DVec3::X, 0.1);
 	let count_b = count_polygons(&svg_b);
 

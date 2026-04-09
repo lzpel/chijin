@@ -6,8 +6,8 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 }
 
 /// 10×10×10 ボックス（体積 1000）
-fn test_box() -> Vec<Solid> {
-	vec![Solid::cube(10.0, 10.0, 10.0)]
+fn test_box() -> Solid {
+	Solid::cube(10.0, 10.0, 10.0)
 }
 
 // ==================== translated ====================
@@ -15,23 +15,23 @@ fn test_box() -> Vec<Solid> {
 #[test]
 fn test_translated_preserves_volume() {
 	let shape = test_box();
-	let moved: Vec<Solid> = shape.into_iter().map(|s| s.translate(dvec3(100.0, 200.0, -50.0))).collect();
-	assert!((moved.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-6);
+	let moved = shape.translate(dvec3(100.0, 200.0, -50.0));
+	assert!((moved.volume() - 1000.0).abs() < 1e-6);
 }
 
 #[test]
 fn test_translated_preserves_shell_count() {
 	let shape = test_box();
-	let moved: Vec<Solid> = shape.into_iter().map(|s| s.translate(dvec3(5.0, 0.0, 0.0))).collect();
-	assert_eq!(moved.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
+	let moved = shape.translate(dvec3(5.0, 0.0, 0.0));
+	assert_eq!(moved.shell_count(), 1);
 }
 
 #[test]
 fn test_union_of_translated_overlapping_solids_has_single_volume() {
 	// 異なる場所に同じ大きさの立方体を2つ作り、translatedで同じ場所に重ねてからunionする。
 	// 結果のvolumeは1つ分（1000）になるはず。
-	let a = vec![Solid::cube(10.0, 10.0, 10.0)];
-	let b = vec![Solid::cube(10.0, 10.0, 10.0).translate(dvec3(100.0, 0.0, 0.0))];
+	let a = [Solid::cube(10.0, 10.0, 10.0)];
+	let b = [Solid::cube(10.0, 10.0, 10.0).translate(dvec3(100.0, 0.0, 0.0))];
 	let b_moved: Vec<Solid> = b.clone().into_iter().map(|s| s.translate(dvec3(-100.0, 0.0, 0.0))).collect();
 
 	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
@@ -57,23 +57,23 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 fn test_rotated_preserves_volume() {
 	let shape = test_box();
 	// Z 軸周りに 45° 回転
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::FRAC_PI_4)).collect();
-	assert!((rotated.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-3);
+	let rotated = shape.rotate_z(std::f64::consts::FRAC_PI_4);
+	assert!((rotated.volume() - 1000.0).abs() < 1e-3);
 }
 
 #[test]
 fn test_rotated_full_turn_preserves_volume() {
 	let shape = test_box();
 	// 360° 回転（元に戻る）
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::TAU)).collect();
-	assert!((rotated.iter().map(|s| s.volume()).sum::<f64>() - 1000.0).abs() < 1e-3);
+	let rotated = shape.rotate_z(std::f64::consts::TAU);
+	assert!((rotated.volume() - 1000.0).abs() < 1e-3);
 }
 
 #[test]
 fn test_rotated_preserves_shell_count() {
 	let shape = test_box();
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_y(std::f64::consts::FRAC_PI_2)).collect();
-	assert_eq!(rotated.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
+	let rotated = shape.rotate_y(std::f64::consts::FRAC_PI_2);
+	assert_eq!(rotated.shell_count(), 1);
 }
 
 // ==================== scale ====================
@@ -82,46 +82,46 @@ fn test_rotated_preserves_shell_count() {
 fn test_scale_volume() {
 	let shape = test_box();
 	// 均一 2 倍スケール → 体積は 2³ = 8 倍
-	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 2.0)).collect();
-	assert!((scaled.iter().map(|s| s.volume()).sum::<f64>() - 8000.0).abs() < 1e-3);
+	let scaled = shape.scale(DVec3::ZERO, 2.0);
+	assert!((scaled.volume() - 8000.0).abs() < 1e-3);
 }
 
 #[test]
 fn test_scale_half_volume() {
 	let shape = test_box();
 	// 均一 0.5 倍スケール → 体積は (0.5)³ = 0.125 倍 = 125
-	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 0.5)).collect();
-	assert!((scaled.iter().map(|s| s.volume()).sum::<f64>() - 125.0).abs() < 1e-3);
+	let scaled = shape.scale(DVec3::ZERO, 0.5);
+	assert!((scaled.volume() - 125.0).abs() < 1e-3);
 }
 
 #[test]
 fn test_scale_preserves_shell_count() {
 	let shape = test_box();
-	let scaled: Vec<Solid> = shape.into_iter().map(|s| s.scale(DVec3::ZERO, 3.0)).collect();
-	assert_eq!(scaled.iter().map(|s| s.shell_count()).sum::<u32>(), 1);
+	let scaled = shape.scale(DVec3::ZERO, 3.0);
+	assert_eq!(scaled.shell_count(), 1);
 }
 
 // ==================== face id preservation ====================
 
 #[test]
 fn test_preserves_face_ids() {
-	fn face_ids(s: &Vec<Solid>) -> Vec<u64> {
-		s.iter().flat_map(|s| s.face_iter()).map(|f| f.tshape_id()).collect()
+	fn face_ids<'a>(s: impl IntoIterator<Item = &'a Solid>) -> Vec<u64> {
+		s.into_iter().flat_map(|s| s.face_iter()).map(|f| f.tshape_id()).collect()
 	}
 
 	let shape = test_box();
-	let solid_id = shape[0].tshape_id();
-	let ids = face_ids(&shape);
-	let moved: Vec<Solid> = shape.into_iter().map(|s| s.translate(dvec3(10.0, 0.0, 0.0))).collect();
-	assert_eq!(solid_id, moved[0].tshape_id(), "translate should preserve solid tshape_id");
-	assert_eq!(ids, face_ids(&moved), "translate should preserve face IDs");
+	let solid_id = shape.tshape_id();
+	let ids = face_ids([&shape]);
+	let moved = shape.translate(dvec3(10.0, 0.0, 0.0));
+	assert_eq!(solid_id, moved.tshape_id(), "translate should preserve solid tshape_id");
+	assert_eq!(ids, face_ids([&moved]), "translate should preserve face IDs");
 
 	let shape = test_box();
-	let solid_id = shape[0].tshape_id();
-	let ids = face_ids(&shape);
-	let rotated: Vec<Solid> = shape.into_iter().map(|s| s.rotate_z(std::f64::consts::FRAC_PI_4)).collect();
-	assert_eq!(solid_id, rotated[0].tshape_id(), "rotate should preserve solid tshape_id");
-	assert_eq!(ids, face_ids(&rotated), "rotate should preserve face IDs");
+	let solid_id = shape.tshape_id();
+	let ids = face_ids([&shape]);
+	let rotated = shape.rotate_z(std::f64::consts::FRAC_PI_4);
+	assert_eq!(solid_id, rotated.tshape_id(), "rotate should preserve solid tshape_id");
+	assert_eq!(ids, face_ids([&rotated]), "rotate should preserve face IDs");
 }
 
 // ==================== is_tool_face / is_shape_face (B fully inside A) ====================
@@ -131,8 +131,8 @@ fn test_new_faces_subtract_b_inside_a() {
 	// small_box が big_box に完全に収まる → small の 6 面はすべて Modified されない
 	// 旧実装（collect_generated_faces）では Modified() が空 → tool faces = 0
 	// 新実装（from_b post_ids）では unchanged 面も from_b に入る → tool faces = 6
-	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
-	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
+	let big = [Solid::cube(10.0, 10.0, 10.0)];
+	let small = [Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let (solids, meta) = big.subtract_with_metadata(&small).unwrap();
 	assert_eq!(solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
 }
@@ -141,8 +141,8 @@ fn test_new_faces_subtract_b_inside_a() {
 fn test_new_faces_intersect_b_inside_a() {
 	// intersect(big, small) の結果は small そのもの
 	// small の 6 面はすべて unchanged → tool faces = 結果の全フェイス = 6
-	let big: Vec<Solid> = vec![Solid::cube(10.0, 10.0, 10.0)];
-	let small: Vec<Solid> = vec![Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
+	let big = [Solid::cube(10.0, 10.0, 10.0)];
+	let small = [Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let (solids, meta) = big.intersect_with_metadata(&small).unwrap();
 	let tool_count = solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count();
 	assert_eq!(tool_count, 6, "intersect with B fully inside A: tool faces should equal all faces of result");
@@ -159,7 +159,7 @@ fn test_bounding_box() {
 	assert!((max - dvec3(4.0, 6.0, 8.0)).length() < 1e-6);
 
 	// 複数 solid のマージ
-	let solids = vec![Solid::cube(2.0, 2.0, 2.0), Solid::cube(2.0, 3.0, 4.0).translate(dvec3(5.0, 5.0, 5.0))];
+	let solids = [Solid::cube(2.0, 2.0, 2.0), Solid::cube(2.0, 3.0, 4.0).translate(dvec3(5.0, 5.0, 5.0))];
 	let bboxes: Vec<[DVec3; 2]> = solids.iter().map(|s| s.bounding_box()).collect();
 	let min = bboxes.iter().map(|b| b[0]).reduce(|a, b| a.min(b)).unwrap();
 	let max = bboxes.iter().map(|b| b[1]).reduce(|a, b| a.max(b)).unwrap();
@@ -167,10 +167,8 @@ fn test_bounding_box() {
 	assert!((max - dvec3(7.0, 8.0, 9.0)).length() < 1e-6);
 
 	// translate 後に追従する
-	let moved: Vec<Solid> = test_box().into_iter().map(|s| s.translate(dvec3(10.0, 20.0, 30.0))).collect();
-	let bboxes: Vec<[DVec3; 2]> = moved.iter().map(|s| s.bounding_box()).collect();
-	let min = bboxes.iter().map(|b| b[0]).reduce(|a, b| a.min(b)).unwrap();
-	let max = bboxes.iter().map(|b| b[1]).reduce(|a, b| a.max(b)).unwrap();
+	let moved = test_box().translate(dvec3(10.0, 20.0, 30.0));
+	let [min, max] = moved.bounding_box();
 	assert!((min - dvec3(10.0, 20.0, 30.0)).length() < 1e-6);
 	assert!((max - dvec3(20.0, 30.0, 40.0)).length() < 1e-6);
 
@@ -184,8 +182,8 @@ fn test_bounding_box() {
 #[test]
 fn test_contains() {
 	let shape = test_box(); // 0..10 の箱
-	assert!(shape.iter().any(|s| s.contains(dvec3(5.0, 5.0, 5.0)))); // 中心
-	assert!(shape.iter().any(|s| s.contains(dvec3(0.1, 0.1, 0.1)))); // 内側寄り
-	assert!(!shape.iter().any(|s| s.contains(dvec3(20.0, 5.0, 5.0)))); // 外
-	assert!(!shape.iter().any(|s| s.contains(dvec3(-0.1, 5.0, 5.0)))); // 外寄り
+	assert!(shape.contains(dvec3(5.0, 5.0, 5.0))); // 中心
+	assert!(shape.contains(dvec3(0.1, 0.1, 0.1))); // 内側寄り
+	assert!(!shape.contains(dvec3(20.0, 5.0, 5.0))); // 外
+	assert!(!shape.contains(dvec3(-0.1, 5.0, 5.0))); // 外寄り
 }

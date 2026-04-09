@@ -48,7 +48,7 @@ fn bin_write_then_read_preserves_colors() {
 /// A shape with an empty colormap round-trips without error (binary).
 #[test]
 fn bin_colorless_shape_roundtrip() {
-	let shape: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0)];
+	let shape = [Solid::cube(1.0, 1.0, 1.0)];
 	let reloaded = roundtrip_bin(&shape);
 	assert_eq!(colormap_len(&reloaded), 0);
 }
@@ -57,8 +57,8 @@ fn bin_colorless_shape_roundtrip() {
 #[test]
 fn bin_roundtrip_after_boolean() {
 	let cube = read_colored_box();
-	let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::NEG_Z)];
-	let solids: Vec<Solid> = cube.intersect(&half).expect("intersect should succeed");
+	let half = [Solid::half_space(DVec3::ZERO, DVec3::NEG_Z)];
+	let solids = cube.intersect(&half).expect("intersect should succeed");
 
 	assert!(colormap_len(&solids) >= 1, "at least one color should survive intersect");
 
@@ -85,7 +85,7 @@ fn text_write_then_read_preserves_colors() {
 /// A shape with an empty colormap round-trips without error (text).
 #[test]
 fn text_colorless_shape_roundtrip() {
-	let shape: Vec<Solid> = vec![Solid::cube(1.0, 1.0, 1.0)];
+	let shape = [Solid::cube(1.0, 1.0, 1.0)];
 	let reloaded = roundtrip_text(&shape);
 	assert_eq!(colormap_len(&reloaded), 0);
 }

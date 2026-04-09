@@ -69,8 +69,8 @@ fn intersect_colored_step_preserves_colors() {
 	let original_colors = colormap_len(&cube);
 
 	// Half-space keeping z > 0 side.
-	let half: Vec<Solid> = vec![Solid::half_space(DVec3::ZERO, DVec3::Z)];
-	let solids: Vec<Solid> = cube.intersect(&half).expect("intersect should succeed");
+	let half = [Solid::half_space(DVec3::ZERO, DVec3::Z)];
+	let solids = cube.intersect(&half).expect("intersect should succeed");
 
 	// At least one face should have kept its color.
 	assert!(colormap_len(&solids) >= 1, "at least one face should keep its color after intersect, got 0");
