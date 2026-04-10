@@ -32,7 +32,7 @@ fn run_subtract(offset: DVec3, optimized: bool) -> (Duration, Vec<Solid>) {
 				skipped += 1;
 				results.push(sa.clone());
 			} else {
-				let r = sa.clone().subtract(tools.iter().copied()).unwrap();
+				let r = sa.subtract(tools.iter().copied()).unwrap();
 				results.extend(r);
 			}
 		}

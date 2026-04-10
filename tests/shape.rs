@@ -35,12 +35,12 @@ fn test_union_of_translated_overlapping_solids_has_single_volume() {
 	let b_moved: Vec<Solid> = b.clone().into_iter().map(|s| s.translate(dvec3(-100.0, 0.0, 0.0))).collect();
 
 	// b と b_moved は実態が別であることを確認: a と b（移動前）を union するとvolumeは2つ分（2000）。
-	let result_no_move: Vec<Solid> = a.clone().union(&b).expect("union should succeed");
+	let result_no_move: Vec<Solid> = a.union(&b).expect("union should succeed");
 	let volume_no_move: f64 = result_no_move.iter().map(|s| s.volume()).sum();
 	assert!((volume_no_move - 2000.0).abs() < 1e-3, "expected volume ~2000, got {volume_no_move}");
 
 	// b_moved は a と完全に重なるので union すると1つ分（1000）。
-	let result: Vec<Solid> = a.clone().union(&b_moved).expect("union should succeed");
+	let result: Vec<Solid> = a.union(&b_moved).expect("union should succeed");
 	let volume: f64 = result.iter().map(|s| s.volume()).sum();
 	assert!((volume - 1000.0).abs() < 1e-3, "expected volume ~1000, got {volume}");
 

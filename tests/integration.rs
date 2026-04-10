@@ -48,7 +48,7 @@ fn shape_to_brep_bytes<'a>(shape: impl IntoIterator<Item = &'a Solid>) -> Vec<u8
 fn test_t01_union_drop_result_first() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().union([&b]).unwrap();
+	let result = a.union([&b]).unwrap();
 	drop(result);
 	drop(a);
 	drop(b);
@@ -58,7 +58,7 @@ fn test_t01_union_drop_result_first() {
 fn test_t01_union_drop_result_last() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().union([&b]).unwrap();
+	let result = a.union([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -68,7 +68,7 @@ fn test_t01_union_drop_result_last() {
 fn test_t01_subtract_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().subtract([&b]).unwrap();
+	let result = a.subtract([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -78,7 +78,7 @@ fn test_t01_subtract_drop_order() {
 fn test_t01_intersect_drop_order() {
 	let a = test_box();
 	let b = test_box_2();
-	let result = a.clone().intersect([&b]).unwrap();
+	let result = a.intersect([&b]).unwrap();
 	drop(a);
 	drop(b);
 	drop(result);
@@ -89,8 +89,8 @@ fn test_t01_chained_boolean_drops() {
 	let a = test_box();
 	let b = test_box_2();
 	let c = test_box_3();
-	let r1 = a.clone().union([&b]).unwrap();
-	let r2 = r1.clone().subtract([&c]).unwrap();
+	let r1 = a.union([&b]).unwrap();
+	let r2 = r1.subtract([&c]).unwrap();
 	drop(r1);
 	drop(r2);
 	drop(a);
@@ -191,8 +191,8 @@ fn test_t06_brep_roundtrip() {
 fn test_t08_boolean_returns_shape() {
 	let a = test_box();
 	let b = test_box_2();
-	let _union: Vec<Solid> = a.clone().union([&b]).unwrap();
-	let _sub: Vec<Solid> = a.clone().subtract([&b]).unwrap();
+	let _union: Vec<Solid> = a.union([&b]).unwrap();
+	let _sub: Vec<Solid> = a.subtract([&b]).unwrap();
 	let _inter: Vec<Solid> = a.intersect([&b]).unwrap();
 }
 

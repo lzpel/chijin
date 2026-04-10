@@ -14,10 +14,11 @@ fn test_union_cylinders() {
 	println!("union([A], [B]) solid count: {}", union_a_b.len());
 
 	let union_ab_cd = [a.clone(), b.clone()].union(&[c.clone(), d.clone()]).unwrap();
+
 	println!("union([A, B], [C, D]) solid count: {}", union_ab_cd.len());
 
 	let all = [a, b, c, d];
-	let union_all_all = all.clone().union(&all).unwrap();
+	let union_all_all = all.union(&all).unwrap();
 	println!("union([ABCD], [ABCD]) solid count: {}", union_all_all.len());
 
 	//

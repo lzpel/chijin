@@ -332,19 +332,16 @@ impl SolidExt for Solid {
 
 	// ==================== Boolean wrappers ====================
 
-	fn union_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let arr = [self];
-		<Solid as SolidStruct>::boolean_union(arr.iter(), tool)
+	fn union_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+		<Solid as SolidStruct>::boolean_union([self], tool)
 	}
 
-	fn subtract_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let arr = [self];
-		<Solid as SolidStruct>::boolean_subtract(arr.iter(), tool)
+	fn subtract_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+		<Solid as SolidStruct>::boolean_subtract([self], tool)
 	}
 
-	fn intersect_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let arr = [self];
-		<Solid as SolidStruct>::boolean_intersect(arr.iter(), tool)
+	fn intersect_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Solid>) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+		<Solid as SolidStruct>::boolean_intersect([self], tool)
 	}
 }
 

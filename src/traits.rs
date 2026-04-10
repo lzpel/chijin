@@ -439,12 +439,12 @@ pub trait SolidExt: Transform {
 	fn color_clear(self) -> Self;
 
 	// --- Boolean (-> Vec<Self::Elem>) ---
-	fn union_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
-	fn subtract_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
-	fn intersect_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
-	fn union<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.union_with_metadata(tool)?.0) }
-	fn subtract<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.subtract_with_metadata(tool)?.0) }
-	fn intersect<'a>(self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.intersect_with_metadata(tool)?.0) }
+	fn union_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
+	fn subtract_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
+	fn intersect_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<(Vec<Self::Elem>, [Vec<u64>; 2]), Error> where Self::Elem: 'a;
+	fn union<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.union_with_metadata(tool)?.0) }
+	fn subtract<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.subtract_with_metadata(tool)?.0) }
+	fn intersect<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.intersect_with_metadata(tool)?.0) }
 }
 
 // `impl SolidExt for Solid` lives in the backend module (e.g. src/occt/solid.rs)
@@ -479,13 +479,13 @@ impl<T: SolidStruct> SolidExt for Vec<T> {
 	fn color_clear(self) -> Self {
 		self.into_iter().map(|s| s.color_clear()).collect()
 	}
-	fn union_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn union_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_union(self.iter(), tool)
 	}
-	fn subtract_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn subtract_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_subtract(self.iter(), tool)
 	}
-	fn intersect_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn intersect_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_intersect(self.iter(), tool)
 	}
 }
@@ -522,13 +522,13 @@ impl<T: SolidStruct, const N: usize> SolidExt for [T; N] {
 	fn color_clear(self) -> Self {
 		self.map(|s| s.color_clear())
 	}
-	fn union_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn union_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_union(self.iter(), tool)
 	}
-	fn subtract_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn subtract_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_subtract(self.iter(), tool)
 	}
-	fn intersect_with_metadata<'a>(self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
+	fn intersect_with_metadata<'a>(&self, tool: impl IntoIterator<Item = &'a T>) -> Result<(Vec<T>, [Vec<u64>; 2]), Error> where T: 'a {
 		T::boolean_intersect(self.iter(), tool)
 	}
 }
