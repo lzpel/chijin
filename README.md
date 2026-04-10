@@ -265,17 +265,17 @@ fn main() -> Result<(), cadrum::Error> {
         .color("#e67e22");
 
     // union: merge both shapes into one — offset X=0
-    let union = make_box.clone()
+    let union = make_box
         .union(&[make_cyl.clone()])?;
 
     // subtract: box minus cylinder — offset X=40
-    let subtract = make_box.clone()
+    let subtract = make_box
         .subtract(&[make_cyl.clone()])?
         .translate(DVec3::new(40.0, 0.0, 0.0));
 
     // intersect: only the overlapping volume — offset X=80
-    let intersect = make_box.clone()
-        .intersect(&[make_cyl.clone()])?
+    let intersect = make_box
+        .intersect(&[make_cyl])?
         .translate(DVec3::new(80.0, 0.0, 0.0));
 
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
@@ -295,12 +295,108 @@ fn main() -> Result<(), cadrum::Error> {
   <img src="https://lzpel.github.io/cadrum/04_boolean.svg" alt="04_boolean" width="360"/>
 </p>
 
+#### Extrude
+
+Demo of `Solid::extrude`: push a closed 2D profile along a direction vector.
+
+```sh
+cargo run --example 05_extrude
+```
+
+```rust
+//! Demo of `Solid::extrude`: push a closed 2D profile along a direction vector.
+//!
+//! - **Box**: square polygon extruded along Z
+//! - **Oblique cylinder**: circle extruded at a steep angle
+//! - **L-beam**: L-shaped polygon extruded along Z
+//! - **Heart**: BSpline heart-shaped profile extruded along Z
+
+use cadrum::{BSplineEnd, Edge, Error, Solid};
+use glam::DVec3;
+
+/// Square polygon → box (simplest extrude).
+fn build_box() -> Result<Solid, Error> {
+	let profile = Edge::polygon([
+		DVec3::new(0.0, 0.0, 0.0),
+		DVec3::new(5.0, 0.0, 0.0),
+		DVec3::new(5.0, 5.0, 0.0),
+		DVec3::new(0.0, 5.0, 0.0),
+	])?;
+	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 8.0))
+}
+
+/// Circle extruded at a steep angle → oblique cylinder.
+fn build_oblique_cylinder() -> Result<Solid, Error> {
+	let profile = [Edge::circle(3.0, DVec3::Z)?];
+	Solid::extrude(&profile, DVec3::new(-4.0, 6.0, 8.0))
+}
+
+/// L-shaped polygon → L-beam.
+fn build_l_beam() -> Result<Solid, Error> {
+	let profile = Edge::polygon([
+		DVec3::new(0.0, 0.0, 0.0),
+		DVec3::new(4.0, 0.0, 0.0),
+		DVec3::new(4.0, 1.0, 0.0),
+		DVec3::new(1.0, 1.0, 0.0),
+		DVec3::new(1.0, 3.0, 0.0),
+		DVec3::new(0.0, 3.0, 0.0),
+	])?;
+	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 12.0))
+}
+
+/// Heart-shaped BSpline profile extruded along Z.
+fn build_heart() -> Result<Solid, Error> {
+	let profile = [Edge::bspline(
+		[
+			DVec3::new(0.0, -4.0, 0.0),   // bottom tip
+			DVec3::new(2.0, -1.5, 0.0),
+			DVec3::new(4.0, 1.5, 0.0),
+			DVec3::new(2.5, 3.5, 0.0),    // right lobe top
+			DVec3::new(0.0, 2.0, 0.0),    // center dip
+			DVec3::new(-2.5, 3.5, 0.0),   // left lobe top
+			DVec3::new(-4.0, 1.5, 0.0),
+			DVec3::new(-2.0, -1.5, 0.0),
+		],
+		BSplineEnd::Periodic,
+	)?];
+	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 7.0))
+}
+
+fn main() -> Result<(), Error> {
+	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+
+	let box_solid = build_box()?.color("#b0d4f1");
+	let oblique = build_oblique_cylinder()?.color("#f1c8b0").translate(DVec3::new(12.0, 0.0, 0.0));
+	let l_beam = build_l_beam()?.color("#b0f1c8").translate(DVec3::new(28.0, 0.0, 0.0));
+	let heart = build_heart()?.color("#f1b0b0").translate(DVec3::new(38.0, 0.0, 0.0));
+
+	let result = [box_solid, oblique, l_beam, heart];
+
+	let step_path = format!("{example_name}.step");
+	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
+	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
+	println!("wrote {step_path}");
+
+	let svg_path = format!("{example_name}.svg");
+	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
+	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
+	println!("wrote {svg_path}");
+
+	Ok(())
+}
+
+```
+
+<p align="center">
+  <img src="https://lzpel.github.io/cadrum/05_extrude.svg" alt="05_extrude" width="360"/>
+</p>
+
 #### Loft
 
 Demo of `Solid::loft`: skin a smooth solid through cross-section wires.
 
 ```sh
-cargo run --example 05_loft
+cargo run --example 06_loft
 ```
 
 ```rust
@@ -370,7 +466,7 @@ fn main() -> Result<(), Error> {
 ```
 
 <p align="center">
-  <img src="https://lzpel.github.io/cadrum/05_loft.svg" alt="05_loft" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/06_loft.svg" alt="06_loft" width="360"/>
 </p>
 
 #### Sweep
@@ -378,7 +474,7 @@ fn main() -> Result<(), Error> {
 Sweep showcase: M2 screw (helix spine) + U-shaped pipe (line+arc+line spine).
 
 ```sh
-cargo run --example 06_sweep
+cargo run --example 07_sweep
 ```
 
 ```rust
@@ -509,133 +605,7 @@ fn main() {
 ```
 
 <p align="center">
-  <img src="https://lzpel.github.io/cadrum/06_sweep.svg" alt="06_sweep" width="360"/>
-</p>
-
-#### Sweep sections
-
-Demo of `Solid::sweep_sections`: morph between cross-section profiles
-
-```sh
-cargo run --example 07_sweep_sections
-```
-
-```rust
-//! Demo of `Solid::sweep_sections`: morph between cross-section profiles
-//! along an explicit spine curve.
-//!
-//! - **Plasma**: 8 elliptical poloidal ribs swept along a circular spine
-//!   with `ProfileOrient::Torsion` — a stellarator-like helical twist.
-//! - **Morphing pipe**: circle-to-square transition swept along a straight
-//!   spine — demonstrates cross-section morphing between dissimilar shapes.
-
-use cadrum::{BSplineEnd, Edge, Error, ProfileOrient, Solid};
-use glam::DVec3;
-use std::f64::consts::TAU;
-
-// ==================== Plasma: stellarator-like torus ====================
-
-/// Build one elliptical poloidal rib at toroidal angle `phi`.
-fn plasma_rib(phi: f64, ring_r: f64, a: f64, b: f64, twist_per_phi: f64, n: usize) -> Edge {
-	let center = DVec3::new(ring_r * phi.cos(), ring_r * phi.sin(), 0.0);
-	let radial = DVec3::new(phi.cos(), phi.sin(), 0.0);
-	let axial = DVec3::Z;
-	let twist = twist_per_phi * phi;
-	let cos_t = twist.cos();
-	let sin_t = twist.sin();
-
-	let pts: Vec<DVec3> = (0..n)
-		.map(|i| {
-			let theta = TAU * i as f64 / n as f64;
-			let lx = a * theta.cos();
-			let ly = b * theta.sin();
-			let r_offset = lx * cos_t - ly * sin_t;
-			let z_offset = lx * sin_t + ly * cos_t;
-			center + radial * r_offset + axial * z_offset
-		})
-		.collect();
-	Edge::bspline(pts, BSplineEnd::Periodic).expect("plasma rib bspline")
-}
-
-/// 8 ribs swept along a circular spine → twisted plasma-like torus.
-fn build_plasma() -> Result<Solid, Error> {
-	const N_RIBS: usize = 8;
-	const N_POINTS: usize = 32;
-	const RING_R: f64 = 6.0;
-
-	let spine = Edge::circle(RING_R, DVec3::Z)?;
-	let sections: Vec<Vec<Edge>> = (0..N_RIBS)
-		.map(|i| {
-			let phi = TAU * i as f64 / N_RIBS as f64;
-			vec![plasma_rib(phi, RING_R, 1.8, 1.2, 1.0, N_POINTS)]
-		})
-		.collect();
-	Ok(Solid::sweep_sections(&sections, std::slice::from_ref(&spine), ProfileOrient::Torsion)?.color("#87ceeb"))
-}
-
-// ==================== Morphing pipe: circle → square ====================
-
-/// Rounded-polygon section with `n_pts` points and corner radius blending
-/// controlled by `squareness` (0.0 = circle, 1.0 = square-ish).
-fn blended_section(radius: f64, squareness: f64, z: f64, n_pts: usize) -> Edge {
-	let pts: Vec<DVec3> = (0..n_pts)
-		.map(|i| {
-			let theta = TAU * i as f64 / n_pts as f64;
-			// Superellipse: |x/a|^p + |y/b|^p = 1, p=2 → circle, p→∞ → square
-			let p = 2.0 + 8.0 * squareness; // 2.0 .. 10.0
-			let ct = theta.cos();
-			let st = theta.sin();
-			let x = radius * ct.abs().powf(2.0 / p) * ct.signum();
-			let y = radius * st.abs().powf(2.0 / p) * st.signum();
-			DVec3::new(x, y, z)
-		})
-		.collect();
-	Edge::bspline(pts, BSplineEnd::Periodic).expect("blended section bspline")
-}
-
-/// Straight-spine sweep morphing from circle to square over 5 sections.
-fn build_morphing_pipe() -> Result<Solid, Error> {
-	const N_SECTIONS: usize = 5;
-	const N_POINTS: usize = 32;
-	const RADIUS: f64 = 2.0;
-	const LENGTH: f64 = 16.0;
-
-	let spine = Edge::line(DVec3::ZERO, DVec3::Z * LENGTH)?;
-	let sections: Vec<Vec<Edge>> = (0..N_SECTIONS)
-		.map(|i| {
-			let t = i as f64 / (N_SECTIONS - 1) as f64;
-			let z = t * LENGTH;
-			vec![blended_section(RADIUS, t, z, N_POINTS)]
-		})
-		.collect();
-	Ok(Solid::sweep_sections(&sections, std::slice::from_ref(&spine), ProfileOrient::Fixed)?.color("#d2691e"))
-}
-
-fn main() -> Result<(), Error> {
-	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-
-	let plasma = build_plasma()?;
-	let morphing = build_morphing_pipe()?.translate(DVec3::new(18.0, 0.0, -8.0));
-
-	let result = [plasma, morphing];
-
-	let step_path = format!("{example_name}.step");
-	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
-	println!("wrote {step_path}");
-
-	let svg_path = format!("{example_name}.svg");
-	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
-	println!("wrote {svg_path}");
-
-	Ok(())
-}
-
-```
-
-<p align="center">
-  <img src="https://lzpel.github.io/cadrum/07_sweep_sections.svg" alt="07_sweep_sections" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/07_sweep.svg" alt="07_sweep" width="360"/>
 </p>
 
 #### Chijin

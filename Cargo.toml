@@ -62,8 +62,5 @@ name = "07_sweep"
 required-features = ["color"]
 
 [[example]]
-name = "08_sweep_sections"
-
-[[example]]
 name = "10_chijin"
 required-features = ["color"]

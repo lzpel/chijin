@@ -225,48 +225,6 @@ impl SolidStruct for Solid {
 		))
 	}
 
-	// ==================== Sweep Sections ====================
-
-	fn sweep_sections<'a, 'b, 'c, S, I>(sections: S, spine: impl IntoIterator<Item = &'b Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Edge>, Edge: 'a {
-		let mut all_edges = ffi::edge_vec_new();
-		let mut section_count = 0usize;
-
-		for sec in sections {
-			if section_count > 0 {
-				ffi::edge_vec_push_null(all_edges.pin_mut());
-			}
-			let mut count = 0u32;
-			for edge in sec {
-				ffi::edge_vec_push(all_edges.pin_mut(), &edge.inner);
-				count += 1;
-			}
-			if count == 0 {
-				return Err(Error::SweepFailed);
-			}
-			section_count += 1;
-		}
-
-		if section_count == 0 {
-			return Err(Error::SweepFailed);
-		}
-
-		let mut spine_vec = ffi::edge_vec_new();
-		for e in spine {
-			ffi::edge_vec_push(spine_vec.pin_mut(), &e.inner);
-		}
-
-		let (kind, ux, uy, uz, aux_vec) = encode_orient(orient);
-		let shape = ffi::make_pipe_shell(&all_edges, &spine_vec, kind, ux, uy, uz, &aux_vec);
-		if shape.is_null() {
-			return Err(Error::SweepFailed);
-		}
-		Ok(Solid::new(
-			shape,
-			#[cfg(feature = "color")]
-			std::collections::HashMap::new(),
-		))
-	}
-
 	// ==================== Loft ====================
 
 	fn loft<'a, S, I>(sections: S) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Edge>, Edge: 'a {

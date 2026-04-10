@@ -407,16 +407,6 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	// 想定外ケースに当たったら `Solid::new` の debug_assert で気付ける。
 	fn sweep<'a, 'b, 'c>(profile: impl IntoIterator<Item = &'a Self::Edge>, spine: impl IntoIterator<Item = &'b Self::Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where Self::Edge: 'a + 'b;
 
-	/// Sweep multiple cross-section profiles along a spine with morphing.
-	///
-	/// Like [`sweep`](Self::sweep), but accepts multiple profile sections.
-	/// OCCT interpolates (morphs) between the profiles along the spine.
-	/// Each profile's 3D position is automatically matched to the nearest
-	/// point on the spine.
-	///
-	/// Sections use the same nested iterator pattern as [`loft`](Self::loft).
-	fn sweep_sections<'a, 'b, 'c, S, I>(sections: S, spine: impl IntoIterator<Item = &'b Self::Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a + 'b;
-
 	/// Loft (skin) a smooth solid through a sequence of cross-section wires.
 	///
 	/// Each `section` is an ordered list of edges forming a closed wire (a
@@ -425,10 +415,6 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	///
 	/// OCCT caps the first/last sections with planar faces to form a closed
 	/// solid (the standard "trunk" / "frustum" shape).
-	///
-	/// For closed (periodic) surfaces, use [`sweep_sections`](Self::sweep_sections)
-	/// with an explicit spine instead — it preserves rotational symmetry that
-	/// loft's implicit spine interpolation can break.
 	///
 	/// Internally uses `BRepOffsetAPI_ThruSections(isSolid=true, isRuled=false)`.
 	fn loft<'a, S, I>(sections: S) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a;
