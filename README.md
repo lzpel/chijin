@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/cadrum.svg?logo=rust)](https://crates.io/crates/cadrum)
 [![Docs](https://img.shields.io/badge/docs-lzpel.github.io%2Fcadrum-blue)](https://lzpel.github.io/cadrum)
 
-Rust CAD library powered by [OpenCASCADE](https://dev.opencascade.org/) (OCCT 7.9.3).
+Rust CAD library powered by [OpenCASCADE](https://dev.opencascade.org/) (OCCT 8.0.0-rc5).
 
 <p align="center">
   <img src="figure/chijin.svg" alt="chijin — a drum of Amami Oshima" width="360"/>
@@ -79,7 +79,7 @@ Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
 
 ## Build
 
-By default, `cargo build` downloads OCCT 7.9.3 source and builds it automatically.
+By default, `cargo build` downloads OCCT 8.0.0-rc5 source and builds it automatically.
 The built library is placed in `target/occt/` and removed by `cargo clean`.
 
 To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:

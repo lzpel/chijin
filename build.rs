@@ -66,7 +66,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 
 
 	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
-	// In OCCT 7.9.3, library layout (verified by nm):
+	// OCCT library layout (verified by nm):
 	//   TKLCAF   — TDocStd_Document, TDocStd_Application (NewDocument / Close)
 	//   TKXCAF   — XCAFApp_Application, XCAFDoc_ColorTool, XCAFDoc_ShapeTool,
 	//              XCAFDoc_DocumentTool
@@ -186,7 +186,7 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 	}
 
 	// Auto-detect the extracted OCCT directory name
-	// (GitHub archives may name it OCCT-V7_9_3 or OCCT-7_9_3 depending on the tag)
+	// (GitHub archives name it OCCT-{tag}, e.g. OCCT-V8_0_0_rc5)
 	let source_dir = std::fs::read_dir(&download_dir).expect("Failed to read occt-source directory").flatten().find(|e| e.file_name().to_string_lossy().starts_with("OCCT") && e.path().is_dir()).map(|e| e.path()).expect("OCCT source directory not found after extraction");
 
 	// Patch OCCT sources to remove TKService (Visualization) dependencies.
