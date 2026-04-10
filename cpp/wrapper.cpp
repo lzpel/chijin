@@ -1093,73 +1093,95 @@ void edge_vec_push(std::vector<TopoDS_Edge>& v, const TopoDS_Edge& e) {
     v.push_back(e);
 }
 
-std::unique_ptr<TopoDS_Shape> make_pipe_from_edges(
-    const std::vector<TopoDS_Edge>& profile_edges,
+void edge_vec_push_null(std::vector<TopoDS_Edge>& v) {
+    v.push_back(TopoDS_Edge());
+}
+
+// Unified MakePipeShell wrapper.  Handles both single-profile sweep and
+// multi-profile morphing sweep.  Profile sections in `all_edges` are
+// separated by null-edge sentinels (TopoDS_Edge().IsNull() == true).
+// `aux_spine_edges` is used only when orient == 3 (Auxiliary); pass an
+// empty vector for other modes.
+std::unique_ptr<TopoDS_Shape> make_pipe_shell(
+    const std::vector<TopoDS_Edge>& all_edges,
     const std::vector<TopoDS_Edge>& spine_edges,
     uint32_t orient,
-    double ux, double uy, double uz)
+    double ux, double uy, double uz,
+    const std::vector<TopoDS_Edge>& aux_spine_edges)
 {
     try {
-        if (profile_edges.empty() || spine_edges.empty()) return nullptr;
+        if (all_edges.empty() || spine_edges.empty()) return nullptr;
 
-        // Build the spine wire by chaining all spine edges.
+        // Build the spine wire.
         BRepBuilderAPI_MakeWire spineMaker;
         for (const auto& e : spine_edges) spineMaker.Add(e);
         if (!spineMaker.IsDone()) return nullptr;
         TopoDS_Wire spine = spineMaker.Wire();
 
-        // Build the profile wire similarly. The profile must be closed so
-        // that MakeSolid() can close the swept shell into a solid.
-        BRepBuilderAPI_MakeWire profileMaker;
-        for (const auto& e : profile_edges) profileMaker.Add(e);
-        if (!profileMaker.IsDone()) return nullptr;
-        TopoDS_Wire profile_wire = profileMaker.Wire();
-
-        // MakePipeShell sweeps a Wire along the spine to produce a Shell,
-        // which we then close into a Solid via MakeSolid(). Unlike MakePipe
-        // which takes a Face directly, MakePipeShell wants the boundary wire.
         BRepOffsetAPI_MakePipeShell shell(spine);
 
-        // Configure trihedron law based on the orient discriminant.
+        // Configure trihedron law.
         switch (orient) {
             case 0: {
                 // Fixed: lock the trihedron to the spine-start frame.
-                // We need an Ax2 = (origin, Z=tangent, X=any perpendicular).
                 BRepAdaptor_Curve curve(spine_edges.front());
                 gp_Pnt start_pnt;
                 gp_Vec start_tan;
                 curve.D1(curve.FirstParameter(), start_pnt, start_tan);
                 if (start_tan.Magnitude() < Precision::Confusion()) return nullptr;
                 gp_Dir tdir(start_tan);
-                // Pick any direction not parallel to tdir for the X reference.
                 gp_Dir xref = (std::abs(tdir.X()) < 0.9) ? gp_Dir(1, 0, 0) : gp_Dir(0, 1, 0);
                 gp_Ax2 fixed_ax2(start_pnt, tdir, xref);
                 shell.SetMode(fixed_ax2);
                 break;
             }
             case 1: {
-                // Torsion: raw Frenet. SetMode(true) = Frenet,
-                // SetMode(false) = CorrectedFrenet (default).
+                // Torsion: raw Frenet.
                 shell.SetMode(Standard_True);
                 break;
             }
             case 2: {
-                // Up(v): fix the binormal direction to the user vector.
+                // Up(v): fix the binormal direction.
                 gp_Vec up_vec(ux, uy, uz);
                 if (up_vec.Magnitude() < Precision::Confusion()) return nullptr;
                 shell.SetMode(gp_Dir(up_vec));
                 break;
             }
+            case 3: {
+                // Auxiliary: build aux spine wire and use it for twist control.
+                if (aux_spine_edges.empty()) return nullptr;
+                BRepBuilderAPI_MakeWire auxMaker;
+                for (const auto& e : aux_spine_edges) auxMaker.Add(e);
+                if (!auxMaker.IsDone()) return nullptr;
+                shell.SetMode(auxMaker.Wire(), Standard_False);
+                break;
+            }
             default: {
-                shell.SetMode(Standard_True); // fallback to raw Frenet (Torsion)
+                shell.SetMode(Standard_True);
                 break;
             }
         }
 
-        // Add the profile wire. WithContact=false / WithCorrection=false
-        // because the caller has already placed the profile at the spine
-        // start (via Edge::polygon + align_z + translate on the Rust side).
-        shell.Add(profile_wire, Standard_False, Standard_False);
+        // Split all_edges by null sentinels into profile wires and Add each.
+        BRepBuilderAPI_MakeWire wire_maker;
+        bool has_edges = false;
+        for (const auto& e : all_edges) {
+            if (e.IsNull()) {
+                if (!wire_maker.IsDone()) return nullptr;
+                shell.Add(wire_maker.Wire(), Standard_False, Standard_False);
+                wire_maker = BRepBuilderAPI_MakeWire();
+                has_edges = false;
+            } else {
+                wire_maker.Add(e);
+                has_edges = true;
+            }
+        }
+        // Last section (after final sentinel or single section with no sentinel).
+        if (has_edges) {
+            if (!wire_maker.IsDone()) return nullptr;
+            shell.Add(wire_maker.Wire(), Standard_False, Standard_False);
+        }
+
         shell.Build();
         if (!shell.IsDone()) return nullptr;
         if (!shell.MakeSolid()) return nullptr;
@@ -1191,41 +1213,43 @@ std::unique_ptr<TopoDS_Shape> make_pipe_from_edges(
 // `isSolid=true` requests OCCT cap the open ends with planar faces (when
 // `closed=false`); `isRuled=false` requests B-spline (smoothed) interpolation
 // rather than panel-by-panel ruled surfaces — necessary for the C² guarantee.
+// Loft (skin) through cross-section wires.  Sections in `all_edges` are
+// separated by null-edge sentinels.
 std::unique_ptr<TopoDS_Shape> make_loft(
-    const std::vector<TopoDS_Edge>& all_edges,
-    rust::Slice<const uint32_t> section_sizes,
-    bool closed)
+    const std::vector<TopoDS_Edge>& all_edges)
 {
-    if (section_sizes.size() < 2) return nullptr;
-
     try {
         BRepOffsetAPI_ThruSections loft(
             /*isSolid=*/Standard_True,
             /*isRuled=*/Standard_False,
             Precision::Confusion());
 
-        size_t edge_idx = 0;
-        TopoDS_Wire first_wire;  // preserved with original TShape* identity
+        // Split all_edges by null sentinels into section wires.
+        size_t wire_count = 0;
+        BRepBuilderAPI_MakeWire wire_maker;
+        bool has_edges = false;
 
-        for (size_t s = 0; s < section_sizes.size(); ++s) {
-            BRepBuilderAPI_MakeWire wire_maker;
-            for (uint32_t i = 0; i < section_sizes[s]; ++i) {
-                if (edge_idx + i >= all_edges.size()) return nullptr;
-                wire_maker.Add(all_edges[edge_idx + i]);
+        auto flush_wire = [&]() -> bool {
+            if (!has_edges) return true;
+            if (!wire_maker.IsDone()) return false;
+            loft.AddWire(wire_maker.Wire());
+            wire_count++;
+            wire_maker = BRepBuilderAPI_MakeWire();
+            has_edges = false;
+            return true;
+        };
+
+        for (const auto& e : all_edges) {
+            if (e.IsNull()) {
+                if (!flush_wire()) return nullptr;
+            } else {
+                wire_maker.Add(e);
+                has_edges = true;
             }
-            edge_idx += section_sizes[s];
-            if (!wire_maker.IsDone()) return nullptr;
-
-            TopoDS_Wire wire = wire_maker.Wire();
-            loft.AddWire(wire);
-            if (s == 0) first_wire = wire;
         }
+        if (!flush_wire()) return nullptr;
 
-        if (closed) {
-            // Re-add the same wire object (not a copy) so OCCT detects the
-            // periodic case via IsSame() and builds a v-periodic surface.
-            loft.AddWire(first_wire);
-        }
+        if (wire_count < 2) return nullptr;
 
         loft.Build();
         if (!loft.IsDone()) return nullptr;

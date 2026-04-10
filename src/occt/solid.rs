@@ -16,6 +16,23 @@ use std::sync::Mutex;
 // ロック粒度の粗さは現実的に問題にならない。
 static LOFT_LOCK: Mutex<()> = Mutex::new(());
 
+/// Encode `ProfileOrient` into FFI arguments: (kind, ux, uy, uz, aux_spine_edges).
+fn encode_orient(orient: ProfileOrient) -> (u32, f64, f64, f64, cxx::UniquePtr<cxx::CxxVector<ffi::TopoDS_Edge>>) {
+	let mut aux_vec = ffi::edge_vec_new();
+	let (kind, ux, uy, uz) = match orient {
+		ProfileOrient::Fixed => (0u32, 0.0, 0.0, 0.0),
+		ProfileOrient::Torsion => (1u32, 0.0, 0.0, 0.0),
+		ProfileOrient::Up(v) => (2u32, v.x, v.y, v.z),
+		ProfileOrient::Auxiliary(edges) => {
+			for e in edges {
+				ffi::edge_vec_push(aux_vec.pin_mut(), &e.inner);
+			}
+			(3u32, 0.0, 0.0, 0.0)
+		}
+	};
+	(kind, ux, uy, uz, aux_vec)
+}
+
 #[cfg(feature = "color")]
 fn remap_colormap_by_order(old_inner: &ffi::TopoDS_Shape, new_inner: &ffi::TopoDS_Shape, old_colormap: &std::collections::HashMap<u64, crate::common::color::Color>) -> std::collections::HashMap<u64, crate::common::color::Color> {
 	let mut colormap = std::collections::HashMap::new();
@@ -169,7 +186,7 @@ impl SolidStruct for Solid {
 
 	// ==================== Sweep ====================
 
-	fn sweep<'a, 'b>(profile: impl IntoIterator<Item = &'a Edge>, spine: impl IntoIterator<Item = &'b Edge>, orient: ProfileOrient) -> Result<Self, Error> {
+	fn sweep<'a, 'b, 'c>(profile: impl IntoIterator<Item = &'a Edge>, spine: impl IntoIterator<Item = &'b Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> {
 		let mut profile_vec = ffi::edge_vec_new();
 		for e in profile {
 			ffi::edge_vec_push(profile_vec.pin_mut(), &e.inner);
@@ -178,14 +195,50 @@ impl SolidStruct for Solid {
 		for e in spine {
 			ffi::edge_vec_push(spine_vec.pin_mut(), &e.inner);
 		}
-		// Encode the variant + payload into the FFI's (orient: u32, ux, uy, uz) signature.
-		// Up's vector is only meaningful when orient == 2; the other variants pass zeros.
-		let (kind, ux, uy, uz) = match orient {
-			ProfileOrient::Fixed => (0u32, 0.0, 0.0, 0.0),
-			ProfileOrient::Torsion => (1u32, 0.0, 0.0, 0.0),
-			ProfileOrient::Up(v) => (2u32, v.x, v.y, v.z),
-		};
-		let shape = ffi::make_pipe_from_edges(&profile_vec, &spine_vec, kind, ux, uy, uz);
+		let (kind, ux, uy, uz, aux_vec) = encode_orient(orient);
+		let shape = ffi::make_pipe_shell(&profile_vec, &spine_vec, kind, ux, uy, uz, &aux_vec);
+		if shape.is_null() {
+			return Err(Error::SweepFailed);
+		}
+		Ok(Solid::new(
+			shape,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		))
+	}
+
+	// ==================== Sweep Sections ====================
+
+	fn sweep_sections<'a, 'b, 'c, S, I>(sections: S, spine: impl IntoIterator<Item = &'b Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Edge>, Edge: 'a {
+		let mut all_edges = ffi::edge_vec_new();
+		let mut section_count = 0usize;
+
+		for sec in sections {
+			if section_count > 0 {
+				ffi::edge_vec_push_null(all_edges.pin_mut());
+			}
+			let mut count = 0u32;
+			for edge in sec {
+				ffi::edge_vec_push(all_edges.pin_mut(), &edge.inner);
+				count += 1;
+			}
+			if count == 0 {
+				return Err(Error::SweepFailed);
+			}
+			section_count += 1;
+		}
+
+		if section_count == 0 {
+			return Err(Error::SweepFailed);
+		}
+
+		let mut spine_vec = ffi::edge_vec_new();
+		for e in spine {
+			ffi::edge_vec_push(spine_vec.pin_mut(), &e.inner);
+		}
+
+		let (kind, ux, uy, uz, aux_vec) = encode_orient(orient);
+		let shape = ffi::make_pipe_shell(&all_edges, &spine_vec, kind, ux, uy, uz, &aux_vec);
 		if shape.is_null() {
 			return Err(Error::SweepFailed);
 		}
@@ -198,18 +251,16 @@ impl SolidStruct for Solid {
 
 	// ==================== Loft ====================
 
-	fn loft<'a, S, I>(sections: S, closed: bool) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Edge>, Edge: 'a {
-		// 並列実行下での heap corruption を避けるため OCCT 呼び出し全体を
-		// serialize する (LOFT_LOCK 定義のコメント参照)。
+	fn loft<'a, S, I>(sections: S) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Edge>, Edge: 'a {
 		let _guard = LOFT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-		// Flatten the nested iterator into one CxxVector + per-section sizes.
-		// Stream as we go so the user's closure-style sections (e.g.
-		// `(0..N).map(|i| [&edges[i]])`) work without an extra collect.
 		let mut all_edges = ffi::edge_vec_new();
-		let mut sizes: Vec<u32> = Vec::new();
+		let mut section_count = 0usize;
 
 		for sec in sections {
+			if section_count > 0 {
+				ffi::edge_vec_push_null(all_edges.pin_mut());
+			}
 			let mut count = 0u32;
 			for edge in sec {
 				ffi::edge_vec_push(all_edges.pin_mut(), &edge.inner);
@@ -218,25 +269,25 @@ impl SolidStruct for Solid {
 			if count == 0 {
 				return Err(Error::LoftFailed(format!(
 					"loft: section {} is empty (each section must contain ≥1 edge)",
-					sizes.len()
+					section_count
 				)));
 			}
-			sizes.push(count);
+			section_count += 1;
 		}
 
-		if sizes.len() < 2 {
+		if section_count < 2 {
 			return Err(Error::LoftFailed(format!(
 				"loft: need ≥2 sections, got {} (a single section has no thickness to skin across)",
-				sizes.len()
+				section_count
 			)));
 		}
 
-		let shape = ffi::make_loft(&all_edges, &sizes, closed);
+		let shape = ffi::make_loft(&all_edges);
 		if shape.is_null() {
 			return Err(Error::LoftFailed(format!(
-				"loft: OCCT BRepOffsetAPI_ThruSections failed (sections={}, closed={}). \
+				"loft: OCCT BRepOffsetAPI_ThruSections failed (sections={}). \
 				 Check that each section forms a valid closed wire and sections are not coplanar.",
-				sizes.len(), closed
+				section_count
 			)));
 		}
 		Ok(Solid::new(

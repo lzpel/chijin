@@ -143,9 +143,7 @@ pub trait Transform: Sized {
 // ==================== ProfileOrient ====================
 
 /// Controls how the cross-section profile is oriented as it travels along the
-/// spine in [`SolidStruct::sweep`]. The three variants cover the practical
-/// majority of sweep use cases without requiring the user to think about the
-/// underlying differential geometry.
+/// spine in [`SolidStruct::sweep`] and [`SolidStruct::sweep_sections`].
 ///
 /// **どれを選ぶか:**
 ///
@@ -155,23 +153,20 @@ pub trait Transform: Sized {
 /// | ねじ・バネ・つる (helix 系) | [`Torsion`](Self::Torsion) または [`Up`](Self::Up)`(axis)` |
 /// | 道路・線路・パイプ (重力方向を保ちたい) | [`Up`](Self::Up)`(DVec3::Z)` |
 /// | 上記に当てはまらない 3D 自由曲線 | [`Torsion`](Self::Torsion) |
+/// | 任意の捻り制御 (メビウスの輪等) | [`Auxiliary`](Self::Auxiliary)`(&aux_spine)` |
 ///
 /// **`Torsion` と `Up(axis)` の関係**: helix のような定曲率・定 torsion 曲線では、
 /// この 2 つは数学的に等価なトリヘドロンを生成します。`Torsion` は曲線の主法線
 /// (= `d²C/dt²` の T 直交成分) に profile を貼り付け、`Up` はユーザが渡した
 /// 方向を T 直交平面に射影して binormal にする — helix 上ではこの 2 つが
 /// 同じ axis を指すため、結果が一致します。helix 以外の曲線では一致しません。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ProfileOrient {
+#[derive(Clone, Copy)]
+pub enum ProfileOrient<'a> {
 	/// Profile is parallel-transported along the spine **without rotating**.
 	/// All cross-sections stay parallel to the starting orientation.
 	///
 	/// - **適**: 直線 spine (押し出し)
 	/// - **不適**: 曲がる spine (profile が tangent と直交しなくなり、見た目が壊れる)
-	///
-	/// 注意: helix にこれを適用すると profile が回転しないのでねじ山にならない。
-	/// その「壊れ方」自体は仕様どおりで、`Fixed` のデモンストレーションとして
-	/// `examples/05_sweep.rs` で確認できる。
 	Fixed,
 
 	/// Profile rotates following the spine's principal normal direction
@@ -186,21 +181,18 @@ pub enum ProfileOrient {
 	///   `Up` を使う
 	Torsion,
 
-	/// Profile keeps the given direction as its "up" axis (binormal). At every
-	/// point along the spine, the profile is rotated around the tangent so
-	/// that one of its in-plane axes lies in the plane spanned by the tangent
-	/// and the supplied vector.
-	///
-	/// 不変式: 始点で `up` と tangent に直交していたベクトルは、spine 上の
-	/// 任意の点でも (その点の) tangent と `up` の両方に直交し続ける。
+	/// Profile keeps the given direction as its "up" axis (binormal).
 	///
 	/// - **適**: 道路 (`up = DVec3::Z`), 線路, パイプ, 運河 — 重力方向を
 	///   保ちたい sweep 全般
-	/// - **適 (helix の場合)**: `up = helix の軸方向` を渡せば `Torsion` と
-	///   等価な結果になる (helix axis が profile の binormal と一致するため)
-	/// - **不適**: 任意の点で `up` が tangent と平行になる spine (例: 真上に
-	///   登る道路)。orthogonalize が破綻して [`Error::SweepFailed`] を返す
+	/// - **不適**: 任意の点で `up` が tangent と平行になる spine
 	Up(DVec3),
+
+	/// Profile orientation is controlled by an auxiliary spine curve.
+	/// The profile's X axis tracks the direction toward the auxiliary spine.
+	///
+	/// - **適**: メビウスの輪、ステラレーターの断面回転、任意の捻り制御
+	Auxiliary(&'a [crate::Edge]),
 }
 
 // ==================== BSplineEnd ====================
@@ -370,6 +362,7 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 /// color, boolean wrappers) live on `SolidExt` and are inherited via the
 /// supertrait bound.
 ///
+
 /// build_delegation.rs generates `impl Solid { pub fn ... }` from this trait
 /// and walks the supertrait chain to expose `SolidExt` methods inherently as well.
 ///
@@ -406,7 +399,17 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	// 戻り型は単一 `Self` 固定。MakePipeShell が compound を返すことは closed
 	// face 入力に対しては実質起きないため、`Vec<Self>` に拡張する手間を省いた。
 	// 想定外ケースに当たったら `Solid::new` の debug_assert で気付ける。
-	fn sweep<'a, 'b>(profile: impl IntoIterator<Item = &'a Self::Edge>, spine: impl IntoIterator<Item = &'b Self::Edge>, orient: ProfileOrient) -> Result<Self, Error> where Self::Edge: 'a + 'b;
+	fn sweep<'a, 'b, 'c>(profile: impl IntoIterator<Item = &'a Self::Edge>, spine: impl IntoIterator<Item = &'b Self::Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where Self::Edge: 'a + 'b;
+
+	/// Sweep multiple cross-section profiles along a spine with morphing.
+	///
+	/// Like [`sweep`](Self::sweep), but accepts multiple profile sections.
+	/// OCCT interpolates (morphs) between the profiles along the spine.
+	/// Each profile's 3D position is automatically matched to the nearest
+	/// point on the spine.
+	///
+	/// Sections use the same nested iterator pattern as [`loft`](Self::loft).
+	fn sweep_sections<'a, 'b, 'c, S, I>(sections: S, spine: impl IntoIterator<Item = &'b Self::Edge>, orient: ProfileOrient<'c>) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a + 'b;
 
 	/// Loft (skin) a smooth solid through a sequence of cross-section wires.
 	///
@@ -414,37 +417,15 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	/// "rib"). The lofter interpolates a B-spline surface through all sections
 	/// in order, then caps the ends to form a `Solid`.
 	///
-	/// `closed = true` builds a v-direction periodic surface: the result loops
-	/// back from the last section to the first with C² continuity. The first
-	/// section's `TopoDS_Wire` is reused at the end via OCCT's `IsSame()`-based
-	/// auto-detection in `BRepOffsetAPI_ThruSections`, so no boolean fuse is
-	/// needed (cf. parastell, which composes via boolean rotate+fuse because
-	/// CadQuery does not expose this OCCT path).
+	/// OCCT caps the first/last sections with planar faces to form a closed
+	/// solid (the standard "trunk" / "frustum" shape).
 	///
-	/// `closed = false` builds an open loft and OCCT caps the first/last
-	/// sections with planar faces to form a closed solid (the standard
-	/// "trunk" / "frustum" shape).
+	/// For closed (periodic) surfaces, use [`sweep_sections`](Self::sweep_sections)
+	/// with an explicit spine instead — it preserves rotational symmetry that
+	/// loft's implicit spine interpolation can break.
 	///
-	/// # Arguments
-	///
-	/// - `sections`: any nested iterator yielding edge references. Accepts
-	///   `&Vec<Vec<Edge>>`, `(0..N).map(|i| [&edges[i]])`, `&[&[Edge]]`, etc.
-	///   Each section must contain ≥1 edge and the sections must form valid
-	///   closed wires for the result to be a meaningful solid.
-	/// - `closed`: see above.
-	///
-	/// # Errors
-	///
-	/// Returns [`Error::LoftFailed`] if:
-	/// - fewer than 2 sections are supplied
-	/// - any section is empty
-	/// - OCCT's `BRepOffsetAPI_ThruSections::Build()` fails (degenerate
-	///   sections, ill-formed wires, etc.)
-	///
-	/// Internally uses `BRepOffsetAPI_ThruSections(isSolid=true, isRuled=false)`
-	/// for smooth (B-spline) interpolation; ruled lofts are not currently
-	/// exposed as a parameter.
-	fn loft<'a, S, I>(sections: S, closed: bool) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a;
+	/// Internally uses `BRepOffsetAPI_ThruSections(isSolid=true, isRuled=false)`.
+	fn loft<'a, S, I>(sections: S) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a;
 
 	// --- Boolean primitives (consumed by SolidExt::*_with_metadata wrappers) ---
 	fn boolean_union<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;

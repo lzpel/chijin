@@ -277,39 +277,32 @@ std::unique_ptr<TopoDS_Edge> mirror_edge(
 // Sweep a closed profile wire (built from `profile_edges`) along a spine
 // wire (built from `spine_edges`) using BRepOffsetAPI_MakePipeShell. The
 // profile is wrapped in a face before sweeping so the result is a Solid.
+// Unified MakePipeShell wrapper.  Supports single-profile sweep and
+// multi-profile morphing.  Profile sections in `all_edges` are separated
+// by null-edge sentinels (TopoDS_Edge().IsNull() == true).
 //
 // `orient` selects how the profile is oriented along the spine:
 //   0 = Fixed   — fix the trihedron to the spine-start frame (no rotation)
 //   1 = Torsion — raw Frenet trihedron (helices, springs)
 //   2 = Up      — keep `(ux, uy, uz)` as the constant binormal direction
-//                 (`ux/uy/uz` are ignored unless orient == 2)
+//   3 = Auxiliary — use `aux_spine_edges` as auxiliary spine for twist control
 // Any other value falls back to Torsion.
-std::unique_ptr<TopoDS_Shape> make_pipe_from_edges(
-    const std::vector<TopoDS_Edge>& profile_edges,
+std::unique_ptr<TopoDS_Shape> make_pipe_shell(
+    const std::vector<TopoDS_Edge>& all_edges,
     const std::vector<TopoDS_Edge>& spine_edges,
     uint32_t orient,
-    double ux, double uy, double uz);
+    double ux, double uy, double uz,
+    const std::vector<TopoDS_Edge>& aux_spine_edges);
 
-// Helpers for the Rust side to construct a std::vector<TopoDS_Edge> and
-// pass it into make_pipe_from_edges. Equivalent to a small builder.
+// Helpers for the Rust side to construct a std::vector<TopoDS_Edge>.
 std::unique_ptr<std::vector<TopoDS_Edge>> edge_vec_new();
 void edge_vec_push(std::vector<TopoDS_Edge>& v, const TopoDS_Edge& e);
+void edge_vec_push_null(std::vector<TopoDS_Edge>& v);
 
 // Loft (skin) a smooth solid through N cross-section wires.
-//
-// `all_edges` is the flattened concatenation of all section edges, and
-// `section_sizes` carries the per-section edge count so the C++ side can
-// re-split. `closed=true` makes OCCT build a v-direction periodic surface
-// (C² across the wrap-around) by re-adding the first wire object at the
-// end so OCCT's internal `IsSame()` detection fires. See the C++ impl
-// comment for the closed-loft trick details.
-//
-// Returns nullptr on any failure (section count < 2, wire build failure,
-// OCCT internal error during ThruSections::Build).
+// Sections in `all_edges` are separated by null-edge sentinels.
 std::unique_ptr<TopoDS_Shape> make_loft(
-    const std::vector<TopoDS_Edge>& all_edges,
-    rust::Slice<const uint32_t> section_sizes,
-    bool closed);
+    const std::vector<TopoDS_Edge>& all_edges);
 
 // ==================== Face Methods ====================
 
