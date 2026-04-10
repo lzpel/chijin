@@ -64,7 +64,6 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepGProp.hxx>
-#include <BRepGProp_Face.hxx>
 #include <GProp_GProps.hxx>
 
 // --- Curve adaptation / approximation ---
@@ -632,7 +631,6 @@ MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance) {
 
         // Compute normals for this face
         // Bug 3 fix: Use Poly_Triangulation::ComputeNormals + correct loop bounds
-        BRepGProp_Face prop_face(face);
 
         // Vertices
         for (int i = 1; i <= nb_nodes; i++) {
@@ -1270,6 +1268,7 @@ std::unique_ptr<TopoDS_Shape> make_loft(
 #include <STEPCAFControl_Writer.hxx>
 #include <TDocStd_Document.hxx>
 #include <TDF_ChildIterator.hxx>
+#include <TDF_LabelSequence.hxx>
 #include <Quantity_Color.hxx>
 
 namespace cadrum {

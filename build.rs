@@ -141,9 +141,9 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	println!("cargo:rerun-if-changed=cpp/wrapper.cpp");
 }
 
-/// Download OCCT 7.9.3 source, patch, and build with CMake into `install_prefix`.
+/// Download OCCT 8.0.0-rc5 source, patch, and build with CMake into `install_prefix`.
 fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, PathBuf) {
-	let occt_version = "V7_9_3";
+	let occt_version = "V8_0_0_rc5";
 	let occt_url = format!("https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz", occt_version);
 
 	let download_dir = out_dir.join("occt-source");
@@ -290,11 +290,22 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 ///    XCAFPrs_Texture which inherits from Graphic3d_Texture2D (TKService).
 ///    The only caller was FillAspect(), which is now empty.
 fn patch_occt_sources(source_dir: &Path) {
+	// OCCT 8.0.0 moved sources under src/<Module>/<Toolkit>/<Package>/ hierarchy.
+	// Try the new layout first, fall back to the legacy flat layout (≤7.9.x).
+	let vis_material = ["src/DataExchange/TKXCAF/XCAFDoc/XCAFDoc_VisMaterial.cxx", "src/XCAFDoc/XCAFDoc_VisMaterial.cxx"];
+	let prs_texture  = ["src/DataExchange/TKXCAF/XCAFPrs/XCAFPrs_Texture.cxx",    "src/XCAFPrs/XCAFPrs_Texture.cxx"];
+
+	let find = |candidates: &[&str]| candidates.iter().map(|p| source_dir.join(p)).find(|p| p.exists());
+
 	// Stub method bodies only: keep #includes and signatures, empty the bodies.
-	stub_out_methods(&source_dir.join("src/XCAFDoc/XCAFDoc_VisMaterial.cxx"), true);
+	if let Some(path) = find(&vis_material) {
+		stub_out_methods(&path, true);
+	}
 	// Empty the entire file: the initializer list references the base class, so
 	// body stubs alone cannot cut the TKService dependency.
-	stub_out_methods(&source_dir.join("src/XCAFPrs/XCAFPrs_Texture.cxx"), false);
+	if let Some(path) = find(&prs_texture) {
+		stub_out_methods(&path, false);
+	}
 }
 
 /// Neutralize a C++ source file at `path`.
