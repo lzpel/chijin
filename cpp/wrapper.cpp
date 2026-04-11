@@ -55,9 +55,15 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepTools_History.hxx>
 
-// --- Sweep / pipe / loft ---
+// --- Sweep / pipe / loft / gordon ---
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
+#include <GeomFill_Gordon.hxx>
+#include <GeomConvert.hxx>
+#include <GeomConvert_CompCurveToBSplineCurve.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <NCollection_Array1.hxx>
 
 // --- Mesh, classification, mass / surface properties ---
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -1277,6 +1283,162 @@ std::unique_ptr<TopoDS_Shape> make_loft(
         loft.Build();
         if (!loft.IsDone()) return nullptr;
         return std::make_unique<TopoDS_Shape>(loft.Shape());
+    } catch (const Standard_Failure&) {
+        return nullptr;
+    }
+}
+
+// Gordon surface solid from a network of profile and guide curves.
+// Both profile_edges and guide_edges use null-edge sentinels to separate
+// individual curves (each curve may consist of multiple edges forming a wire).
+std::unique_ptr<TopoDS_Shape> make_gordon(
+    const std::vector<TopoDS_Edge>& profile_edges,
+    const std::vector<TopoDS_Edge>& guide_edges)
+{
+    try {
+        // --- Helper: split edge vector by null sentinels into wire groups,
+        //     then convert each wire into a single Geom_Curve. ---
+        auto edges_to_curves = [](const std::vector<TopoDS_Edge>& edges)
+            -> std::vector<occ::handle<Geom_Curve>>
+        {
+            std::vector<occ::handle<Geom_Curve>> curves;
+            std::vector<TopoDS_Edge> group;
+
+            auto flush = [&]() {
+                if (group.empty()) return;
+                if (group.size() == 1) {
+                    // Single edge → extract curve directly.
+                    double f, l;
+                    occ::handle<Geom_Curve> c = BRep_Tool::Curve(group[0], f, l);
+                    if (!c.IsNull()) curves.push_back(c);
+                } else {
+                    // Multiple edges → concatenate into a single BSpline.
+                    // Start with the first edge.
+                    double f0, l0;
+                    occ::handle<Geom_Curve> c0 = BRep_Tool::Curve(group[0], f0, l0);
+                    if (c0.IsNull()) { group.clear(); return; }
+                    occ::handle<Geom_BSplineCurve> bsp0 = GeomConvert::CurveToBSplineCurve(c0);
+                    GeomConvert_CompCurveToBSplineCurve comp(bsp0);
+                    for (size_t i = 1; i < group.size(); ++i) {
+                        double fi, li;
+                        occ::handle<Geom_Curve> ci = BRep_Tool::Curve(group[i], fi, li);
+                        if (ci.IsNull()) continue;
+                        occ::handle<Geom_BSplineCurve> bspi = GeomConvert::CurveToBSplineCurve(ci);
+                        comp.Add(bspi, Precision::Confusion());
+                    }
+                    curves.push_back(comp.BSplineCurve());
+                }
+                group.clear();
+            };
+
+            for (const auto& e : edges) {
+                if (e.IsNull()) {
+                    flush();
+                } else {
+                    group.push_back(e);
+                }
+            }
+            flush();
+            return curves;
+        };
+
+        auto profiles = edges_to_curves(profile_edges);
+        auto guides   = edges_to_curves(guide_edges);
+
+        if (profiles.size() < 2 || guides.size() < 2) return nullptr;
+
+        // --- Build NCollection_Array1 for GeomFill_Gordon ---
+        NCollection_Array1<occ::handle<Geom_Curve>> prof_arr(1, (int)profiles.size());
+        for (int i = 0; i < (int)profiles.size(); ++i)
+            prof_arr.SetValue(i + 1, profiles[i]);
+
+        NCollection_Array1<occ::handle<Geom_Curve>> guide_arr(1, (int)guides.size());
+        for (int i = 0; i < (int)guides.size(); ++i)
+            guide_arr.SetValue(i + 1, guides[i]);
+
+        // --- Construct Gordon surface ---
+        GeomFill_Gordon gordon;
+        gordon.Init(prof_arr, guide_arr, Precision::Confusion());
+        gordon.Perform();
+        if (!gordon.IsDone()) return nullptr;
+
+        const occ::handle<Geom_BSplineSurface>& surf = gordon.Surface();
+        if (surf.IsNull()) return nullptr;
+
+        // --- Build face from surface ---
+        BRepBuilderAPI_MakeFace faceMaker(surf, Precision::Confusion());
+        if (!faceMaker.IsDone()) return nullptr;
+        TopoDS_Face gordonFace = faceMaker.Face();
+
+        // --- Try to build a solid via sewing + MakeSolid ---
+        // For closed surfaces, the face alone forms a shell.
+        // For open surfaces, we also cap the boundary with the first/last profile wires.
+        BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+        sewing.Add(gordonFace);
+
+        // Check if we need caps: if profiles are closed wires and surface is open,
+        // build planar cap faces from the first and last profile wires.
+        // Build wire from first profile edges.
+        auto build_cap_wire = [](const std::vector<TopoDS_Edge>& all,
+                                 size_t group_idx) -> TopoDS_Wire
+        {
+            // Find the group_idx-th non-null group in all.
+            BRepBuilderAPI_MakeWire wm;
+            size_t idx = 0;
+            bool in_group = false;
+            for (const auto& e : all) {
+                if (e.IsNull()) {
+                    if (in_group) {
+                        if (idx == group_idx && wm.IsDone()) return wm.Wire();
+                        idx++;
+                    }
+                    in_group = false;
+                    wm = BRepBuilderAPI_MakeWire();
+                } else {
+                    in_group = true;
+                    wm.Add(e);
+                }
+            }
+            if (in_group && idx == group_idx && wm.IsDone()) return wm.Wire();
+            return TopoDS_Wire();
+        };
+
+        size_t n_profiles = profiles.size();
+        TopoDS_Wire first_wire = build_cap_wire(profile_edges, 0);
+        TopoDS_Wire last_wire  = build_cap_wire(profile_edges, n_profiles - 1);
+
+        if (!first_wire.IsNull()) {
+            BRepBuilderAPI_MakeFace cap1(first_wire, /*onlyPlane=*/true);
+            if (cap1.IsDone()) sewing.Add(cap1.Face());
+        }
+        if (!last_wire.IsNull() && n_profiles > 1) {
+            BRepBuilderAPI_MakeFace cap2(last_wire, /*onlyPlane=*/true);
+            if (cap2.IsDone()) sewing.Add(cap2.Face());
+        }
+
+        sewing.Perform();
+        TopoDS_Shape sewn = sewing.SewedShape();
+
+        // Extract shell from the sewn result.
+        TopoDS_Shell shell;
+        if (sewn.ShapeType() == TopAbs_SHELL) {
+            shell = TopoDS::Shell(sewn);
+        } else if (sewn.ShapeType() == TopAbs_SOLID) {
+            // Already a solid — return directly.
+            return std::make_unique<TopoDS_Shape>(sewn);
+        } else {
+            // Try to find a shell inside.
+            TopExp_Explorer exp(sewn, TopAbs_SHELL);
+            if (exp.More()) {
+                shell = TopoDS::Shell(exp.Current());
+            } else {
+                return nullptr;
+            }
+        }
+
+        BRepBuilderAPI_MakeSolid solidMaker(shell);
+        if (!solidMaker.IsDone()) return nullptr;
+        return std::make_unique<TopoDS_Shape>(solidMaker.Shape());
     } catch (const Standard_Failure&) {
         return nullptr;
     }

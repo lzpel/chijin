@@ -419,6 +419,22 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	/// Internally uses `BRepOffsetAPI_ThruSections(isSolid=true, isRuled=false)`.
 	fn loft<'a, S, I>(sections: S) -> Result<Self, Error> where S: IntoIterator<Item = I>, I: IntoIterator<Item = &'a Self::Edge>, Self::Edge: 'a;
 
+	/// Construct a solid from a Gordon surface (transfinite interpolation).
+	///
+	/// A Gordon surface interpolates a network of intersecting curves using
+	/// the Boolean sum formula: `S = S_profiles + S_guides - S_tensor`.
+	///
+	/// `profiles` are cross-section curves (V-direction); `guides` are
+	/// longitudinal curves (U-direction). Every profile must intersect every
+	/// guide within geometric tolerance. Both require ≥ 2 curves.
+	///
+	/// The profiles must form closed wires so that the resulting surface can
+	/// be capped into a solid. If the network is closed in both directions
+	/// (first ≈ last curve), no caps are needed.
+	///
+	/// Internally uses `GeomFill_Gordon` (OCCT 8.0).
+	fn gordon<'a, 'b, P, G, PI, GI>(profiles: P, guides: G) -> Result<Self, Error> where P: IntoIterator<Item = PI>, PI: IntoIterator<Item = &'a Self::Edge>, G: IntoIterator<Item = GI>, GI: IntoIterator<Item = &'b Self::Edge>, Self::Edge: 'a + 'b;
+
 	// --- Boolean primitives (consumed by SolidExt::*_with_metadata wrappers) ---
 	fn boolean_union<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;
 	fn boolean_subtract<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;

@@ -38,6 +38,11 @@ pub enum Error {
 	/// The string identifies which precondition or stage failed.
 	LoftFailed(String),
 
+	/// Gordon surface (`Solid::gordon` / `GeomFill_Gordon`) failed: curve
+	/// network invalid, profiles/guides don't intersect, or OCCT internal
+	/// failure. The string identifies which precondition or stage failed.
+	GordonFailed(String),
+
 	/// Edge construction failed due to degenerate input (e.g. collinear arc
 	/// points, zero-length line, negative radius). The string describes which
 	/// constructor failed and with which parameters.
@@ -70,6 +75,7 @@ impl std::fmt::Display for Error {
 			Error::ExtrudeFailed => write!(f, "Extrude failed"),
 			Error::SweepFailed => write!(f, "Sweep failed"),
 			Error::LoftFailed(msg) => write!(f, "Loft failed: {}", msg),
+			Error::GordonFailed(msg) => write!(f, "Gordon failed: {}", msg),
 			Error::InvalidEdge(msg) => write!(f, "Invalid edge: {}", msg),
 			Error::SvgExportFailed => write!(f, "SVG export failed"),
 			Error::StlWriteFailed => write!(f, "STL write failed"),

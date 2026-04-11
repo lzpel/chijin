@@ -273,6 +273,86 @@ impl SolidStruct for Solid {
 		))
 	}
 
+	// ==================== Gordon ====================
+
+	fn gordon<'a, 'b, P, G, PI, GI>(profiles: P, guides: G) -> Result<Self, Error>
+	where
+		P: IntoIterator<Item = PI>,
+		PI: IntoIterator<Item = &'a Edge>,
+		G: IntoIterator<Item = GI>,
+		GI: IntoIterator<Item = &'b Edge>,
+		Edge: 'a + 'b,
+	{
+		let _guard = LOFT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+		let mut profile_vec = ffi::edge_vec_new();
+		let mut profile_count = 0usize;
+		for prof in profiles {
+			if profile_count > 0 {
+				ffi::edge_vec_push_null(profile_vec.pin_mut());
+			}
+			let mut count = 0u32;
+			for edge in prof {
+				ffi::edge_vec_push(profile_vec.pin_mut(), &edge.inner);
+				count += 1;
+			}
+			if count == 0 {
+				return Err(Error::GordonFailed(format!(
+					"gordon: profile {} is empty (each curve must contain ≥1 edge)",
+					profile_count
+				)));
+			}
+			profile_count += 1;
+		}
+
+		let mut guide_vec = ffi::edge_vec_new();
+		let mut guide_count = 0usize;
+		for guide in guides {
+			if guide_count > 0 {
+				ffi::edge_vec_push_null(guide_vec.pin_mut());
+			}
+			let mut count = 0u32;
+			for edge in guide {
+				ffi::edge_vec_push(guide_vec.pin_mut(), &edge.inner);
+				count += 1;
+			}
+			if count == 0 {
+				return Err(Error::GordonFailed(format!(
+					"gordon: guide {} is empty (each curve must contain ≥1 edge)",
+					guide_count
+				)));
+			}
+			guide_count += 1;
+		}
+
+		if profile_count < 2 {
+			return Err(Error::GordonFailed(format!(
+				"gordon: need ≥2 profiles, got {}",
+				profile_count
+			)));
+		}
+		if guide_count < 2 {
+			return Err(Error::GordonFailed(format!(
+				"gordon: need ≥2 guides, got {}",
+				guide_count
+			)));
+		}
+
+		let shape = ffi::make_gordon(&profile_vec, &guide_vec);
+		if shape.is_null() {
+			return Err(Error::GordonFailed(format!(
+				"gordon: GeomFill_Gordon failed (profiles={}, guides={}). \
+				 Check that every profile intersects every guide within tolerance.",
+				profile_count, guide_count
+			)));
+		}
+		Ok(Solid::new(
+			shape,
+			#[cfg(feature = "color")]
+			std::collections::HashMap::new(),
+		))
+	}
+
 	// ==================== Boolean primitives ====================
 
 	fn boolean_union<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b {

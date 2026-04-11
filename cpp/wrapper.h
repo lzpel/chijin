@@ -310,6 +310,14 @@ void edge_vec_push_null(std::vector<TopoDS_Edge>& v);
 std::unique_ptr<TopoDS_Shape> make_loft(
     const std::vector<TopoDS_Edge>& all_edges);
 
+// Gordon surface solid from a network of profile and guide curves.
+// Both `profile_edges` and `guide_edges` use null-edge sentinels to separate
+// individual curves (each curve may consist of multiple edges forming a wire).
+// Requires ≥ 2 profiles and ≥ 2 guides, all mutually intersecting.
+std::unique_ptr<TopoDS_Shape> make_gordon(
+    const std::vector<TopoDS_Edge>& profile_edges,
+    const std::vector<TopoDS_Edge>& guide_edges);
+
 // ==================== Face Methods ====================
 
 // Both helpers return the underlying TopoDS_TShape* address as a u64 — used

@@ -183,6 +183,7 @@ mod ffi_bridge {
 		fn make_extrude(profile_edges: &CxxVector<TopoDS_Edge>, dx: f64, dy: f64, dz: f64) -> UniquePtr<TopoDS_Shape>;
 		fn make_pipe_shell(all_edges: &CxxVector<TopoDS_Edge>, spine_edges: &CxxVector<TopoDS_Edge>, orient: u32, ux: f64, uy: f64, uz: f64, aux_spine_edges: &CxxVector<TopoDS_Edge>) -> UniquePtr<TopoDS_Shape>;
 		fn make_loft(all_edges: &CxxVector<TopoDS_Edge>) -> UniquePtr<TopoDS_Shape>;
+		fn make_gordon(profile_edges: &CxxVector<TopoDS_Edge>, guide_edges: &CxxVector<TopoDS_Edge>) -> UniquePtr<TopoDS_Shape>;
 
 		fn edge_vec_new() -> UniquePtr<CxxVector<TopoDS_Edge>>;
 		fn edge_vec_push(v: Pin<&mut CxxVector<TopoDS_Edge>>, e: &TopoDS_Edge);
