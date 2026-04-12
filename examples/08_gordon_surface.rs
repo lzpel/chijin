@@ -29,18 +29,26 @@ fn gordon_surface(closed: bool) -> Result<Solid, Error> {
     Solid::gordon(&edges_profile, &edges_guide)
 }
 fn main() {
-	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-    let points: [Solid; I_MAX*J_MAX] = std::array::from_fn(|i| Solid::sphere(0.1).translate(s(i/J_MAX, i%J_MAX)));
-    let profiles: [Solid; J_MAX+I_MAX] = std::array::from_fn(|j| if j<J_MAX {pipe(&profile(j))} else {pipe(&guides(j-J_MAX, false))});
-    // gordon surface
-    let mut objects: Vec<Solid> = points.into_iter().chain(profiles.translate(DVec3::Y*6.0)).collect();
-    if let Ok(g) = gordon_surface(false) {
-        objects.push(g.translate(DVec3::Y*12.0));
+    let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+    let mut objects: Vec<Solid> = Vec::new();
+    for (closed, offset) in [(false, 0.0), (true, 10.0)] {
+        match gordon_surface(closed) {
+            Ok(g) => {
+                let volume = g.volume();
+                eprintln!("closed={}: volume = {}", closed, volume);
+                if 30.0 <= volume && volume <= 90.0 {
+                    eprintln!("  -> in range. great");
+                } else {
+                    eprintln!("  -> out of range");
+                }
+                objects.push(g.translate(DVec3::Y * offset));
+            }
+            Err(e) => eprintln!("closed={}: error: {}", closed, e),
+        }
     }
     let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
     cadrum::io::write_step(&objects, &mut f).unwrap();
-    let mut f = std::fs::File::create(format!("{example_name}.stl")).unwrap();
-    cadrum::io::write_stl(&objects, 0.1, &mut f).unwrap();
     let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
     cadrum::io::write_svg(&objects, DVec3::new(1.0, 1.0, 1.0), 0.5, false, &mut f_svg).unwrap();
+    eprintln!("wrote {0}.step / {0}.svg ({1} solids)", example_name, objects.len());
 }

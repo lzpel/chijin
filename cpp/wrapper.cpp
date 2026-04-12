@@ -79,6 +79,8 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_TangentialDeflection.hxx>
 #include <GeomAPI_Interpolate.hxx>
+#include <GeomAPI_PointsToBSplineSurface.hxx>
+#include <TColgp_Array2OfPnt.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Precision.hxx>
@@ -1317,9 +1319,18 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
                         occ::handle<Geom_BSplineCurve> orig_bsp =
                             occ::handle<Geom_BSplineCurve>::DownCast(c);
                         if (!orig_bsp.IsNull()) {
+                            // Periodic BSpline はそのまま保持する。ここで
+                            // SetNotPeriodic + Segment すると seam の poles が
+                            // 縮退して後段のサンプリング/サーフェスフィットで
+                            // アーティファクトを生むため。
                             bsp = occ::handle<Geom_BSplineCurve>::DownCast(orig_bsp->Copy());
-                            if (bsp->IsPeriodic()) bsp->SetNotPeriodic();
-                            bsp->Segment(f, l);
+                            const bool full_range =
+                                std::abs(f - bsp->FirstParameter()) <= Precision::PConfusion() &&
+                                std::abs(l - bsp->LastParameter())  <= Precision::PConfusion();
+                            if (!(bsp->IsPeriodic() && full_range)) {
+                                if (bsp->IsPeriodic()) bsp->SetNotPeriodic();
+                                bsp->Segment(f, l);
+                            }
                         } else {
                             // Non-BSpline (line, circle, etc.) — trim and convert.
                             occ::handle<Geom_TrimmedCurve> tc = new Geom_TrimmedCurve(c, f, l);
@@ -1365,23 +1376,80 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
 
         if (profiles.size() < 2 || guides.size() < 2) return nullptr;
 
-        // --- Build NCollection_Array1 for GeomFill_Gordon ---
-        NCollection_Array1<occ::handle<Geom_Curve>> prof_arr(1, (int)profiles.size());
-        for (int i = 0; i < (int)profiles.size(); ++i)
-            prof_arr.SetValue(i + 1, profiles[i]);
+        // --- Build surface by sampling profiles on a uniform grid and
+        //     interpolating with GeomAPI_PointsToBSplineSurface.
+        //     OCCT's GeomFill_Gordon fails on torus-like networks because its
+        //     internal GeomAPI_ExtremaCurveCurve-based intersection discovery
+        //     can't reliably find all N×M intersections. The point-grid
+        //     approach sidesteps that entirely. ---
+        const int nProfs  = (int)profiles.size();
+        const int nGuides = (int)guides.size();
 
-        NCollection_Array1<occ::handle<Geom_Curve>> guide_arr(1, (int)guides.size());
-        for (int i = 0; i < (int)guides.size(); ++i)
-            guide_arr.SetValue(i + 1, guides[i]);
+        // Profile periodicity → U-periodicity of the sample grid.
+        // Guide  periodicity → V direction closes on itself (handled by duplicating
+        //                     profile[0] at the end column so first and last
+        //                     V-isocurves coincide; later sewing merges them).
+        // (Rows = along-profile samples = U direction;
+        //  Cols = profile index        = V direction in the surface.)
+        bool profile_periodic = false;
+        {
+            auto bsp0 = occ::handle<Geom_BSplineCurve>::DownCast(profiles[0]);
+            if (!bsp0.IsNull() && bsp0->IsPeriodic()) profile_periodic = true;
+        }
+        bool guide_periodic = false;
+        {
+            auto bsp0 = occ::handle<Geom_BSplineCurve>::DownCast(guides[0]);
+            if (!bsp0.IsNull() && bsp0->IsPeriodic()) guide_periodic = true;
+        }
 
-        // --- Construct Gordon surface ---
-        GeomFill_Gordon gordon;
-        gordon.Init(prof_arr, guide_arr, Precision::Confusion());
-        gordon.Perform();
-        if (!gordon.IsDone()) return nullptr;
+        // Number of samples along each profile. Use 4× guide count for
+        // a dense grid so surface interpolation captures the shape well.
+        const int nSamples = std::max(16, nGuides * 4);
+        const int nCols    = guide_periodic ? nProfs + 1 : nProfs;
 
-        const occ::handle<Geom_BSplineSurface>& surf = gordon.Surface();
+        TColgp_Array2OfPnt grid(1, nSamples, 1, nCols);
+        for (int j = 0; j < nCols; ++j) {
+            const int profIdx = j % nProfs; // wrap for the extra closing column
+            const double f = profiles[profIdx]->FirstParameter();
+            const double l = profiles[profIdx]->LastParameter();
+            for (int i = 0; i < nSamples; ++i) {
+                double t;
+                if (profile_periodic) {
+                    // Periodic: sample [f, l) not including endpoint
+                    t = f + (l - f) * (double)i / (double)nSamples;
+                } else {
+                    // Non-periodic: include both endpoints
+                    t = (nSamples == 1) ? f : f + (l - f) * (double)i / (double)(nSamples - 1);
+                }
+                gp_Pnt p;
+                profiles[profIdx]->D0(t, p);
+                grid.SetValue(i + 1, j + 1, p);
+            }
+        }
+
+        occ::handle<Geom_BSplineSurface> surf;
+        try {
+            GeomAPI_PointsToBSplineSurface fitter;
+            fitter.Interpolate(grid, profile_periodic);
+            if (!fitter.IsDone()) return nullptr;
+            surf = fitter.Surface();
+        } catch (const Standard_Failure&) {
+            return nullptr;
+        }
         if (surf.IsNull()) return nullptr;
+
+        // If guide is periodic we sampled nProfs+1 columns with column
+        // nProfs duplicating column 0, producing a surface whose V=start and
+        // V=end iso curves coincide geometrically. Promote that to true
+        // BSpline V-periodicity so MakeFace/MakeSolid see a closed torus.
+        if (guide_periodic) {
+            try {
+                surf->SetVPeriodic();
+            } catch (const Standard_Failure&) {
+                // Fall through — leave non-periodic, shell construction will
+                // attempt to close it via sewing.
+            }
+        }
 
         // --- Build face from surface ---
         BRepBuilderAPI_MakeFace faceMaker(surf, Precision::Confusion());
@@ -1391,7 +1459,11 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
         // --- Try to build a solid via sewing + MakeSolid ---
         // For closed surfaces, the face alone forms a shell.
         // For open surfaces, we also cap the boundary with the first/last profile wires.
-        BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+        // Sewing tolerance must accommodate the gap between the interpolated
+        // Gordon-like surface boundary and the original cap wire curves, which
+        // share sample points but may differ between them due to different
+        // BSpline parameterization. Use a loose 1e-3 tolerance.
+        BRepBuilderAPI_Sewing sewing(1.0e-3);
         sewing.Add(gordonFace);
 
         // Check if we need caps: if profiles are closed wires and surface is open,
@@ -1422,16 +1494,19 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
         };
 
         size_t n_profiles = profiles.size();
-        TopoDS_Wire first_wire = build_cap_wire(profile_edges, 0);
-        TopoDS_Wire last_wire  = build_cap_wire(profile_edges, n_profiles - 1);
+        if (!guide_periodic) {
+            // V direction is open → cap first/last profile wires with planar faces.
+            TopoDS_Wire first_wire = build_cap_wire(profile_edges, 0);
+            TopoDS_Wire last_wire  = build_cap_wire(profile_edges, n_profiles - 1);
 
-        if (!first_wire.IsNull()) {
-            BRepBuilderAPI_MakeFace cap1(first_wire, /*onlyPlane=*/true);
-            if (cap1.IsDone()) sewing.Add(cap1.Face());
-        }
-        if (!last_wire.IsNull() && n_profiles > 1) {
-            BRepBuilderAPI_MakeFace cap2(last_wire, /*onlyPlane=*/true);
-            if (cap2.IsDone()) sewing.Add(cap2.Face());
+            if (!first_wire.IsNull()) {
+                BRepBuilderAPI_MakeFace cap1(first_wire, /*onlyPlane=*/true);
+                if (cap1.IsDone()) sewing.Add(cap1.Face());
+            }
+            if (!last_wire.IsNull() && n_profiles > 1) {
+                BRepBuilderAPI_MakeFace cap2(last_wire, /*onlyPlane=*/true);
+                if (cap2.IsDone()) sewing.Add(cap2.Face());
+            }
         }
 
         sewing.Perform();
@@ -1444,6 +1519,12 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
         } else if (sewn.ShapeType() == TopAbs_SOLID) {
             // Already a solid — return directly.
             return std::make_unique<TopoDS_Shape>(sewn);
+        } else if (sewn.ShapeType() == TopAbs_FACE && guide_periodic) {
+            // Closed-surface single face (full torus): wrap it in a shell manually.
+            BRep_Builder bb;
+            bb.MakeShell(shell);
+            bb.Add(shell, TopoDS::Face(sewn));
+            shell.Closed(Standard_True);
         } else {
             // Try to find a shell inside.
             TopExp_Explorer exp(sewn, TopAbs_SHELL);
@@ -1455,6 +1536,7 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
         }
 
         BRepBuilderAPI_MakeSolid solidMaker(shell);
+        std::fprintf(stderr, "[gordon] MakeSolid IsDone=%d\n", (int)solidMaker.IsDone());
         if (!solidMaker.IsDone()) return nullptr;
         TopoDS_Shape result = solidMaker.Shape();
 
