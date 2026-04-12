@@ -61,6 +61,7 @@
 #include <GeomFill_Gordon.hxx>
 #include <GeomConvert.hxx>
 #include <GeomConvert_CompCurveToBSplineCurve.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <NCollection_Array1.hxx>
@@ -1307,23 +1308,40 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
             auto flush = [&]() {
                 if (group.empty()) return;
                 if (group.size() == 1) {
-                    // Single edge → extract curve directly.
+                    // Single edge → extract curve, trimmed to edge range.
                     double f, l;
                     occ::handle<Geom_Curve> c = BRep_Tool::Curve(group[0], f, l);
-                    if (!c.IsNull()) curves.push_back(c);
+                    if (!c.IsNull()) {
+                        occ::handle<Geom_BSplineCurve> bsp;
+                        // If already a BSplineCurve, copy and segment to [f, l].
+                        occ::handle<Geom_BSplineCurve> orig_bsp =
+                            occ::handle<Geom_BSplineCurve>::DownCast(c);
+                        if (!orig_bsp.IsNull()) {
+                            bsp = occ::handle<Geom_BSplineCurve>::DownCast(orig_bsp->Copy());
+                            if (bsp->IsPeriodic()) bsp->SetNotPeriodic();
+                            bsp->Segment(f, l);
+                        } else {
+                            // Non-BSpline (line, circle, etc.) — trim and convert.
+                            occ::handle<Geom_TrimmedCurve> tc = new Geom_TrimmedCurve(c, f, l);
+                            bsp = GeomConvert::CurveToBSplineCurve(tc);
+                        }
+                        curves.push_back(bsp);
+                    }
                 } else {
                     // Multiple edges → concatenate into a single BSpline.
                     // Start with the first edge.
                     double f0, l0;
                     occ::handle<Geom_Curve> c0 = BRep_Tool::Curve(group[0], f0, l0);
                     if (c0.IsNull()) { group.clear(); return; }
-                    occ::handle<Geom_BSplineCurve> bsp0 = GeomConvert::CurveToBSplineCurve(c0);
+                    occ::handle<Geom_TrimmedCurve> tc0 = new Geom_TrimmedCurve(c0, f0, l0);
+                    occ::handle<Geom_BSplineCurve> bsp0 = GeomConvert::CurveToBSplineCurve(tc0);
                     GeomConvert_CompCurveToBSplineCurve comp(bsp0);
                     for (size_t i = 1; i < group.size(); ++i) {
                         double fi, li;
                         occ::handle<Geom_Curve> ci = BRep_Tool::Curve(group[i], fi, li);
                         if (ci.IsNull()) continue;
-                        occ::handle<Geom_BSplineCurve> bspi = GeomConvert::CurveToBSplineCurve(ci);
+                        occ::handle<Geom_TrimmedCurve> tci = new Geom_TrimmedCurve(ci, fi, li);
+                        occ::handle<Geom_BSplineCurve> bspi = GeomConvert::CurveToBSplineCurve(tci);
                         comp.Add(bspi, Precision::Confusion());
                     }
                     curves.push_back(comp.BSplineCurve());
@@ -1438,7 +1456,15 @@ std::unique_ptr<TopoDS_Shape> make_gordon(
 
         BRepBuilderAPI_MakeSolid solidMaker(shell);
         if (!solidMaker.IsDone()) return nullptr;
-        return std::make_unique<TopoDS_Shape>(solidMaker.Shape());
+        TopoDS_Shape result = solidMaker.Shape();
+
+        // Fix shell orientation if volume is negative.
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(result, props);
+        if (props.Mass() < 0.0) {
+            result.Reverse();
+        }
+        return std::make_unique<TopoDS_Shape>(result);
     } catch (const Standard_Failure&) {
         return nullptr;
     }
