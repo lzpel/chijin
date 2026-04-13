@@ -675,6 +675,17 @@ cargo build
 
 A browser-based configurator that lets you tweak dimensions of a STEP model and get an instant 3D preview and quote. cadrum powers the parametric reshaping and meshing on the backend.
 
+## Release Notes
+
+### 0.4.5
+
+- **`Solid::bspline<const M, const N>(grid, periodic)`** — new constructor: build a periodic B-spline solid from a 2D control-point grid. V (cross-section) is always periodic; U (longitudinal) is controlled by the `periodic` flag (torus when `true`, capped pipe when `false`). Implemented via `GeomAPI_PointsToBSplineSurface::Interpolate` over an augmented grid plus `SetUPeriodic`/`SetVPeriodic`.
+- **`write_svg` / `Mesh::to_svg` now take `shading: bool`** — opt-in Lambertian shading with head-on light. When `true`, triangles are tinted by `0.5 + 0.5 * (normal · dir)` so curved/organic shapes read clearly; `false` reproduces the pre-0.4.5 flat rendering. **Breaking**: existing callers must add the flag (pass `false` to preserve earlier output).
+- **`examples/08_bspline.rs`** rewritten: 2 field-period stellarator-like torus with twisted + vertically undulating elliptic cross-sections, exercising `Solid::bspline` and `shading=true`.
+- **`tests/bspline.rs`** added: verifies 180° point symmetry of the stellarator shape via XZ/YZ half-space intersection (s1 ≈ s3, s2 ≈ s4).
+- **`Error::BsplineFailed(String)`** new variant. **Breaking** for downstream code that does exhaustive `match` on `Error`.
+- OCCT 8.0.0 deprecation warnings resolved in `make_bspline_edge` and `make_bspline_solid` (`NCollection_HArray1<gp_Pnt>` via local `using` alias to bypass the `Handle()` macro comma-splitting issue; `NCollection_Array2<gp_Pnt>` directly).
+
 ## License
 
 This project is licensed under the MIT License.
