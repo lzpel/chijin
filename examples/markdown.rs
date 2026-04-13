@@ -181,71 +181,102 @@ fn first_image<'a>(outputs: &'a HashMap<PathBuf, Vec<u8>>, stem: &str) -> Option
 		.and_then(|p| p.to_str())
 }
 
-/// Parse <!--NN--> or <!--NN+--> markers and resolve matching entries.
-/// <!--NN--> は単一 example、<!--NN+--> は NN 以降の全 example にマッチする。
-fn resolve_marker<'a>(marker: &str, entries: &'a [Entry]) -> Vec<&'a Entry> {
-	let inner = marker.trim();
-	if inner.ends_with('+') {
-		// "02+" → entries whose stem starts with 02 or higher
-		let prefix = inner.trim_end_matches('+');
-		entries.iter().filter(|e| &e.stem()[..2] >= prefix).collect()
-	} else {
-		// "01" → single entry whose stem starts with this prefix
-		entries.iter().filter(|e| e.stem().starts_with(inner)).collect()
-	}
+/// Plain title without the numeric prefix, e.g. "primitives" or "write read".
+/// 数字プレフィックス除去 + lowercase + `_` → 空白。
+fn plain_title(entry: &Entry) -> String {
+	entry.stem()[3..].replace('_', " ")
 }
 
-/// Update README.md by replacing sections with <!--NN--> markers.
-/// README.md の <!--NN--> マーカーを解釈して example 内容で置換する。
-///
-/// - `## Example <!--01-->` → single example, full display (no #### title)
-///   単一 example をソースコード付きで表示（#### タイトルなし）
-/// - `## Other examples <!--02+-->` → multiple examples, compact display (#### titles)
-///   複数 example を簡潔に表示（#### タイトル付き）
+/// GitHub-style slug for linking to `#### Title` anchors, e.g. "write-read".
+fn slug(entry: &Entry) -> String {
+	plain_title(entry).replace(' ', "-")
+}
+
+/// Render the `## Usage` section: thumbnail table + install instructions.
+fn render_usage(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+	const COLS: usize = 4;
+	let mut s = String::from("## Usage\n\n");
+
+	if !entries.is_empty() {
+		let rows = entries.len().div_ceil(COLS);
+		for row in 0..rows {
+			// Title row / タイトル行
+			let mut title_cells = Vec::with_capacity(COLS);
+			let mut image_cells = Vec::with_capacity(COLS);
+			for col in 0..COLS {
+				let idx = row * COLS + col;
+				if let Some(entry) = entries.get(idx) {
+					let (title, anchor) = (plain_title(entry), slug(entry));
+					title_cells.push(format!("[{}](#{})", title, anchor));
+					let img_cell = match first_image(outputs, entry.stem()) {
+						Some(img) => format!(
+							"[<img src=\"https://lzpel.github.io/cadrum/{}\" width=\"180\" alt=\"{}\"/>](#{})",
+							img, title, anchor
+						),
+						None => String::new(),
+					};
+					image_cells.push(img_cell);
+				} else {
+					title_cells.push(String::new());
+					image_cells.push(String::new());
+				}
+			}
+			s.push_str(&format!("| {} |\n", title_cells.join(" | ")));
+			if row == 0 {
+				s.push_str("|:---:|:---:|:---:|:---:|\n");
+			}
+			s.push_str(&format!("| {} |\n", image_cells.join(" | ")));
+		}
+		s.push('\n');
+	}
+
+	s.push_str("More examples with source code are available at [lzpel.github.io/cadrum](https://lzpel.github.io/cadrum).\n\n");
+	s.push_str("Add this to your `Cargo.toml`:\n\n");
+
+	// Extract major.minor from CARGO_PKG_VERSION / バージョンから major.minor を抽出
+	let version = env!("CARGO_PKG_VERSION");
+	let mut parts = version.split('.');
+	let major = parts.next().unwrap();
+	let minor = parts.next().unwrap();
+	s.push_str(&format!("```toml\n[dependencies]\ncadrum = \"^{}.{}\"\n```\n", major, minor));
+
+	s
+}
+
+/// Render the `## Example` section: every entry listed with `#### Title`.
+fn render_example_section(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+	let mut s = String::from("## Example\n");
+	for entry in entries {
+		s.push_str(&format!("\n#### {}\n", entry.title()));
+		s.push_str(&render_example(entry, outputs));
+	}
+	s.push('\n');
+	s
+}
+
+/// Update README.md by replacing `## Usage` and `## Example` sections.
+/// README.md の `## Usage` と `## Example` 節を自動生成で置換する。
 fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) {
 	let readme = fs::read_to_string(readme_path).expect("failed to read README.md");
 
-	// Find ## headings with <!--NN--> or <!--NN+--> markers and replace their content
-	// <!--NN--> マーカー付きの ## 見出しを検索し、内容を置換する
 	let mut new_readme = String::with_capacity(readme.len());
 	let mut last_end = 0;
 
 	for (i, line) in readme.lines().enumerate() {
-		let trimmed = line.trim();
-		if !trimmed.starts_with("## ") || !trimmed.contains("<!--") { continue; }
-
-		// Extract marker between <!-- and --> / <!-- と --> の間のマーカーを抽出
-		let marker = match (trimmed.find("<!--"), trimmed.find("-->")) {
-			(Some(a), Some(b)) if a < b => trimmed[a + 4..b].trim(),
+		let content = match line.trim() {
+			"## Usage" => render_usage(entries, outputs),
+			"## Example" => render_example_section(entries, outputs),
 			_ => continue,
 		};
-		// Must contain a digit / 数字を含むこと
-		if !marker.bytes().any(|b| b.is_ascii_digit()) { continue; }
 
-		let heading = trimmed[..trimmed.find("<!--").unwrap()].trim();
-
-		// Find byte offset of this line / この行のバイトオフセットを特定
 		let line_start = readme.lines().take(i).map(|l| l.len() + 1).sum::<usize>();
 		let line_end = line_start + line.len() + 1;
-
-		// Find end of section (next ## or EOF) / この節の終端を特定
 		let section_end = readme[line_end..].find("\n## ")
 			.map(|j| line_end + j + 1)
 			.unwrap_or(readme.len());
 
 		new_readme.push_str(&readme[last_end..line_start]);
-
-		let matched = resolve_marker(marker, entries);
-		let is_single = matched.len() == 1;
-
-		new_readme.push_str(&format!("{} <!--{}-->\n", heading, marker));
-
-		for entry in &matched {
-			if !is_single {
-				new_readme.push_str(&format!("\n#### {}\n", entry.title()));
-			}
-			new_readme.push_str(&render_example(entry, outputs));
-		}
+		new_readme.push_str(&content);
 		new_readme.push('\n');
 
 		last_end = section_end;

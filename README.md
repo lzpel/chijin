@@ -12,6 +12,12 @@ Rust CAD library powered by [OpenCASCADE](https://dev.opencascade.org/) (OCCT 8.
 
 ## Usage
 
+| [primitives](#primitives) | [write read](#write-read) | [transform](#transform) | [boolean](#boolean) |
+|:---:|:---:|:---:|:---:|
+| [<img src="https://lzpel.github.io/cadrum/01_primitives.svg" width="180" alt="primitives"/>](#primitives) | [<img src="https://lzpel.github.io/cadrum/02_write_read.svg" width="180" alt="write read"/>](#write-read) | [<img src="https://lzpel.github.io/cadrum/03_transform.svg" width="180" alt="transform"/>](#transform) | [<img src="https://lzpel.github.io/cadrum/04_boolean.svg" width="180" alt="boolean"/>](#boolean) |
+| [extrude](#extrude) | [loft](#loft) | [sweep](#sweep) | [bspline](#bspline) |
+| [<img src="https://lzpel.github.io/cadrum/05_extrude.svg" width="180" alt="extrude"/>](#extrude) | [<img src="https://lzpel.github.io/cadrum/06_loft.svg" width="180" alt="loft"/>](#loft) | [<img src="https://lzpel.github.io/cadrum/07_sweep.svg" width="180" alt="sweep"/>](#sweep) | [<img src="https://lzpel.github.io/cadrum/08_bspline.svg" width="180" alt="bspline"/>](#bspline) |
+
 More examples with source code are available at [lzpel.github.io/cadrum](https://lzpel.github.io/cadrum).
 
 Add this to your `Cargo.toml`:
@@ -21,9 +27,9 @@ Add this to your `Cargo.toml`:
 cadrum = "^0.4"
 ```
 
-Primitives: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG. ([`examples/01_primitives.rs`](examples/01_primitives.rs))
+## Example
 
-## Example <!--01-->
+#### Primitives
 
 Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
 
@@ -61,7 +67,7 @@ fn main() {
     cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
 }
 
 ```
@@ -69,47 +75,6 @@ fn main() {
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/01_primitives.svg" alt="01_primitives" width="360"/>
 </p>
-
-## Requirements
-
-- A C++17 compiler (GCC, Clang, or MSVC)
-- CMake
-
-Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
-
-## Build
-
-By default, `cargo build` downloads OCCT 8.0.0-rc5 source and builds it automatically.
-The built library is placed in `target/occt/` and removed by `cargo clean`.
-
-To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:
-
-```sh
-export OCCT_ROOT=~/occt
-cargo build
-```
-
-- If `OCCT_ROOT` is set and the directory already contains OCCT libraries, they are linked directly (no rebuild).
-- If `OCCT_ROOT` is set but the directory is empty or missing, OCCT is built and installed there.
-- To force a rebuild, remove the directory: `rm -rf ~/occt`
-
-## Features
-
-- `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
-  `read_step_with_colors`, and per-face color on `Solid`.
-  Colors are preserved through boolean operations and other transformations.
-
-## Showcase
-
-[Try it now →](https://katachiform.com/out/21)
-
-<p align="center">
-  <a href="https://katachiform.com/out/21"><img src="figure/katachiform.png" alt="cadrum showcase" width="360"/></a>
-</p>
-
-A browser-based configurator that lets you tweak dimensions of a STEP model and get an instant 3D preview and quote. cadrum powers the parametric reshaping and meshing on the backend.
-
-## Other examples <!--02+-->
 
 #### Write read
 
@@ -162,7 +127,7 @@ fn main() -> Result<(), cadrum::Error> {
         .collect();
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("create file");
-    cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, 2.0), 0.5, true, &mut svg)?;
+    cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, 2.0), 0.5, true, false, &mut svg)?;
 
     let mut stl = std::fs::File::create(format!("{example_name}.stl")).expect("create file");
     cadrum::io::write_stl(&all, 0.1, &mut stl)?;
@@ -232,7 +197,7 @@ fn main() {
     cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
 }
 
 ```
@@ -284,7 +249,7 @@ fn main() -> Result<(), cadrum::Error> {
     cadrum::io::write_step(&shapes, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5, true, &mut svg).expect("failed to write SVG");
+    cadrum::io::write_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
 
     Ok(())
 }
@@ -379,7 +344,7 @@ fn main() -> Result<(), Error> {
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
+	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut f).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())
@@ -457,7 +422,7 @@ fn main() -> Result<(), Error> {
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
+	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut f).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())
@@ -598,7 +563,7 @@ fn main() {
 	cadrum::io::write_step(&all, &mut f).expect("failed to write STEP");
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
 	// Helical threads have dense hidden lines that clutter the SVG; disable them.
-	cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, -1.0), 0.5, false, &mut f_svg).expect("failed to write SVG");
+	cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, -1.0), 0.5, false, false, &mut f_svg).expect("failed to write SVG");
 	println!("wrote {example_name}.step / {example_name}.svg ({} solids)", all.len());
 }
 
@@ -660,7 +625,7 @@ fn main() {
 	let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
 	cadrum::io::write_step(&objects, &mut f).unwrap();
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
-	cadrum::io::write_svg(&objects, DVec3::new(0.05, 0.05, 1.0), 0.1, false, &mut f_svg).unwrap();
+	cadrum::io::write_svg(&objects, DVec3::new(0.05, 0.05, 1.0), 0.1, false, true, &mut f_svg).unwrap();
 	eprintln!("wrote {0}.step / {0}.svg", example_name);
 }
 
@@ -670,93 +635,45 @@ fn main() {
   <img src="https://lzpel.github.io/cadrum/08_bspline.svg" alt="08_bspline" width="360"/>
 </p>
 
-#### Chijin
 
-Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
+## Requirements
+
+- A C++17 compiler (GCC, Clang, or MSVC)
+- CMake
+
+Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
+
+## Build
+
+By default, `cargo build` downloads OCCT 8.0.0-rc5 source and builds it automatically.
+The built library is placed in `target/occt/` and removed by `cargo clean`.
+
+To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:
 
 ```sh
-cargo run --example 10_chijin
+export OCCT_ROOT=~/occt
+cargo build
 ```
 
-```rust
-//! Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
+- If `OCCT_ROOT` is set and the directory already contains OCCT libraries, they are linked directly (no rebuild).
+- If `OCCT_ROOT` is set but the directory is empty or missing, OCCT is built and installed there.
+- To force a rebuild, remove the directory: `rm -rf ~/occt`
 
-use cadrum::{Color, Edge, ProfileOrient, Solid, SolidExt};
-use glam::DVec3;
-use std::f64::consts::PI;
+## Features
 
-pub fn chijin() -> Result<Solid, cadrum::Error> {
-	// ── Body (cylinder): r=15, h=8, centered at origin (z=-4..+4) ────────
-	let cylinder = Solid::cylinder(15.0, DVec3::Z, 8.0)
-		.translate(DVec3::new(0.0, 0.0, -4.0))
-		.color("#999");
+- `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
+  `read_step_with_colors`, and per-face color on `Solid`.
+  Colors are preserved through boolean operations and other transformations.
 
-	// ── Sheet: closed polygon in the XZ plane (y=0), swept 360° around Z
-	// により面と縁を一体で生成する。Face::from_polygon + Face::revolve の置換版:
-	//   - Edge::polygon は最後の点 → 最初の点を自動補完して閉じる
-	//   - spine は Z 軸まわりの円。半径によらずプロファイルを Z 周りに純粋回転
-	//     させるだけなので任意の正の値で可
-	//   - ProfileOrient::Up(Z) でプロファイルの上方向を Z 固定 → 回転(revolve)と等価
-	let cross_section = Edge::polygon([
-		DVec3::new(0.0, 0.0, 5.0),
-		DVec3::new(15.0, 0.0, 5.0),
-		DVec3::new(17.0, 0.0, 3.0),
-		DVec3::new(15.0, 0.0, 4.0),
-		DVec3::new(0.0, 0.0, 4.0),
-	])?;
-	let spine = Edge::circle(1.0, DVec3::Z)?;
-	let sheet = Solid::sweep(&cross_section, &[spine], ProfileOrient::Up(DVec3::Z))?
-		.color("#fff");
-	let sheets = [sheet.clone().mirror(DVec3::ZERO, DVec3::Z), sheet];
+## Showcase
 
-	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
-	let block_proto = Solid::cube(2.0, 8.0, 1.0)
-		.translate(DVec3::new(-1.0, -4.0, -0.5))
-		.rotate_z(60.0_f64.to_radians())
-		.translate(DVec3::new(0.0, 15.0, 0.0));
-
-	// ── Lacing holes: thin cylinders through each block ──────────────────
-	let hole_proto = Solid::cylinder(0.7, DVec3::new(10.0, 0.0, 30.0), 30.0)
-		.translate(DVec3::new(-5.0, 16.0, -15.0));
-
-	// Distribute N blocks and holes evenly around Z, each block in a rainbow color
-	// N 個のブロックと穴を Z 軸周りに等間隔配置、各ブロックに虹色を割り当て
-	const N: usize = 20;
-	let angle = |i: usize| 2.0 * PI * (i as f64) / (N as f64);
-	let color = |i: usize| Color::from_hsv(i as f32 / N as f32, 1.0, 1.0);
-	let blocks: [Solid; N] = std::array::from_fn(|i| block_proto.clone().rotate_z(angle(i)).color(color(i)));
-	let holes: [Solid; N] = std::array::from_fn(|i| hole_proto.clone().rotate_z(angle(i)));
-	// ── Assemble with boolean operations: union, subtract, union ─────────
-	let result = [cylinder]
-		.union(&sheets)?
-		.subtract(&holes)?
-		.union(&blocks)?;
-	assert!(result.len() == 1);
-	Ok(result.into_iter().next().unwrap())
-}
-
-fn main() -> Result<(), cadrum::Error> {
-	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-	let result = [chijin()?];
-
-	let step_path = format!("{example_name}.step");
-	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
-	println!("wrote {step_path}");
-
-	let svg_path = format!("{example_name}.svg");
-	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, &mut f).expect("failed to write SVG");
-	println!("wrote {svg_path}");
-
-	Ok(())
-}
-
-```
+[Try it now →](https://katachiform.com/out/21)
 
 <p align="center">
-  <img src="https://lzpel.github.io/cadrum/10_chijin.svg" alt="10_chijin" width="360"/>
+  <a href="https://katachiform.com/out/21"><img src="figure/katachiform.png" alt="cadrum showcase" width="360"/></a>
 </p>
+
+A browser-based configurator that lets you tweak dimensions of a STEP model and get an instant 3D preview and quote. cadrum powers the parametric reshaping and meshing on the backend.
 
 ## License
 
