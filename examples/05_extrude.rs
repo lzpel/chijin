@@ -10,7 +10,7 @@ use glam::DVec3;
 
 /// Square polygon → box (simplest extrude).
 fn build_box() -> Result<Solid, Error> {
-	let profile = Edge::polygon([
+	let profile = Edge::polygon(&[
 		DVec3::new(0.0, 0.0, 0.0),
 		DVec3::new(5.0, 0.0, 0.0),
 		DVec3::new(5.0, 5.0, 0.0),
@@ -27,7 +27,7 @@ fn build_oblique_cylinder() -> Result<Solid, Error> {
 
 /// L-shaped polygon → L-beam.
 fn build_l_beam() -> Result<Solid, Error> {
-	let profile = Edge::polygon([
+	let profile = Edge::polygon(&[
 		DVec3::new(0.0, 0.0, 0.0),
 		DVec3::new(4.0, 0.0, 0.0),
 		DVec3::new(4.0, 1.0, 0.0),
@@ -41,7 +41,7 @@ fn build_l_beam() -> Result<Solid, Error> {
 /// Heart-shaped BSpline profile extruded along Z.
 fn build_heart() -> Result<Solid, Error> {
 	let profile = [Edge::bspline(
-		[
+		&[
 			DVec3::new(0.0, -4.0, 0.0),   // bottom tip
 			DVec3::new(2.0, -1.5, 0.0),
 			DVec3::new(4.0, 1.5, 0.0),

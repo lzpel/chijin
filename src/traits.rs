@@ -308,7 +308,7 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 	/// last point is automatically connected back to the first.
 	// 非平面の点列も受理する (検証しない) — `Solid::sweep` で face 化に失敗
 	// したとき `Error::SweepFailed` で気付ける想定なので、入力側での事前検査は省略。
-	fn polygon(points: impl IntoIterator<Item = DVec3>) -> Result<Vec<Self>, Error>;
+	fn polygon<'a>(points: impl IntoIterator<Item = &'a DVec3>) -> Result<Vec<Self>, Error>;
 
 	/// Closed circle of radius `r` centered at the world origin, lying in
 	/// the plane normal to `axis`. Returns a single edge (one Geom_Circle
@@ -353,7 +353,7 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 	/// - `BSplineEnd::Periodic` is requested but the first and last points
 	///   coincide (periodicity is encoded in the basis; do not duplicate)
 	/// - OCCT's interpolation fails (degenerate point distribution, etc.)
-	fn bspline(points: impl IntoIterator<Item = DVec3>, end: BSplineEnd) -> Result<Self, Error>;
+	fn bspline<'a>(points: impl IntoIterator<Item = &'a DVec3>, end: BSplineEnd) -> Result<Self, Error>;
 }
 
 /// Backend-independent solid trait (pub(crate) — not exposed to users).

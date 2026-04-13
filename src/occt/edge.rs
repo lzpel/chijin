@@ -62,7 +62,7 @@ impl EdgeStruct for Edge {
 		Edge::try_from_ffi(inner, format!("helix: degenerate params (radius={radius}, pitch={pitch}, height={height}, axis={axis:?}, x_ref={x_ref:?})"))
 	}
 
-	fn polygon(points: impl IntoIterator<Item = DVec3>) -> Result<Vec<Self>, Error> {
+	fn polygon<'a>(points: impl IntoIterator<Item = &'a DVec3>) -> Result<Vec<Self>, Error> {
 		let coords: Vec<f64> = points.into_iter().flat_map(|p| [p.x, p.y, p.z]).collect();
 		let cxx_vec = ffi::make_polygon_edges(&coords);
 		// C++ 側は失敗時に空ベクタを返す (null ではない)。点数不足や
@@ -103,8 +103,8 @@ impl EdgeStruct for Edge {
 		Edge::try_from_ffi(inner, format!("arc_3pts: collinear or degenerate points (start={start:?}, mid={mid:?}, end={end:?})"))
 	}
 
-	fn bspline(points: impl IntoIterator<Item = DVec3>, end: BSplineEnd) -> Result<Self, Error> {
-		let pts: Vec<DVec3> = points.into_iter().collect();
+	fn bspline<'a>(points: impl IntoIterator<Item = &'a DVec3>, end: BSplineEnd) -> Result<Self, Error> {
+		let pts: Vec<DVec3> = points.into_iter().copied().collect();
 
 		// 最低点数チェック: Periodic は cubic 周期 spline の構造上 ≥ 3、その他は ≥ 2。
 		let min_required = match end {

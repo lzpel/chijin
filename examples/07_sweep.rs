@@ -33,7 +33,7 @@ fn build_m2_screw() -> Result<Vec<Solid>, Error> {
 	let helix = Edge::helix(r - r_delta, h_pitch, h_thread, DVec3::Z, DVec3::X)?;
 
 	// Closed triangular profile in local coords (x: radial, y: along helix tangent).
-	let profile = Edge::polygon([DVec3::new(0.0, -h_pitch / 2.0, 0.0), DVec3::new(r_delta, 0.0, 0.0), DVec3::new(0.0, h_pitch / 2.0, 0.0)])?;
+	let profile = Edge::polygon(&[DVec3::new(0.0, -h_pitch / 2.0, 0.0), DVec3::new(r_delta, 0.0, 0.0), DVec3::new(0.0, h_pitch / 2.0, 0.0)])?;
 
 	// Align profile +Z with the helix start tangent, then translate to the start point.
 	let profile = profile.align_z(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
