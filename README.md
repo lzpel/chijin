@@ -677,10 +677,15 @@ A browser-based configurator that lets you tweak dimensions of a STEP model and 
 
 ## Release Notes
 
-### 0.4.5
+### 0.5.1
+
+> 0.4.5 was published briefly but its version number was lower than the
+> already-published 0.5.0 (OCCT 7.9.3, older feature set), so `cargo add
+> cadrum` would silently pick up 0.5.0 instead of the newer 0.4.5 code.
+> Re-released as 0.5.1 with identical contents. Prefer 0.5.1 over 0.4.5.
 
 - **`Solid::bspline<const M, const N>(grid, periodic)`** — new constructor: build a periodic B-spline solid from a 2D control-point grid. V (cross-section) is always periodic; U (longitudinal) is controlled by the `periodic` flag (torus when `true`, capped pipe when `false`). Implemented via `GeomAPI_PointsToBSplineSurface::Interpolate` over an augmented grid plus `SetUPeriodic`/`SetVPeriodic`.
-- **`write_svg` / `Mesh::to_svg` now take `shading: bool`** — opt-in Lambertian shading with head-on light. When `true`, triangles are tinted by `0.5 + 0.5 * (normal · dir)` so curved/organic shapes read clearly; `false` reproduces the pre-0.4.5 flat rendering. **Breaking**: existing callers must add the flag (pass `false` to preserve earlier output).
+- **`write_svg` / `Mesh::to_svg` now take `shading: bool`** — opt-in Lambertian shading with head-on light. When `true`, triangles are tinted by `0.5 + 0.5 * (normal · dir)` so curved/organic shapes read clearly; `false` reproduces the pre-0.5.1 flat rendering. **Breaking vs 0.5.0**: existing callers must add the flag (pass `false` to preserve earlier output).
 - **`examples/08_bspline.rs`** rewritten: 2 field-period stellarator-like torus with twisted + vertically undulating elliptic cross-sections, exercising `Solid::bspline` and `shading=true`.
 - **`tests/bspline.rs`** added: verifies 180° point symmetry of the stellarator shape via XZ/YZ half-space intersection (s1 ≈ s3, s2 ≈ s4).
 - **`Error::BsplineFailed(String)`** new variant. **Breaking** for downstream code that does exhaustive `match` on `Error`.
