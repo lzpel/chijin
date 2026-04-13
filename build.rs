@@ -352,9 +352,15 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 			// and rejects any non-ASCII byte in narrow string literals. OCCT's
 			// .rc files are cp1252-encoded (the © character arrives as a single
 			// 0xA9 byte, per the error's "codepoint (169)"), so tell llvm-rc to
-			// interpret narrow strings as cp1252. This is a no-op on Unix RC
-			// toolchains (there is no RC step on non-Windows targets).
-			.define("CMAKE_RC_FLAGS", "-C 1252")
+			// interpret narrow strings as cp1252.
+			//
+			// We pass this via CMAKE_RC_FLAGS_INIT, NOT CMAKE_RC_FLAGS, because
+			// cargo-xwin's override.cmake contains this line:
+			//   string(REPLACE "/D" "-D" CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS_INIT}")
+			// which unconditionally overwrites whatever we set in CMAKE_RC_FLAGS.
+			// CMAKE_RC_FLAGS_INIT survives the overwrite and flows through the
+			// REPLACE into CMAKE_RC_FLAGS. Harmless on Unix targets (no RC step).
+			.define("CMAKE_RC_FLAGS_INIT", "-C 1252")
 			.build();
 
 		eprintln!("OCCT built at: {}", built.display());
