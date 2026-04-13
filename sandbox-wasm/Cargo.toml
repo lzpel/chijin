@@ -1,11 +1,11 @@
+[workspace]
+members = [".", "dummy_cadrum"]
+resolver = "2"
+
 [package]
-name = "wasm-experiment"
+name = "sandbox-wasm"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
-wasm-bindgen = "*"
-cadrum = { path = ".." }
+dummy_cadrum = { path = "dummy_cadrum" }
