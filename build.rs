@@ -385,7 +385,8 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	occt_root.join("lib")
 }
 
-/// Patch OCCT source files to remove unwanted link dependencies:
+/// Patch OCCT source files to work around unwanted link dependencies and
+/// platform-specific toolchain quirks:
 ///
 /// 1. TKService (Visualization) — even with BUILD_MODULE_Visualization=OFF:
 ///    - XCAFDoc_VisMaterial.cxx: stub bodies that use Graphic3d_* types.
@@ -398,6 +399,15 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 ///    - OSD_signal.cxx: stub bodies (MessageBoxA / MessageBeep on MSVC).
 ///    - OSD_FileNode.cxx: stub bodies (SetFileSecurityW + OSD_WNT helpers).
 ///    - OSD_Process.cxx: stub bodies (OpenProcessToken, GetUserNameW, EqualSid).
+///
+/// 3. glibc-only headers (musl target):
+///    - Standard_StackTrace.cxx: stub bodies (backtrace, backtrace_symbols)
+///      and comment out `<execinfo.h>` which musl does not ship.
+///
+/// 4. llvm-rc narrow-string ASCII restriction (cargo-xwin MSVC target):
+///    - Every `.rc` / `.rc.in` file under the source tree: replace `©` (0xA9)
+///      with `(c)` so llvm-rc does not reject the non-ASCII byte in
+///      VERSIONINFO narrow string literals.
 fn patch_occt_sources(source_dir: &Path) {
 	// OCCT 8.0.0 moved sources under src/<Module>/<Toolkit>/<Package>/ hierarchy.
 	// Try the new layout first, fall back to the legacy flat layout (≤7.9.x).
@@ -450,6 +460,83 @@ fn patch_occt_sources(source_dir: &Path) {
 	// OSD_Process.cxx: OpenProcessToken, GetUserNameW, EqualSid (advapi32).
 	if let Some(path) = find_osd("OSD_Process.cxx") {
 		stub_out_methods(&path, true);
+	}
+
+	// --- musl: execinfo.h is a glibc extension, not present in musl libc. ---
+	// Standard_StackTrace.cxx uses backtrace() / backtrace_symbols() for error
+	// reporting. Stub the method bodies so the calls disappear, then comment
+	// out the <execinfo.h> include so the preprocessor no longer tries to find
+	// the missing header.
+	let stack_trace = [
+		"src/FoundationClasses/TKernel/Standard/Standard_StackTrace.cxx",
+		"src/Standard/Standard_StackTrace.cxx",
+	];
+	if let Some(path) = find(&stack_trace) {
+		stub_out_methods(&path, true);
+		comment_out_include(&path, "execinfo.h");
+	}
+
+	// --- llvm-rc (cargo-xwin): narrow string literals must be pure ASCII. ---
+	// OCCT's TKernel.rc embeds the copyright symbol © (0xA9) in a VERSIONINFO
+	// narrow string. MSVC's rc.exe accepts this, but llvm-rc — which cargo-xwin
+	// uses for MSVC cross-builds — rejects any non-ASCII byte in a non-Unicode
+	// string. Walk the source tree and replace © with (c) in every .rc / .rc.in
+	// file so all RC toolchains accept the result.
+	walk_and_sanitize_rc(source_dir);
+}
+
+/// Comment out a `#include <name>` directive in `path`. Used to sever the
+/// dependency on platform-specific headers (e.g. `execinfo.h` on musl) after
+/// the referring method bodies have been stubbed out.
+fn comment_out_include(path: &Path, header: &str) {
+	if !path.exists() {
+		return;
+	}
+	let content = std::fs::read_to_string(path).expect("Failed to read file for include patching");
+	let needle = format!("#include <{}>", header);
+	if !content.contains(&needle) {
+		return;
+	}
+	let replacement = format!("// {} (patched out by cadrum build.rs)", needle);
+	let patched = content.replace(&needle, &replacement);
+	std::fs::write(path, patched).expect("Failed to write patched include file");
+	eprintln!("Patched out <{}> in {}", header, path.file_name().unwrap().to_string_lossy());
+}
+
+/// Replace the copyright symbol © (U+00A9) with `(c)` in every `.rc` / `.rc.in`
+/// file under `root`. llvm-rc (used by cargo-xwin for MSVC cross-builds)
+/// rejects non-ASCII bytes in narrow RC string literals. Replacing the single
+/// offending character keeps the file pure ASCII, which every RC toolchain
+/// accepts without any codepage or encoding gymnastics.
+fn walk_and_sanitize_rc(root: &Path) {
+	let Ok(entries) = std::fs::read_dir(root) else { return };
+	for entry in entries.flatten() {
+		let path = entry.path();
+		if path.is_dir() {
+			walk_and_sanitize_rc(&path);
+			continue;
+		}
+		let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+		if !(name.ends_with(".rc") || name.ends_with(".rc.in")) {
+			continue;
+		}
+		let Ok(bytes) = std::fs::read(&path) else { continue };
+		// Handle both UTF-8 (© = 0xC2 0xA9) and Latin1/ANSI (© = 0xA9) encodings.
+		let patched: Vec<u8> = if let Ok(s) = std::str::from_utf8(&bytes) {
+			let replaced = s.replace('\u{A9}', "(c)");
+			if replaced == s { continue; }
+			replaced.into_bytes()
+		} else {
+			if !bytes.contains(&0xA9) { continue; }
+			let mut out = Vec::with_capacity(bytes.len());
+			for &b in &bytes {
+				if b == 0xA9 { out.extend_from_slice(b"(c)"); } else { out.push(b); }
+			}
+			out
+		};
+		if std::fs::write(&path, patched).is_ok() {
+			eprintln!("Sanitized © → (c) in {}", path.display());
+		}
 	}
 }
 
