@@ -12,13 +12,6 @@ const OCCT_VERSION: &str = "V8_0_0_rc5";
 /// Bump this when rebuilding prebuilts for the same OCCT version.
 const OCCT_PREBUILT_TAG: &str = "occt-v800rc5";
 
-/// Target triples for which prebuilt tarballs are published.
-const PREBUILT_TARGETS: &[&str] = &[
-	"x86_64-unknown-linux-musl",
-	"x86_64-pc-windows-gnu",
-	"x86_64-pc-windows-msvc",
-];
-
 /// `V8_0_0_rc5` → `v800rc5`. Shared rule: lowercase and drop underscores.
 fn slug(version: &str) -> String {
 	version.to_ascii_lowercase().replace('_', "")
@@ -26,6 +19,7 @@ fn slug(version: &str) -> String {
 
 fn main() {
 	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-env-changed=CARGO_TARGET_DIR");
 	println!("cargo:rerun-if-env-changed=CADRUM_PREBUILT_URL");
 	println!("cargo:rerun-if-changed=src/traits.rs");
 	println!("cargo:rerun-if-changed=build_delegation.rs");
@@ -45,58 +39,59 @@ fn main() {
 	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
 }
 
-/// Resolve (include_dir, lib_dir) by priority:
-///   1. explicit `OCCT_ROOT` env var (with libs already present → link-only)
-///   2. `prebuilt` feature + supported target → download & extract tarball
-///   3. fall back to building OCCT from source into `target/occt`
+/// Resolve (include_dir, lib_dir) for OCCT.
+///
+/// Model: `OCCT_ROOT` is the single cache location. If unset, it defaults to
+/// `target/cadrum-occt-<slug>-<target>/`. The `source-build` feature only
+/// changes how a cache miss is populated; it does nothing on a cache hit.
+///
+///   1. Compute `effective_root = OCCT_ROOT or default`
+///   2. If `effective_root` already has both lib and include → use it
+///   3. Otherwise, populate it:
+///        - `source-build` feature ON  → build from upstream OCCT sources
+///        - `source-build` feature OFF → download prebuilt tarball (panic on failure)
 fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, PathBuf) {
-	// Priority 1: explicit OCCT_ROOT
-	if let Ok(explicit) = env::var("OCCT_ROOT") {
-		let root = PathBuf::from(explicit);
-		let lib_dir = find_occt_lib_dir(&root);
-		println!("cargo:rerun-if-changed={}", lib_dir.display());
-		if lib_dir.exists() {
-			return (find_occt_include_dir(&root), lib_dir);
-		}
-		// OCCT_ROOT set but empty: build into it (legacy behaviour)
-		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", root.display());
-		return build_occt_from_source(out_dir, &root);
+	// Default cache dir lives alongside other cargo build artifacts. Honor
+	// `CARGO_TARGET_DIR` if set so that isolated-per-container builds (docker)
+	// don't all collide on the same OCCT install path.
+	let target_dir: PathBuf = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| manifest_dir.join("target"));
+	let default_root = target_dir.join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
+	let effective_root: PathBuf = env::var("OCCT_ROOT").map(PathBuf::from).unwrap_or_else(|_| default_root.clone());
+
+	println!("cargo:rerun-if-changed={}", effective_root.display());
+
+	let lib_dir = find_occt_lib_dir(&effective_root);
+	let include_dir = find_occt_include_dir(&effective_root);
+	if lib_dir.exists() && include_dir.exists() {
+		return (include_dir, lib_dir);
 	}
 
-	// Priority 2: prebuilt feature + supported target
-	if cfg!(feature = "prebuilt") && PREBUILT_TARGETS.contains(&target) {
-		let dest = manifest_dir.join("target").join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
-		if let Some(result) = try_prebuilt(&dest, target) {
-			return result;
-		}
-		eprintln!("cargo:warning=prebuilt OCCT download failed, falling back to source build");
+	// Cache miss: populate effective_root.
+	if cfg!(feature = "source-build") {
+		eprintln!("cargo:warning=OCCT cache miss at {} — building from source (this may take 10-30 minutes)", effective_root.display());
+		return build_occt_from_source(out_dir, &effective_root);
 	}
 
-	// Priority 3: source build into target/occt (default path when OCCT_ROOT unset)
-	let fallback_root = manifest_dir.join("target").join("occt");
-	let lib_dir = find_occt_lib_dir(&fallback_root);
-	println!("cargo:rerun-if-changed={}", lib_dir.display());
-	if lib_dir.exists() {
-		(find_occt_include_dir(&fallback_root), lib_dir)
-	} else {
-		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", fallback_root.display());
-		build_occt_from_source(out_dir, &fallback_root)
+	match try_prebuilt(out_dir, &effective_root, target) {
+		Some(pair) => pair,
+		None => panic!(
+			"\nFailed to download prebuilt OCCT for target `{}`.\n\
+			 A prebuilt tarball for this target may not be published yet.\n\
+			 See README for the list of supported prebuilt targets, or enable\n\
+			 the `source-build` feature to build OCCT from upstream sources:\n\
+			 \n    cargo build --features source-build\n",
+			target
+		),
 	}
 }
 
 /// Attempt to download and extract a prebuilt OCCT tarball for `target` into `dest`.
-/// Returns None on any failure so the caller can fall back to a source build.
-fn try_prebuilt(dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
-	let lib_dir = find_occt_lib_dir(dest);
-	if lib_dir.exists() {
-		return Some((find_occt_include_dir(dest), lib_dir));
-	}
-
+/// Returns None on any failure; the caller decides whether to panic or fall back.
+fn try_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
 	let slug_ver = slug(OCCT_VERSION);
-	let tarball_name = format!("cadrum-occt-{}-{}.tar.gz", slug_ver, target);
-	let url = env::var("CADRUM_PREBUILT_URL").unwrap_or_else(|_| {
-		format!("https://github.com/lzpel/cadrum/releases/download/{}/{}", OCCT_PREBUILT_TAG, tarball_name)
-	});
+	let top_name = format!("cadrum-occt-{}-{}", slug_ver, target);
+	let tarball_name = format!("{}.tar.gz", top_name);
+	let url = env::var("CADRUM_PREBUILT_URL").unwrap_or_else(|_| format!("https://github.com/lzpel/cadrum/releases/download/{}/{}", OCCT_PREBUILT_TAG, tarball_name));
 
 	eprintln!("cargo:warning=Downloading prebuilt OCCT from {}", url);
 
@@ -108,15 +103,32 @@ fn try_prebuilt(dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
 		}
 	};
 
-	// Extract into the parent of `dest` — the tarball's top-level directory
-	// is `cadrum-occt-<slug>-<triple>/`, so entries land at `<parent>/<dirname>/...`
-	let parent = dest.parent().expect("dest must have a parent");
-	std::fs::create_dir_all(parent).ok()?;
+	// Extract into a staging directory inside OUT_DIR, then move the tarball's
+	// top-level `<top_name>/` into `dest`. Staging decouples the tarball's
+	// layout from the (possibly user-chosen) `OCCT_ROOT` path.
+	let staging = out_dir.join("occt-prebuilt-staging");
+	let _ = std::fs::remove_dir_all(&staging);
+	std::fs::create_dir_all(&staging).ok()?;
 
 	let gz = libflate::gzip::Decoder::new(&bytes[..]).map_err(|e| eprintln!("cargo:warning=gzip decode failed: {}", e)).ok()?;
 	let mut archive = tar::Archive::new(gz);
-	if let Err(e) = archive.unpack(parent) {
+	if let Err(e) = archive.unpack(&staging) {
 		eprintln!("cargo:warning=tar unpack failed: {}", e);
+		return None;
+	}
+
+	let extracted = staging.join(&top_name);
+	if !extracted.is_dir() {
+		eprintln!("cargo:warning=prebuilt tarball missing expected top-level dir `{}`", top_name);
+		return None;
+	}
+
+	if let Some(parent) = dest.parent() {
+		std::fs::create_dir_all(parent).ok()?;
+	}
+	let _ = std::fs::remove_dir_all(dest);
+	if let Err(e) = std::fs::rename(&extracted, dest) {
+		eprintln!("cargo:warning=failed to move extracted OCCT into {}: {}", dest.display(), e);
 		return None;
 	}
 
