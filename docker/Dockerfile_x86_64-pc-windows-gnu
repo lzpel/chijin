@@ -8,9 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add x86_64-pc-windows-gnu
 
 ENV TARGET=x86_64-pc-windows-gnu
-ENV CC=x86_64-w64-mingw32-gcc
-ENV CXX=x86_64-w64-mingw32-g++
-ENV AR=x86_64-w64-mingw32-ar
+
+# Target-prefixed env vars only — DO NOT set catch-all CC/CXX/AR, otherwise
+# build dependencies (compiled for the host) pick up the cross toolchain
+# and produce object files that cannot be linked into the host rlib.
+ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
 ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
 COPY entrypoint.sh /entrypoint.sh

@@ -10,10 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-bui
 RUN rustup target add x86_64-pc-windows-msvc
 
 ENV TARGET=x86_64-pc-windows-msvc
-ENV CC=clang-cl
-ENV CXX=clang-cl
-ENV AR=llvm-lib
-ENV CMAKE_GENERATOR=Ninja
+
+# Target-prefixed env vars only — DO NOT set catch-all CC/CXX/AR, otherwise
+# build dependencies (compiled for the host) pick up MSVC tools like llvm-lib
+# and fail with "cq: no such file or directory" because llvm-lib does not
+# accept GNU ar argument syntax.
+ENV CC_x86_64_pc_windows_msvc=clang-cl
+ENV CXX_x86_64_pc_windows_msvc=clang-cl
+ENV AR_x86_64_pc_windows_msvc=llvm-lib
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
