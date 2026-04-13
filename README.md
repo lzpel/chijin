@@ -645,19 +645,37 @@ Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
 
 ## Build
 
-By default, `cargo build` downloads OCCT 8.0.0-rc5 source and builds it automatically.
-The built library is placed in `target/occt/` and removed by `cargo clean`.
+By default, `cargo build` downloads a **prebuilt OCCT 8.0.0-rc5 binary** from GitHub Releases
+matching the current target triple, and extracts it to `target/cadrum-occt-v800rc5-<triple>/`.
+First-time builds finish in seconds instead of the 10–30 minutes a source build would take.
 
-To cache the OCCT build across `cargo clean`, set `OCCT_ROOT` to a persistent directory:
+Prebuilts are published for these targets:
+- `x86_64-unknown-linux-musl`
+- `x86_64-pc-windows-gnu`
+- `x86_64-pc-windows-msvc`
+
+Resolution order (build.rs picks the first option that applies):
+
+1. **`OCCT_ROOT` env var** — if set and the directory already contains OCCT libs, link directly.
+   If set but empty, OCCT is built from source into that directory.
+2. **`prebuilt` cargo feature (default ON)** — for supported targets, download the matching
+   tarball from GitHub Release and extract under `target/`. Falls through to source build on
+   network failure or 404.
+3. **Source build** — download OCCT source from upstream and build with CMake into
+   `target/occt/` (10–30 minutes).
+
+To force the source build path (e.g. unsupported target, or you want to patch OCCT locally):
+
+```sh
+cargo build --no-default-features --features color
+```
+
+To pin OCCT to a persistent location across `cargo clean`:
 
 ```sh
 export OCCT_ROOT=~/occt
 cargo build
 ```
-
-- If `OCCT_ROOT` is set and the directory already contains OCCT libraries, they are linked directly (no rebuild).
-- If `OCCT_ROOT` is set but the directory is empty or missing, OCCT is built and installed there.
-- To force a rebuild, remove the directory: `rm -rf ~/occt`
 
 ## Features
 

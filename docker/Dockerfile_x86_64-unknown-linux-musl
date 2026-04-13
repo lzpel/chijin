@@ -1,0 +1,15 @@
+# Prebuild OCCT for x86_64-unknown-linux-musl.
+# Base image ships musl-gcc/musl-g++, cmake, rustup and the musl target.
+FROM clux/muslrust:stable
+
+RUN apt-get update && apt-get install -y --no-install-recommends cmake && rm -rf /var/lib/apt/lists/*
+
+ENV TARGET=x86_64-unknown-linux-musl
+ENV CC=musl-gcc
+ENV CXX=g++
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /src
+ENTRYPOINT ["/entrypoint.sh"]

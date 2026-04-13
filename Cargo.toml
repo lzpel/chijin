@@ -11,11 +11,13 @@ categories = ["graphics", "science"]
 exclude = ["/figure", "/notes", "/steps", "/sandbox*", "/.github"]
 
 [features]
-default = ["color"]
+default = ["color", "prebuilt"]
 # Enable TShapeId, Rgb, and colormap on Shape for face-level color tracking
 color = []
 # Pure Rust CAD backend (no OCCT dependency)
 pure = []
+# Download prebuilt OCCT tarball from GitHub Release instead of building from source
+prebuilt = []
 
 [dependencies]
 cxx = "1"

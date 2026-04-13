@@ -1,0 +1,22 @@
+# Prebuild OCCT for x86_64-pc-windows-msvc via cargo-xwin.
+# The base image bundles xwin (MSVC SDK downloader), clang-cl, lld-link,
+# wine and cargo-xwin. This is the highest-risk target because build.rs
+# drives OCCT via the `cmake` crate, which needs a clang-cl + Ninja
+# toolchain for cross-MSVC to succeed.
+FROM messense/cargo-xwin:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-build && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-pc-windows-msvc
+
+ENV TARGET=x86_64-pc-windows-msvc
+ENV CC=clang-cl
+ENV CXX=clang-cl
+ENV AR=llvm-lib
+ENV CMAKE_GENERATOR=Ninja
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /src
+ENTRYPOINT ["/entrypoint.sh"]

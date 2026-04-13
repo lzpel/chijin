@@ -4,8 +4,29 @@ use std::env;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// OCCT release used by cadrum. Update this tag when bumping OCCT versions;
+/// `slug()` derives the lowercase/underscore-stripped form used in filenames.
+const OCCT_VERSION: &str = "V8_0_0_rc5";
+
+/// GitHub Release tag under `lzpel/cadrum` that hosts the prebuilt tarballs.
+/// Bump this when rebuilding prebuilts for the same OCCT version.
+const OCCT_PREBUILT_TAG: &str = "occt-v800rc5";
+
+/// Target triples for which prebuilt tarballs are published.
+const PREBUILT_TARGETS: &[&str] = &[
+	"x86_64-unknown-linux-musl",
+	"x86_64-pc-windows-gnu",
+	"x86_64-pc-windows-msvc",
+];
+
+/// `V8_0_0_rc5` → `v800rc5`. Shared rule: lowercase and drop underscores.
+fn slug(version: &str) -> String {
+	version.to_ascii_lowercase().replace('_', "")
+}
+
 fn main() {
 	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-env-changed=CADRUM_PREBUILT_URL");
 	println!("cargo:rerun-if-changed=src/traits.rs");
 	println!("cargo:rerun-if-changed=build_delegation.rs");
 
@@ -17,21 +38,113 @@ fn main() {
 	build_delegation::build_delegation(include_str!("src/traits.rs"), &out_dir);
 
 	let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+	let target = env::var("TARGET").unwrap();
 
-	let occt_root = env::var("OCCT_ROOT").map(PathBuf::from).unwrap_or_else(|_| manifest_dir.join("target").join("occt"));
-
-	let lib_dir = find_occt_lib_dir(&occt_root);
-	println!("cargo:rerun-if-changed={}", lib_dir.display());
-	let (occt_include, occt_lib_dir) = if lib_dir.exists() {
-		// Libraries found — link only, no rebuild
-		(find_occt_include_dir(&occt_root), lib_dir)
-	} else {
-		// No libraries found — build OCCT from source (this may take 10-30 minutes)
-		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", occt_root.display());
-		build_occt_from_source(&out_dir, &occt_root)
-	};
+	let (occt_include, occt_lib_dir) = resolve_occt(&manifest_dir, &out_dir, &target);
 
 	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
+}
+
+/// Resolve (include_dir, lib_dir) by priority:
+///   1. explicit `OCCT_ROOT` env var (with libs already present → link-only)
+///   2. `prebuilt` feature + supported target → download & extract tarball
+///   3. fall back to building OCCT from source into `target/occt`
+fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, PathBuf) {
+	// Priority 1: explicit OCCT_ROOT
+	if let Ok(explicit) = env::var("OCCT_ROOT") {
+		let root = PathBuf::from(explicit);
+		let lib_dir = find_occt_lib_dir(&root);
+		println!("cargo:rerun-if-changed={}", lib_dir.display());
+		if lib_dir.exists() {
+			return (find_occt_include_dir(&root), lib_dir);
+		}
+		// OCCT_ROOT set but empty: build into it (legacy behaviour)
+		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", root.display());
+		return build_occt_from_source(out_dir, &root);
+	}
+
+	// Priority 2: prebuilt feature + supported target
+	if cfg!(feature = "prebuilt") && PREBUILT_TARGETS.contains(&target) {
+		let dest = manifest_dir.join("target").join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
+		if let Some(result) = try_prebuilt(&dest, target) {
+			return result;
+		}
+		eprintln!("cargo:warning=prebuilt OCCT download failed, falling back to source build");
+	}
+
+	// Priority 3: source build into target/occt (default path when OCCT_ROOT unset)
+	let fallback_root = manifest_dir.join("target").join("occt");
+	let lib_dir = find_occt_lib_dir(&fallback_root);
+	println!("cargo:rerun-if-changed={}", lib_dir.display());
+	if lib_dir.exists() {
+		(find_occt_include_dir(&fallback_root), lib_dir)
+	} else {
+		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", fallback_root.display());
+		build_occt_from_source(out_dir, &fallback_root)
+	}
+}
+
+/// Attempt to download and extract a prebuilt OCCT tarball for `target` into `dest`.
+/// Returns None on any failure so the caller can fall back to a source build.
+fn try_prebuilt(dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
+	let lib_dir = find_occt_lib_dir(dest);
+	if lib_dir.exists() {
+		return Some((find_occt_include_dir(dest), lib_dir));
+	}
+
+	let slug_ver = slug(OCCT_VERSION);
+	let tarball_name = format!("cadrum-occt-{}-{}.tar.gz", slug_ver, target);
+	let url = env::var("CADRUM_PREBUILT_URL").unwrap_or_else(|_| {
+		format!("https://github.com/lzpel/cadrum/releases/download/{}/{}", OCCT_PREBUILT_TAG, tarball_name)
+	});
+
+	eprintln!("cargo:warning=Downloading prebuilt OCCT from {}", url);
+
+	let bytes = match fetch_bytes(&url) {
+		Ok(b) => b,
+		Err(e) => {
+			eprintln!("cargo:warning=prebuilt fetch failed: {}", e);
+			return None;
+		}
+	};
+
+	// Extract into the parent of `dest` — the tarball's top-level directory
+	// is `cadrum-occt-<slug>-<triple>/`, so entries land at `<parent>/<dirname>/...`
+	let parent = dest.parent().expect("dest must have a parent");
+	std::fs::create_dir_all(parent).ok()?;
+
+	let gz = libflate::gzip::Decoder::new(&bytes[..]).map_err(|e| eprintln!("cargo:warning=gzip decode failed: {}", e)).ok()?;
+	let mut archive = tar::Archive::new(gz);
+	if let Err(e) = archive.unpack(parent) {
+		eprintln!("cargo:warning=tar unpack failed: {}", e);
+		return None;
+	}
+
+	let lib_dir = find_occt_lib_dir(dest);
+	if !lib_dir.exists() {
+		eprintln!("cargo:warning=prebuilt extraction did not produce expected lib dir at {}", lib_dir.display());
+		return None;
+	}
+	Some((find_occt_include_dir(dest), lib_dir))
+}
+
+/// Fetch a URL into a byte vector. Supports `http(s)://` via ureq and
+/// `file://` via the local filesystem (used by CI smoke tests).
+fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
+	if let Some(rest) = url.strip_prefix("file://") {
+		// Handle both POSIX (`file:///tmp/x`) and Windows (`file:///C:/x`) forms.
+		let path: PathBuf = if rest.len() >= 3 && rest.starts_with('/') && rest.as_bytes()[2] == b':' {
+			PathBuf::from(&rest[1..])
+		} else {
+			PathBuf::from(rest)
+		};
+		std::fs::read(&path).map_err(|e| format!("read {}: {}", path.display(), e))
+	} else {
+		let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
+		let mut body = Vec::new();
+		resp.into_body().into_reader().read_to_end(&mut body).map_err(|e| e.to_string())?;
+		Ok(body)
+	}
 }
 
 fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
@@ -123,9 +236,9 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	println!("cargo:rerun-if-changed=cpp/wrapper.cpp");
 }
 
-/// Download OCCT 8.0.0-rc5 source, patch, and build with CMake into `install_prefix`.
+/// Download OCCT source, patch, and build with CMake into `install_prefix`.
 fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, PathBuf) {
-	let occt_version = "V8_0_0_rc5";
+	let occt_version = OCCT_VERSION;
 	let occt_url = format!("https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz", occt_version);
 
 	let download_dir = out_dir.join("occt-source");

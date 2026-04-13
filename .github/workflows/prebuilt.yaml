@@ -1,0 +1,55 @@
+name: prebuilt
+
+on:
+  push:
+    branches: [prebuilt]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - x86_64-pc-windows-gnu
+          - x86_64-pc-windows-msvc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker build
+        run: |
+          docker build \
+            -f docker/Dockerfile_${{ matrix.target }} \
+            -t cadrum-prebuild:${{ matrix.target }} \
+            docker/
+
+      - name: docker run
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$PWD/out:/out" \
+            cadrum-prebuild:${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadrum-occt-${{ matrix.target }}
+          path: out/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: occt-v800rc5
+          name: OCCT prebuilt v800rc5
+          files: dist/*.tar.gz

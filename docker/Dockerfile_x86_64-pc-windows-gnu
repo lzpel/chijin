@@ -1,0 +1,20 @@
+# Prebuild OCCT for x86_64-pc-windows-gnu using the MinGW-w64 cross toolchain.
+FROM rust:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        mingw-w64 cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-pc-windows-gnu
+
+ENV TARGET=x86_64-pc-windows-gnu
+ENV CC=x86_64-w64-mingw32-gcc
+ENV CXX=x86_64-w64-mingw32-g++
+ENV AR=x86_64-w64-mingw32-ar
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /src
+ENTRYPOINT ["/entrypoint.sh"]
