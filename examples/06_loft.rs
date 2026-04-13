@@ -17,7 +17,7 @@ fn build_frustum() -> Result<Solid, Error> {
 /// Square polygon → circle (2-section morph loft).
 fn build_morph() -> Result<Solid, Error> {
 	let r = 2.5;
-	let square = Edge::polygon([
+	let square = Edge::polygon(&[
 		DVec3::new(-r, -r, 0.0),
 		DVec3::new(r, -r, 0.0),
 		DVec3::new(r, r, 0.0),

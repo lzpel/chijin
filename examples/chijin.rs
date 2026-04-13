@@ -16,7 +16,7 @@ pub fn chijin() -> Result<Solid, cadrum::Error> {
 	//   - spine は Z 軸まわりの円。半径によらずプロファイルを Z 周りに純粋回転
 	//     させるだけなので任意の正の値で可
 	//   - ProfileOrient::Up(Z) でプロファイルの上方向を Z 固定 → 回転(revolve)と等価
-	let cross_section = Edge::polygon([
+	let cross_section = Edge::polygon(&[
 		DVec3::new(0.0, 0.0, 5.0),
 		DVec3::new(15.0, 0.0, 5.0),
 		DVec3::new(17.0, 0.0, 3.0),
