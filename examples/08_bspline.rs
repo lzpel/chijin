@@ -1,44 +1,48 @@
-use cadrum::{Error, Solid};
+use cadrum::Solid;
 use glam::{DQuat, DVec3};
+use std::f64::consts::TAU;
 
-const I_MAX: usize = 10;
-const J_MAX: usize = 10;
-fn s(i: usize, j: usize) -> DVec3 {
-    let phi = (i as f64) / (J_MAX as f64) * 2.0 * std::f64::consts::PI;
-    let theta = (j as f64) / (I_MAX as f64) * 2.0 * std::f64::consts::PI;
-    let p=DVec3::new(1.0, 0.0, 0.0);
-    let p_with_theta=DQuat::from_axis_angle(DVec3::Z, theta) * p;
-    let p_with_phi=DQuat::from_axis_angle(DVec3::Y, phi) * (p_with_theta + DVec3::X*3.0);
-    p_with_phi
+// 2 field-period stellarator-like torus.
+// `Solid::bspline` is fed a 2D control-point grid to build a periodic B-spline solid.
+// Every variation below is invariant under phi → phi+π (or shifts by a multiple
+// of 2π), so the resulting shape has 180° rotational symmetry around the Z axis:
+//   a(phi)       = 1.8 + 0.6 * sin(2φ)      radial semi-axis
+//   b(phi)       = 1.0 + 0.4 * cos(2φ)      Z semi-axis
+//   psi(phi)     = 2 * phi                  cross-section twist (2 turns per loop)
+//   z_shift(phi) = 1.0 * sin(2φ)            vertical undulation
+const M: usize = 48; // toroidal (U) — must be even for 180° symmetry
+const N: usize = 24; // poloidal (V) — arbitrary
+const RING_R: f64 = 6.0;
+
+fn point(i: usize, j: usize) -> DVec3 {
+	let phi = TAU * (i as f64) / (M as f64);
+	let theta = TAU * (j as f64) / (N as f64);
+	let two_phi = 2.0 * phi;
+	let a = 1.8 + 0.6 * two_phi.sin();
+	let b = 1.0 + 0.4 * two_phi.cos();
+	let psi = two_phi; // twist: 2 full turns per toroidal loop
+	let z_shift = 1.0 * two_phi.sin();
+	// 1. Local cross-section (pre-twist ellipse in the (X, Z) plane)
+	let local_raw = DVec3::X * (a * theta.cos()) + DVec3::Z * (b * theta.sin());
+	// 2. Rotate by psi around the local Y axis (major-circle tangent) — the twist
+	let local_twisted = DQuat::from_axis_angle(DVec3::Y, psi) * local_raw;
+	// 3. Undulate vertically in the local frame
+	let local_shifted = local_twisted + DVec3::Z * z_shift;
+	// 4. Push outward along the major radius by RING_R
+	let translated = local_shifted + DVec3::X * RING_R;
+	// 5. Rotate the whole point around the global Z axis by phi
+	DQuat::from_axis_angle(DVec3::Z, phi) * translated
 }
-fn bspline_solid(periodic: bool) -> Result<Solid, Error> {
-    // periodic=trueのときトーラス、falseのときパイプ
-    // 与えた制御点はサーフェス上(近似誤差の範囲で)を通る
-    // periodic=trueの時、この関数の場合は完全な回転対称になる
-    let grid: [[DVec3; J_MAX]; I_MAX] = std::array::from_fn(|i| std::array::from_fn(|j| s(i, j)));
-    Solid::bspline(grid, periodic)
-}
+
 fn main() {
-    let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
-    let mut objects: Vec<Solid> = Vec::new();
-    for (periodic, offset) in [(false, 0.0), (true, 10.0)] {
-        match bspline_solid(periodic) {
-            Ok(g) => {
-                let volume = g.volume();
-                eprintln!("periodic={}: volume = {}", periodic, volume);
-                if 50.0 <= volume && volume <= 60.0 {
-                    eprintln!("  -> in range. great");
-                } else {
-                    eprintln!("  -> out of range");
-                }
-                objects.push(g.translate(DVec3::Y * offset));
-            }
-            Err(e) => eprintln!("periodic={}: error: {}", periodic, e),
-        }
-    }
-    let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
-    cadrum::io::write_step(&objects, &mut f).unwrap();
-    let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
-    cadrum::io::write_svg(&objects, DVec3::new(1.0, 1.0, 1.0), 0.5, false, &mut f_svg).unwrap();
-    eprintln!("wrote {0}.step / {0}.svg ({1} solids)", example_name, objects.len());
+	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+
+	let grid: [[DVec3; N]; M] = std::array::from_fn(|i| std::array::from_fn(|j| point(i, j)));
+	let plasma = Solid::bspline(grid, true).expect("2-period bspline torus should succeed");
+	let objects = [plasma.color("cyan")];
+	let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
+	cadrum::io::write_step(&objects, &mut f).unwrap();
+	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
+	cadrum::io::write_svg(&objects, DVec3::new(0.05, 0.05, 1.0), 0.1, false, &mut f_svg).unwrap();
+	eprintln!("wrote {0}.step / {0}.svg", example_name);
 }

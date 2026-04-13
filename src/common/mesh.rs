@@ -196,17 +196,36 @@ fn project_and_sort_triangles(mesh: &Mesh, dir: DVec3, u: DVec3, v: DVec3) -> Ve
 
 		let depth = (v0.dot(dir) + v1.dot(dir) + v2.dot(dir)) / 3.0;
 
+		// Lambertian shading with head-on light (light direction == view direction).
+		// Front-facing triangles get `normal · dir ∈ (0, 1]`; normalize to handle
+		// the averaged normal's non-unit length. Shade maps [0, 1] → [0.5, 1.0]
+		// so glancing faces darken to half-intensity (not black) — enough to
+		// read the 3D shape without swallowing the silhouette into the stroke.
+		let dot = avg_normal.normalize_or_zero().dot(dir).clamp(0.0, 1.0);
+		let shade = 0.5 + 0.5 * dot;
+
+		let gray = 0xdd as f64 / 255.0;
 		#[cfg(feature = "color")]
-		let fill = {
+		let (base_r, base_g, base_b) = {
 			let face_id = mesh.face_ids[ti];
 			if let Some(c) = mesh.colormap.get(&face_id) {
-				format!("rgb({},{},{})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8)
+				(c.r as f64, c.g as f64, c.b as f64)
 			} else {
-				"#ddd".to_string()
+				(gray, gray, gray)
 			}
 		};
 		#[cfg(not(feature = "color"))]
-		let fill = "#ddd".to_string();
+		let (base_r, base_g, base_b) = (gray, gray, gray);
+
+		// Hex (`#rrggbb`, 7 chars) is shorter than `rgb(R,G,B)` (10–16 chars)
+		// and every polygon carries a unique fill now that shading varies, so
+		// this form minimises the SVG byte count.
+		let fill = format!(
+			"#{:02x}{:02x}{:02x}",
+			(base_r * shade * 255.0) as u8,
+			(base_g * shade * 255.0) as u8,
+			(base_b * shade * 255.0) as u8,
+		);
 
 		triangles.push(SvgTriangle { pts: [p0, p1, p2], depth, fill });
 	}
