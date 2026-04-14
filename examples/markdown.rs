@@ -9,7 +9,6 @@
 //! 3. Write SUMMARY.md + per-example .md / SUMMARY.md と各 example 用 .md を出力
 //! 4. Update README.md ## Examples section / README.md の ## Examples 節を更新
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,14 +26,25 @@ impl Entry {
 		self.path.file_stem().unwrap().to_str().unwrap()
 	}
 
+	/// Plain title without the numeric prefix, e.g. "primitives" or "write read".
+	/// 数字プレフィックス除去 + `_` → 空白。
+	fn plain_title(&self) -> String {
+		self.stem()[3..].replace('_', " ")
+	}
+
 	/// Display title, e.g. "Primitives" / 表示タイトル
 	fn title(&self) -> String {
-		let raw = self.stem()[3..].replace('_', " ");
+		let raw = self.plain_title();
 		let mut chars = raw.chars();
 		match chars.next() {
 			None => String::new(),
 			Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
 		}
+	}
+
+	/// GitHub-style slug for linking to `#### Title` anchors, e.g. "write-read".
+	fn slug(&self) -> String {
+		self.plain_title().replace(' ', "-")
 	}
 
 	/// First `//!` doc comment line as description / 冒頭の `//!` 行から説明文を抽出
@@ -68,9 +78,9 @@ fn collect_entries() -> Vec<Entry> {
 	entries
 }
 
-/// Run each example in a temp directory and collect all generated files.
-/// 一時ディレクトリで各 example を実行し、生成されたファイルを回収する。
-fn collect_outputs(entries: &[Entry]) -> HashMap<PathBuf, Vec<u8>> {
+/// Run each example in a temp directory and collect all generated files, sorted by path.
+/// 一時ディレクトリで各 example を実行し、生成されたファイルをパス順で回収する。
+fn collect_outputs(entries: &[Entry]) -> Vec<(PathBuf, Vec<u8>)> {
 	let tmp = std::env::temp_dir().join("cadrum_examples");
 	clean_dir(&tmp);
 
@@ -87,7 +97,7 @@ fn collect_outputs(entries: &[Entry]) -> HashMap<PathBuf, Vec<u8>> {
 	}
 
 	// Read all files from the temp directory / 一時ディレクトリの全ファイルを読み込む
-	let outputs: HashMap<PathBuf, Vec<u8>> = fs::read_dir(&tmp)
+	let mut outputs: Vec<(PathBuf, Vec<u8>)> = fs::read_dir(&tmp)
 		.unwrap()
 		.filter_map(|e| e.ok())
 		.filter_map(|e| {
@@ -96,27 +106,15 @@ fn collect_outputs(entries: &[Entry]) -> HashMap<PathBuf, Vec<u8>> {
 			Some((path, contents))
 		})
 		.collect();
+	outputs.sort_by(|a, b| a.0.cmp(&b.0));
 
 	let _ = fs::remove_dir_all(&tmp);
 	outputs
 }
 
-/// Return sorted asset PathBufs from outputs that belong to the given stem.
-/// outputs から指定 stem に属するアセットのパスをソート済みで返す。
-fn assets_for<'a>(outputs: &'a HashMap<PathBuf, Vec<u8>>, stem: &str) -> Vec<&'a PathBuf> {
-	let mut names: Vec<&PathBuf> = outputs.keys()
-		.filter(|p| {
-			let name = p.to_str().unwrap_or("");
-			name.starts_with(stem) && p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png" | "step" | "brep" | "stl")))
-		})
-		.collect();
-	names.sort();
-	names
-}
-
 /// Write output files, SUMMARY.md, and per-example markdown pages.
 /// 生成物・SUMMARY.md・各 example の markdown ページを出力する。
-fn write_summary(summary_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) {
+fn write_summary(summary_path: &Path, entries: &[Entry], outputs: &[(PathBuf, Vec<u8>)]) {
 	let out_dir = summary_path.parent().expect("summary_path must have a parent directory");
 	clean_dir(out_dir);
 
@@ -147,7 +145,7 @@ fn write_summary(summary_path: &Path, entries: &[Entry], outputs: &HashMap<PathB
 /// Render a single example as markdown (description + run command + code + image) for README.
 /// README 用に 1つの example を説明 + 実行コマンド + ソース + 画像の markdown として生成する。
 /// 画像は GitHub Pages (mdbook 出力) の URL を参照する。
-fn render_example(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+fn render_example(entry: &Entry, outputs: &[(PathBuf, Vec<u8>)]) -> String {
 	let (stem, desc) = (entry.stem(), entry.description());
 	let mut s = String::new();
 	if !desc.is_empty() {
@@ -160,46 +158,26 @@ fn render_example(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String 
 	s
 }
 
-/// Render sorted README asset markdown (images + download links) for an entry.
-/// entry に属するアセットを GitHub Pages URL 付きの markdown にし、ソート済みで連結して返す。
-fn render_assets(entry: &Entry, outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+/// Render README asset markdown (images + download links) for an entry.
+/// entry に属するアセットを GitHub Pages URL 付きの markdown にして連結して返す。
+fn render_assets(entry: &Entry, outputs: &[(PathBuf, Vec<u8>)]) -> String {
 	let stem = entry.stem();
-	let mut parts: Vec<String> = outputs.keys()
-		.filter(|p| p.to_str().map_or(false, |n| n.starts_with(stem)))
-		.filter_map(|p| {
-			let name = p.to_str().unwrap();
+	outputs.iter()
+		.filter_map(|(p, _)| {
+			let name = p.to_str()?;
+			if !name.starts_with(stem) { return None; }
 			match p.extension().and_then(|e| e.to_str()) {
 				Some("svg" | "png") => Some(format!("\n<p align=\"center\">\n  <img src=\"https://lzpel.github.io/cadrum/{name}\" alt=\"{stem}\" width=\"360\"/>\n</p>")),
 				Some("step" | "brep" | "stl") => Some(format!("- [{name}](https://lzpel.github.io/cadrum/{name})")),
 				_ => None,
 			}
 		})
-		.collect();
-	parts.sort();
-	parts.join("\n")
-}
-
-/// Find the first SVG/PNG asset for a given stem.
-/// 指定 stem の最初の SVG/PNG アセットを返す。
-fn first_image<'a>(outputs: &'a HashMap<PathBuf, Vec<u8>>, stem: &str) -> Option<&'a str> {
-	assets_for(outputs, stem).into_iter()
-		.find(|p| p.extension().map_or(false, |ext| matches!(ext.to_str(), Some("svg" | "png"))))
-		.and_then(|p| p.to_str())
-}
-
-/// Plain title without the numeric prefix, e.g. "primitives" or "write read".
-/// 数字プレフィックス除去 + lowercase + `_` → 空白。
-fn plain_title(entry: &Entry) -> String {
-	entry.stem()[3..].replace('_', " ")
-}
-
-/// GitHub-style slug for linking to `#### Title` anchors, e.g. "write-read".
-fn slug(entry: &Entry) -> String {
-	plain_title(entry).replace(' ', "-")
+		.collect::<Vec<_>>()
+		.join("\n")
 }
 
 /// Render the `## Usage` section: thumbnail table + install instructions.
-fn render_usage(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+fn render_usage(entries: &[Entry], outputs: &[(PathBuf, Vec<u8>)]) -> String {
 	const COLS: usize = 4;
 	let mut s = String::from("## Usage\n\n");
 
@@ -212,15 +190,16 @@ fn render_usage(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> Strin
 			for col in 0..COLS {
 				let idx = row * COLS + col;
 				if let Some(entry) = entries.get(idx) {
-					let (title, anchor) = (plain_title(entry), slug(entry));
+					let (title, anchor) = (entry.plain_title(), entry.slug());
 					title_cells.push(format!("[{}](#{})", title, anchor));
-					let img_cell = match first_image(outputs, entry.stem()) {
-						Some(img) => format!(
+					let img_cell = outputs.iter()
+						.filter_map(|(p, _)| p.to_str())
+						.find(|n| n.starts_with(entry.stem()) && (n.ends_with(".svg") || n.ends_with(".png")))
+						.map(|img| format!(
 							"[<img src=\"https://lzpel.github.io/cadrum/{}\" width=\"180\" alt=\"{}\"/>](#{})",
 							img, title, anchor
-						),
-						None => String::new(),
-					};
+						))
+						.unwrap_or_default();
 					image_cells.push(img_cell);
 				} else {
 					title_cells.push(String::new());
@@ -250,7 +229,7 @@ fn render_usage(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> Strin
 }
 
 /// Render the `## Example` section: every entry listed with `#### Title`.
-fn render_example_section(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) -> String {
+fn render_example_section(entries: &[Entry], outputs: &[(PathBuf, Vec<u8>)]) -> String {
 	let mut s = String::from("## Examples\n");
 	for entry in entries {
 		s.push_str(&format!("\n#### {}\n", entry.title()));
@@ -262,7 +241,7 @@ fn render_example_section(entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>
 
 /// Update README.md by replacing `## Usage` and `## Example` sections.
 /// README.md の `## Usage` と `## Example` 節を自動生成で置換する。
-fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &HashMap<PathBuf, Vec<u8>>) {
+fn write_readme(readme_path: &Path, entries: &[Entry], outputs: &[(PathBuf, Vec<u8>)]) {
 	let readme = fs::read_to_string(readme_path).expect("failed to read README.md");
 
 	let mut new_readme = String::with_capacity(readme.len());
