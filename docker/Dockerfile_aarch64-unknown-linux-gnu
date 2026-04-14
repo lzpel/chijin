@@ -1,0 +1,26 @@
+# Prebuild OCCT for aarch64-unknown-linux-gnu using the manylinux_2_28_aarch64
+# base image. Covers 64-bit ARM Linux: Raspberry Pi 4/5 (64-bit OS), AWS
+# Graviton, Oracle Ampere, Apple Silicon Linux VMs.
+#
+# Execution environment notes:
+# - On an x86_64 Docker host (e.g. Docker Desktop or linux/amd64), `docker run`
+#   of this image uses QEMU user-mode emulation and takes 3–5 hours.
+# - For native-speed builds, run this image under GitHub Actions on an
+#   `ubuntu-24.04-arm` runner (free for public repositories).
+FROM quay.io/pypa/manylinux_2_28_aarch64
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH=/root/.cargo/bin:$PATH
+
+ENV TARGET=aarch64-unknown-linux-gnu
+
+# target == host, so no cross-toolchain env vars are needed. The image's
+# default gcc/g++ is used for both host build-dependencies and the OCCT
+# cmake build.
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /src
+ENTRYPOINT ["/entrypoint.sh"]

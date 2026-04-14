@@ -10,11 +10,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-musl
-          - x86_64-pc-windows-gnu
-          - x86_64-pc-windows-msvc
-    runs-on: ubuntu-latest
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runs-on: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runs-on: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-gnu
+            runs-on: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
 

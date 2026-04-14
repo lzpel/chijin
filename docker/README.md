@@ -35,11 +35,26 @@ make -C docker clean         # out/ を削除
 
 ## 現在プレビルドを配布している triple
 
-- `x86_64-unknown-linux-musl`
+- `x86_64-unknown-linux-gnu` — `manylinux_2_28_x86_64` ベース (AlmaLinux 8, glibc 2.28)。Ubuntu 18.10+/Debian 10+/RHEL 8+/Fedora 29+/Arch/openSUSE Leap 15.1+
+- `aarch64-unknown-linux-gnu` — `manylinux_2_28_aarch64` ベース。Raspberry Pi 4/5 (64-bit OS)、AWS Graviton、Oracle Ampere、Apple Silicon Linux VM
 - `x86_64-pc-windows-gnu`
 - `x86_64-pc-windows-msvc`
 
-ユーザーがこれ以外の triple を使う場合は `cargo build --features source-build` を付けることで、OCCT を upstream からソースビルドする経路を有効化できる。
+musl 系 Linux (Alpine 等)、macOS (x86_64 / arm64)、Windows on ARM は現状プレビルド非対応。`cargo build --features source-build` で手元ビルドしてください。
+
+### aarch64-unknown-linux-gnu のローカルビルド注意
+
+x86_64 ホストで `make run-aarch64-unknown-linux-gnu` を実行すると Docker Desktop の QEMU user-mode emulation 経由になり、**OCCT ビルドに 3〜5 時間**かかります。日常的な iteration は x86_64 target だけで回し、aarch64 は GitHub Actions の `ubuntu-24.04-arm` runner (public repo は無料) に任せるのが現実的です。
+
+並列実行の推奨パターン:
+
+```sh
+# x86_64 の 3 target だけを並列実行 (aarch64 を除外)
+make -C docker -j3 run-x86_64-unknown-linux-gnu run-x86_64-pc-windows-gnu run-x86_64-pc-windows-msvc
+
+# aarch64 だけ単独実行 (長時間覚悟)
+make -C docker run-aarch64-unknown-linux-gnu
+```
 
 ## 新しいターゲットを追加するには
 
