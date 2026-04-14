@@ -647,59 +647,36 @@ fn main() {
 </p>
 
 
-## Requirements
-
-- A C++17 compiler (GCC, Clang, or MSVC)
-- CMake
-
-Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
-
 ## Build
 
-By default, `cargo build` downloads a **prebuilt OCCT 8.0.0-rc5 binary** from GitHub Releases
-matching the current target triple, and extracts it to `target/cadrum-occt-v800rc5-<triple>/`.
+`cargo build` downloads a prebuilt OCCT 8.0.0-rc5 binary from GitHub Releases
+matching your target triple and extracts it under `target/cadrum-occt-v800rc5-<triple>/`.
 First-time builds finish in seconds instead of the 10–30 minutes a source build would take.
 
-Prebuilts are published for these targets:
-- `x86_64-unknown-linux-gnu` — built on manylinux_2_28 (AlmaLinux 8, glibc 2.28); works on Ubuntu 18.10+, Debian 10+, RHEL/Rocky/AlmaLinux 8+, Fedora 29+, Arch, openSUSE Leap 15.1+
-- `aarch64-unknown-linux-gnu` — built on manylinux_2_28_aarch64; works on Raspberry Pi 4/5 (64-bit OS), AWS Graviton, Oracle Ampere, Apple Silicon Linux VMs
-- `x86_64-pc-windows-gnu`
-- `x86_64-pc-windows-msvc`
+| Target                                             | Extra requirements    |
+|----------------------------------------------------|-----------------------|
+| `x86_64-pc-windows-msvc`                           | nothing               |
+| `x86_64-pc-windows-gnu`                            | nothing               |
+| `x86_64-unknown-linux-gnu`                         | nothing               |
+| `aarch64-unknown-linux-gnu`                        | nothing               |
+| other targets — enable `--features source-build`   | C++17 compiler, CMake |
 
-Other triples — Alpine (musl), macOS (x86_64/arm64), Windows on ARM — are not
-currently published. Users on those platforms should enable the `source-build`
-feature to build OCCT from upstream sources locally:
-
-```sh
-cargo build --features source-build
-```
-
-Resolution model (build.rs):
-
-1. `OCCT_ROOT` defines the single cache location. If unset, it defaults to
-   `target/cadrum-occt-v800rc5-<triple>/`. Whether explicit or default, the
-   semantics are the same: if the directory already contains OCCT headers
-   and libs, link directly.
-2. **Cache miss** — populate the cache:
-   - Without `source-build` feature (default): download the prebuilt tarball
-     for `<triple>` from GitHub Release and extract into the cache dir.
-     If the target is not in the supported list, `build.rs` panics with a
-     pointer back here.
-   - With `source-build` feature: download OCCT source from upstream and
-     build with CMake into the cache dir (10–30 minutes).
-
-To build on an unsupported triple, or to patch OCCT locally:
+A Rust toolchain already ships the C/C++ linker the prebuilt targets need, so
+no extra tools are required. On any other target (musl, macOS, Windows on ARM, …),
+enable `source-build` to compile OCCT from upstream sources locally:
 
 ```sh
 cargo build --features source-build
 ```
 
-To pin OCCT to a persistent location across `cargo clean`:
+Pin OCCT to a persistent cache across `cargo clean`:
 
 ```sh
 export OCCT_ROOT=~/occt
-cargo build
 ```
+
+OCCT 8.0.0-rc5 is distributed under LGPL 2.1 with the Open CASCADE Exception.
+cadrum itself is MIT.
 
 ## Features
 
