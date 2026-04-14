@@ -7,7 +7,7 @@ fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
 
 fn svg_string(shape: &[Solid], direction: DVec3, tol: f64) -> String {
 	let mut buf = Vec::new();
-	cadrum::io::write_svg(shape, direction, tol, true, false, &mut buf).unwrap();
+	cadrum::mesh(shape, tol).and_then(|m| m.write_svg(direction, true, false, &mut buf)).unwrap();
 	String::from_utf8(buf).unwrap()
 }
 

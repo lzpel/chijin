@@ -35,8 +35,8 @@ fn main() {
     ];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
-    cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
+    cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
 }

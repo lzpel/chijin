@@ -41,8 +41,8 @@ fn main() {
 	let plasma = Solid::bspline(grid, true).expect("2-period bspline torus should succeed");
 	let objects = [plasma.color("cyan")];
 	let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
-	cadrum::io::write_step(&objects, &mut f).unwrap();
+	cadrum::write_step(&objects, &mut f).unwrap();
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
-	cadrum::io::write_svg(&objects, DVec3::new(0.05, 0.05, 1.0), 0.1, false, true, &mut f_svg).unwrap();
+	cadrum::mesh(&objects, 0.1).and_then(|m| m.write_svg(DVec3::new(0.05, 0.05, 1.0), false, true, &mut f_svg)).unwrap();
 	eprintln!("wrote {0}.step / {0}.svg", example_name);
 }

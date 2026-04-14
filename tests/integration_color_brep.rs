@@ -10,7 +10,7 @@ const COLORED_BOX_STEP: &str = "steps/colored_box.step";
 
 fn read_colored_box() -> Vec<Solid> {
 	let data = fs::read(COLORED_BOX_STEP).expect("steps/colored_box.step should exist");
-	cadrum::io::read_step(&mut data.as_slice()).expect("read_step should succeed")
+	cadrum::read_step(&mut data.as_slice()).expect("read_step should succeed")
 }
 
 fn colormap_len(shape: &[Solid]) -> usize {
@@ -19,14 +19,14 @@ fn colormap_len(shape: &[Solid]) -> usize {
 
 fn roundtrip_bin(shape: &[Solid]) -> Vec<Solid> {
 	let mut buf = Vec::new();
-	cadrum::io::write_brep_binary(shape, &mut buf).expect("write_brep_binary should succeed");
-	cadrum::io::read_brep_binary(&mut buf.as_slice()).expect("read_brep_binary should succeed")
+	cadrum::write_brep_binary(shape, &mut buf).expect("write_brep_binary should succeed");
+	cadrum::read_brep_binary(&mut buf.as_slice()).expect("read_brep_binary should succeed")
 }
 
 fn roundtrip_text(shape: &[Solid]) -> Vec<Solid> {
 	let mut buf = Vec::new();
-	cadrum::io::write_brep_text(shape, &mut buf).expect("write_brep_text should succeed");
-	cadrum::io::read_brep_text(&mut buf.as_slice()).expect("read_brep_text should succeed")
+	cadrum::write_brep_text(shape, &mut buf).expect("write_brep_text should succeed");
+	cadrum::read_brep_text(&mut buf.as_slice()).expect("read_brep_text should succeed")
 }
 
 // ── binary tests ─────────────────────────────────────────────────────────────

@@ -6,7 +6,9 @@
 //!
 //! How it works / 仕組み:
 //!   - "Struct" suffix (e.g. SolidStruct → crate::Solid): generates `impl crate::Solid { pub fn ... }`
-//!   - "Module" suffix (e.g. IoModule → mod io): generates `pub mod io { pub fn ... }`
+//!   - "Module" suffix (e.g. IoModule → crate root): generates `pub fn ...` at crate root
+//!     (module name is intentionally discarded — the suffix is a developer-facing
+//!     organizational marker only, not part of the public API surface)
 //!   - その他のサフィックス (e.g. SolidExt) はトップレベル委譲を生成しないが、
 //!     "Struct" トレイトのスーパートレイトとして参照された場合は、その中の
 //!     メソッドも inherent impl に取り込まれる
@@ -25,8 +27,9 @@ use std::path::Path;
 enum DelegationKind {
 	/// FooStruct → impl crate::Foo { pub fn ... { <Self as FooStruct>::... } }
 	InherentImpl { concrete_type: String },
-	/// FooModule → pub mod foo { pub fn ... { <crate::Foo as FooModule>::... } }
-	ModBlock { mod_name: String, struct_path: String },
+	/// FooModule → pub fn ... at crate root { <crate::Foo as FooModule>::... }
+	/// The `Foo` name is developer-facing only and does not leak into the user API.
+	FreeFn { struct_path: String },
 }
 
 fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
@@ -35,8 +38,7 @@ fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
 		Some(DelegationKind::InherentImpl { concrete_type: format!("crate::{}", type_name) })
 	} else if trait_name.ends_with("Module") {
 		let base = &trait_name[..trait_name.len() - 6];
-		let mod_name = base[..1].to_lowercase() + &base[1..];
-		Some(DelegationKind::ModBlock { mod_name, struct_path: format!("crate::{}", base) })
+		Some(DelegationKind::FreeFn { struct_path: format!("crate::{}", base) })
 	} else {
 		None // skip traits with unrecognized suffix (e.g. SolidExt) — only used as supertraits
 	}
@@ -48,7 +50,8 @@ fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
 /// `Self::Edge` / `Self::Face` (from `SolidStruct`) and `Self::Solid` (from
 /// `IoModule`) become bare type names, which resolve to the active backend's
 /// concrete types via `pub use` re-exports in `lib.rs`. This keeps `traits.rs`
-/// itself free of backend-specific type references.
+/// itself free of backend-specific type references. `*Module` traits emit their
+/// methods as free functions at the crate root.
 const TYPE_MAP: &[(&str, &str)] = &[("Self::Face", "Face"), ("Self::Edge", "Edge"), ("Self::Solid", "Solid")];
 
 struct Method {
@@ -99,13 +102,11 @@ pub fn build_delegation(traits_src: &str, out_dir: &Path) {
 				}
 				output.push_str("}\n\n");
 			}
-			DelegationKind::ModBlock { mod_name, struct_path } => {
-				output.push_str(&format!("pub mod {} {{\n", mod_name));
-				output.push_str("    use super::*;\n");
+			DelegationKind::FreeFn { struct_path } => {
 				for method in &collected {
 					emit_method(&mut output, method, struct_path, true);
 				}
-				output.push_str("}\n\n");
+				output.push_str("\n");
 			}
 		}
 	}
