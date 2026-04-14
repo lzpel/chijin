@@ -654,20 +654,24 @@ Prebuilts are published for these targets:
 - `x86_64-pc-windows-gnu`
 - `x86_64-pc-windows-msvc`
 
-Resolution order (build.rs picks the first option that applies):
+Resolution model (build.rs):
 
-1. **`OCCT_ROOT` env var** — if set and the directory already contains OCCT libs, link directly.
-   If set but empty, OCCT is built from source into that directory.
-2. **`prebuilt` cargo feature (default ON)** — for supported targets, download the matching
-   tarball from GitHub Release and extract under `target/`. Falls through to source build on
-   network failure or 404.
-3. **Source build** — download OCCT source from upstream and build with CMake into
-   `target/occt/` (10–30 minutes).
+1. `OCCT_ROOT` defines the single cache location. If unset, it defaults to
+   `target/cadrum-occt-v800rc5-<triple>/`. Whether explicit or default, the
+   semantics are the same: if the directory already contains OCCT headers
+   and libs, link directly.
+2. **Cache miss** — populate the cache:
+   - Without `source-build` feature (default): download the prebuilt tarball
+     for `<triple>` from GitHub Release and extract into the cache dir.
+     If the target is not in the supported list, `build.rs` panics with a
+     pointer back here.
+   - With `source-build` feature: download OCCT source from upstream and
+     build with CMake into the cache dir (10–30 minutes).
 
-To force the source build path (e.g. unsupported target, or you want to patch OCCT locally):
+To build on an unsupported triple, or to patch OCCT locally:
 
 ```sh
-cargo build --no-default-features --features color
+cargo build --features source-build
 ```
 
 To pin OCCT to a persistent location across `cargo clean`:
@@ -682,6 +686,9 @@ cargo build
 - `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
   `read_step_with_colors`, and per-face color on `Solid`.
   Colors are preserved through boolean operations and other transformations.
+- `source-build` (default OFF): Build OCCT from upstream sources via CMake when the cache is
+  empty, instead of downloading a prebuilt tarball. Enable this if you are on a triple with no
+  published prebuilt, or if you want to patch OCCT locally.
 
 ## Showcase
 

@@ -1,8 +1,8 @@
 # Prebuild OCCT for x86_64-unknown-linux-musl.
 # rust-musl-cross provides a full musl C/C++ cross toolchain
-# (x86_64-linux-musl-gcc / x86_64-linux-musl-g++) plus rustup with the
-# musl target preinstalled. clux/muslrust does not ship a musl C++
-# compiler, so this image is the more reliable choice for OCCT.
+# (x86_64-unknown-linux-musl-gcc / -g++) plus rustup with the musl target
+# preinstalled. clux/muslrust does not ship a musl C++ compiler, so this
+# image is the more reliable choice for OCCT.
 FROM messense/rust-musl-cross:x86_64-musl
 
 RUN apt-get update && apt-get install -y --no-install-recommends cmake && rm -rf /var/lib/apt/lists/*
@@ -12,10 +12,13 @@ ENV TARGET=x86_64-unknown-linux-musl
 # Target-prefixed env vars only — DO NOT set catch-all CC/CXX/AR, otherwise
 # host build dependencies (compiled against the runner's glibc Linux toolchain)
 # pick up the musl cross compiler and fail to link.
-ENV CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc
-ENV CXX_x86_64_unknown_linux_musl=x86_64-linux-musl-g++
-ENV AR_x86_64_unknown_linux_musl=x86_64-linux-musl-ar
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc
+# Tool names in this image are `x86_64-unknown-linux-musl-*` (verified by
+# `ls /usr/local/musl/bin/`). A previous revision used `x86_64-linux-musl-*`
+# which does not exist in the messense image.
+ENV CC_x86_64_unknown_linux_musl=x86_64-unknown-linux-musl-gcc
+ENV CXX_x86_64_unknown_linux_musl=x86_64-unknown-linux-musl-g++
+ENV AR_x86_64_unknown_linux_musl=x86_64-unknown-linux-musl-ar
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-unknown-linux-musl-gcc
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
