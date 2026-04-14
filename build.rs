@@ -36,7 +36,7 @@ fn main() {
 
 	let (occt_include, occt_lib_dir) = resolve_occt(&manifest_dir, &out_dir, &target);
 
-	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
+	link_occt_libraries(&occt_include, &occt_lib_dir);
 }
 
 /// Resolve (include_dir, lib_dir) for OCCT.
@@ -60,8 +60,7 @@ fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, 
 
 	println!("cargo:rerun-if-changed={}", effective_root.display());
 
-	let lib_dir = find_occt_lib_dir(&effective_root);
-	let include_dir = find_occt_include_dir(&effective_root);
+	let [include_dir, lib_dir] = find_occt_dirs(&effective_root);
 	if lib_dir.exists() && include_dir.exists() {
 		return (include_dir, lib_dir);
 	}
@@ -72,7 +71,14 @@ fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, 
 		return build_occt_from_source(out_dir, &effective_root);
 	}
 
-	match try_prebuilt(out_dir, &effective_root, target) {
+	// musl is the only Linux prebuilt published; musl-built static OCCT links
+	// cleanly into a glibc Rust binary, so any *-linux-* target uses musl.
+	let prebuilt_target = match target.rsplit_once("-linux-") {
+		Some((arch_vendor, _)) => format!("{arch_vendor}-linux-musl"),
+		None => target.to_string(),
+	};
+
+	match try_prebuilt(out_dir, &effective_root, &prebuilt_target) {
 		Some(pair) => pair,
 		None => panic!(
 			"\nFailed to download prebuilt OCCT for target `{}`.\n\
@@ -95,14 +101,6 @@ fn try_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<(PathBuf, P
 
 	eprintln!("cargo:warning=Downloading prebuilt OCCT from {}", url);
 
-	let bytes = match fetch_bytes(&url) {
-		Ok(b) => b,
-		Err(e) => {
-			eprintln!("cargo:warning=prebuilt fetch failed: {}", e);
-			return None;
-		}
-	};
-
 	// Extract into a staging directory inside OUT_DIR, then move the tarball's
 	// top-level `<top_name>/` into `dest`. Staging decouples the tarball's
 	// layout from the (possibly user-chosen) `OCCT_ROOT` path.
@@ -110,10 +108,8 @@ fn try_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<(PathBuf, P
 	let _ = std::fs::remove_dir_all(&staging);
 	std::fs::create_dir_all(&staging).ok()?;
 
-	let gz = libflate::gzip::Decoder::new(&bytes[..]).map_err(|e| eprintln!("cargo:warning=gzip decode failed: {}", e)).ok()?;
-	let mut archive = tar::Archive::new(gz);
-	if let Err(e) = archive.unpack(&staging) {
-		eprintln!("cargo:warning=tar unpack failed: {}", e);
+	if let Err(e) = download_and_extract_tar_gz(&url, &staging) {
+		eprintln!("cargo:warning=prebuilt fetch failed: {}", e);
 		return None;
 	}
 
@@ -132,12 +128,21 @@ fn try_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<(PathBuf, P
 		return None;
 	}
 
-	let lib_dir = find_occt_lib_dir(dest);
+	let [include_dir, lib_dir] = find_occt_dirs(dest);
 	if !lib_dir.exists() {
 		eprintln!("cargo:warning=prebuilt extraction did not produce expected lib dir at {}", lib_dir.display());
 		return None;
 	}
-	Some((find_occt_include_dir(dest), lib_dir))
+	Some((include_dir, lib_dir))
+}
+
+/// Download `url` (a `.tar.gz`), gunzip, and untar into `dest`.
+/// `dest` must already exist.
+fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<(), String> {
+	let bytes = fetch_bytes(url)?;
+	let gz = libflate::gzip::Decoder::new(&bytes[..]).map_err(|e| format!("gzip decode failed: {e}"))?;
+	tar::Archive::new(gz).unpack(dest).map_err(|e| format!("tar unpack failed: {e}"))?;
+	Ok(())
 }
 
 /// Fetch a URL into a byte vector. Supports `http(s)://` via ureq and
@@ -159,53 +164,31 @@ fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 	}
 }
 
-fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
-	// Required OCC toolkit libraries to link against (OCCT 7.8+ / 7.9.x naming).
-	// In OCCT 7.8+: TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into
-	// TKDESTEP/TKBin/TKShHealing respectively.
-	let mut occ_libs = [
-		"TKernel",
-		"TKMath",
-		"TKBRep",
-		"TKTopAlgo",
-		"TKPrim",
-		"TKBO",
-		"TKBool",
-		"TKShHealing", // includes former TKShapeUpgrade
-		"TKMesh",
-		"TKGeomBase",
-		"TKGeomAlgo",
-		"TKG3d",
-		"TKG2d",
-		"TKBin", // was TKBinTools
-		"TKXSBase",
-		"TKDE",        // DE framework base (OCCT 7.8+)
-		"TKDECascade", // DE cascade bridge (OCCT 7.8+)
-		"TKOffset",    // BRepOffsetAPI_MakePipeShell (helix sweep)
-		"TKDESTEP",    // was TKSTEP + TKSTEP209 + TKSTEPAttr + TKSTEPBase
-		               // TKService is NOT linked here: it contains Image_AlienPixMap (WIC image I/O)
-		               // which pulls in ole32/windowscodecs on Windows, but image I/O is unused in
-		               // the base API.  TKService is added below only when "color" is enabled because
-		               // TKXCAF references Graphic3d_* symbols that live in TKService.
-	].to_vec();
+/// OCCT toolkits to link against (OCCT 7.8+ / 8.x naming). In 7.8+,
+/// TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into TKDESTEP/TKBin/
+/// TKShHealing. TKService is intentionally excluded — it pulls
+/// Image_AlienPixMap → ole32/windowscodecs on Windows and image I/O is unused.
+///
+/// The `color`-gated XDE (STEP-with-color) ApplicationFramework toolkits
+/// reference Graphic3d_* symbols that normally live in TKService; those
+/// references are stubbed out by `patch_occt_sources`. Layout verified by nm:
+///   TKLCAF — TDocStd_Document/Application
+///   TKXCAF — XCAFApp_Application, XCAFDoc_ColorTool/ShapeTool/DocumentTool
+///   TKCAF  — TNaming_NamedShape/Builder (needed by TKXCAF's XCAFDoc)
+///   TKCDF  — CDM_Document/Application (needed by TKLCAF's TDocStd_Document)
+const OCC_LIBS: &[&str] = &[
+	"TKernel", "TKMath", "TKBRep", "TKTopAlgo", "TKPrim", "TKBO", "TKBool",
+	"TKShHealing", "TKMesh", "TKGeomBase", "TKGeomAlgo", "TKG3d", "TKG2d",
+	"TKBin", "TKXSBase", "TKDE", "TKDECascade", "TKOffset", "TKDESTEP",
+	#[cfg(feature = "color")] "TKLCAF",
+	#[cfg(feature = "color")] "TKXCAF",
+	#[cfg(feature = "color")] "TKCAF",
+	#[cfg(feature = "color")] "TKCDF",
+];
 
-
-	// XDE (XDE-based STEP with color) requires ApplicationFramework libs.
-	// OCCT library layout (verified by nm):
-	//   TKLCAF   — TDocStd_Document, TDocStd_Application (NewDocument / Close)
-	//   TKXCAF   — XCAFApp_Application, XCAFDoc_ColorTool, XCAFDoc_ShapeTool,
-	//              XCAFDoc_DocumentTool
-	//   TKCAF    — TNaming_NamedShape, TNaming_Builder (needed by TKXCAF's XCAFDoc)
-	//   TKCDF    — CDM_Document, CDM_Application (needed by TKLCAF's TDocStd_Document)
-	//   TKDESTEP — STEPCAFControl_Reader / Writer (already in OCC_LIBS above)
-	//   TKService — Graphic3d_* symbols referenced by TKXCAF (XCAFDoc_VisMaterial etc.)
-	if color {
-		occ_libs.extend(["TKLCAF", "TKXCAF", "TKCAF", "TKCDF"]);
-	}
-
-	// Link OCC libraries
+fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	println!("cargo:rustc-link-search=native={}", occt_lib_dir.display());
-	for lib in occ_libs {
+	for lib in OCC_LIBS {
 		println!("cargo:rustc-link-lib=static={}", lib);
 	}
 
@@ -225,9 +208,8 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path, color: bool) {
 	build.file("cpp/wrapper.cpp").include(occt_include).std("c++17").define("_USE_MATH_DEFINES", None);
 
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
-	if color {
-		build.define("CADRUM_COLOR", None);
-	}
+	#[cfg(feature = "color")]
+	build.define("CADRUM_COLOR", None);
 
 	// On MinGW (Windows GNU toolchain), GCC at -O0 emits inline C++ methods
 	// (from Standard_ErrorHandler.hxx) as strong (non-COMDAT) symbols in wrapper.o.
@@ -272,20 +254,8 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 			}
 		}
 
-		eprintln!("Downloading OCCT {} ...", occt_version);
-
-		// Download using ureq (pure Rust HTTP client)
-		let response = ureq::get(&occt_url).call().expect("Failed to download OCCT source tarball");
-
-		let mut body = Vec::new();
-		response.into_body().into_reader().read_to_end(&mut body).expect("Failed to read OCCT download response body");
-
-		eprintln!("Downloaded {} bytes. Extracting...", body.len());
-
-		// Extract using libflate + tar (pure Rust)
-		let gz_decoder = libflate::gzip::Decoder::new(&body[..]).expect("Failed to initialize gzip decoder");
-		let mut archive = tar::Archive::new(gz_decoder);
-		archive.unpack(&download_dir).expect("Failed to extract OCCT source tarball");
+		eprintln!("Downloading OCCT {} from {} ...", occt_version, occt_url);
+		download_and_extract_tar_gz(&occt_url, &download_dir).expect("Failed to download/extract OCCT source tarball");
 
 		// Write sentinel to mark successful extraction
 		std::fs::write(&extraction_sentinel, "done").unwrap();
@@ -306,7 +276,7 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 	let occt_root = install_prefix;
 
 	// Determine lib path (CMake on Windows/MinGW installs to win64/gcc/lib)
-	let lib_dir = find_occt_lib_dir(&occt_root);
+	let [_, lib_dir] = find_occt_dirs(&occt_root);
 
 	// Build with CMake only if not already installed
 	if !lib_dir.exists() {
@@ -366,36 +336,22 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 		eprintln!("OCCT built at: {}", built.display());
 	}
 
-	// Re-resolve lib dir after build (in case it was just created)
-	let lib_dir = find_occt_lib_dir(&occt_root);
-	let include_dir = find_occt_include_dir(&occt_root);
+	// Re-resolve dirs after build (in case they were just created)
+	let [include_dir, lib_dir] = find_occt_dirs(&occt_root);
 
 	(include_dir, lib_dir)
 }
 
-/// Find the OCCT include directory, checking common install layouts.
-fn find_occt_include_dir(occt_root: &Path) -> PathBuf {
-	let candidates = [occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")];
-	for dir in &candidates {
-		if dir.exists() {
-			return dir.clone();
-		}
-	}
-	// Default fallback
-	occt_root.join("include")
-}
-
-/// Find the OCCT lib directory, checking common install layouts.
-/// CMake on Windows/MinGW installs to win64/gcc/lib; on Linux to lib.
-fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
-	let candidates = [occt_root.join("lib"), occt_root.join("win64").join("gcc").join("lib"), occt_root.join("win64").join("vc14").join("lib")];
-	for dir in &candidates {
-		if dir.exists() {
-			return dir.clone();
-		}
-	}
-	// Default fallback
-	occt_root.join("lib")
+/// Returns `[include_dir, lib_dir]`. Each entry is the first existing
+/// candidate, or the first candidate as fallback. Handles Linux
+/// (`include`,`lib`), MinGW (`inc`,`win64/gcc/lib`), and MSVC
+/// (`win64/vc14/lib`) install layouts.
+fn find_occt_dirs(occt_root: &Path) -> [PathBuf; 2] {
+	let pick = |cands: [PathBuf; 3]| cands.iter().find(|p| p.exists()).cloned().unwrap_or_else(|| cands[0].clone());
+	[
+		pick([occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")]),
+		pick([occt_root.join("lib"), occt_root.join("win64").join("gcc").join("lib"), occt_root.join("win64").join("vc14").join("lib")]),
+	]
 }
 
 /// Patch OCCT source files to work around unwanted link dependencies and
@@ -423,80 +379,48 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 /// as cp1252, accepting the whole range of Latin-1 characters instead of
 /// rejecting any byte above 0x7F.
 fn patch_occt_sources(source_dir: &Path) {
-	// OCCT 8.0.0 moved sources under src/<Module>/<Toolkit>/<Package>/ hierarchy.
-	// Try the new layout first, fall back to the legacy flat layout (≤7.9.x).
-	let vis_material = ["src/DataExchange/TKXCAF/XCAFDoc/XCAFDoc_VisMaterial.cxx", "src/XCAFDoc/XCAFDoc_VisMaterial.cxx"];
-	let prs_texture  = ["src/DataExchange/TKXCAF/XCAFPrs/XCAFPrs_Texture.cxx",    "src/XCAFPrs/XCAFPrs_Texture.cxx"];
+	// OSD stubs are Windows-only. On Linux the same files compile to real
+	// POSIX implementations via `#ifdef _WIN32`; stubbing them on Linux turns
+	// non-void bodies into UB (`{}` with no return) and crashes at runtime
+	// the moment OCCT enters `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
+	let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
 
-	let find = |candidates: &[&str]| candidates.iter().map(|p| source_dir.join(p)).find(|p| p.exists());
+	for entry in walkdir::WalkDir::new(source_dir.join("src")).into_iter().flatten() {
+		if !entry.file_type().is_file() {
+			continue;
+		}
+		let path = entry.path();
+		let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+		match name {
+			// TKService (Visualization) cut: stub bodies only, keep signatures.
+			"XCAFDoc_VisMaterial.cxx" => stub_out_methods(path, true),
+			// Initializer list references the base class — body stubs alone
+			// cannot cut the dependency, so empty the whole file.
+			"XCAFPrs_Texture.cxx" => stub_out_methods(path, false),
 
-	let osd = |name: &str| [
-		format!("src/FoundationClasses/TKernel/OSD/{name}"),
-		format!("src/OSD/{name}"),
-	];
-	let find_osd = |name: &str| {
-		let candidates = osd(name);
-		candidates.into_iter().map(|p| source_dir.join(p)).find(|p| p.exists())
-	};
-	// Stub method bodies only: keep #includes and signatures, empty the bodies.
-	if let Some(path) = find(&vis_material) {
-		stub_out_methods(&path, true);
-	}
-	// Empty the entire file: the initializer list references the base class, so
-	// body stubs alone cannot cut the TKService dependency.
-	if let Some(path) = find(&prs_texture) {
-		stub_out_methods(&path, false);
-	}
-	// --- Eliminate advapi32 / user32 dependencies from TKernel's OSD package ---
-	//
-	// These stubs are only needed when building OCCT for a Windows target: the
-	// advapi32/user32 symbols they reference (GetUserNameW, MessageBoxA, etc.)
-	// are Windows-only. On Linux the very same source files compile to real,
-	// working POSIX implementations via `#ifdef _WIN32`, so stubbing them on
-	// Linux deletes those implementations and — because `stub_out_methods`
-	// replaces non-void bodies with `{}` which is UB — GCC -O3 emits trap
-	// instructions that crash the moment any STEP/threadpool code path reaches
-	// `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
-	if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default().contains("windows") {
-		// OSD_WNT.cxx: static initialiser calls AllocateAndInitializeSid (advapi32).
-		// Module-internal only — no external interface needed.
-		if let Some(path) = find_osd("OSD_WNT.cxx") {
-			stub_out_methods(&path, false);
-		}
-		// OSD_File.cxx: OpenProcessToken, SetSecurityDescriptorDacl, etc. (advapi32).
-		if let Some(path) = find_osd("OSD_File.cxx") {
-			stub_out_methods(&path, true);
-		}
-		// OSD_Protection.cxx: EqualSid, LookupAccountNameW, etc. (advapi32).
-		if let Some(path) = find_osd("OSD_Protection.cxx") {
-			stub_out_methods(&path, true);
-		}
-		// OSD_signal.cxx: MessageBoxA / MessageBeep (user32) on MSVC.
-		if let Some(path) = find_osd("OSD_signal.cxx") {
-			stub_out_methods(&path, true);
-		}
-		// OSD_FileNode.cxx: SetFileSecurityW (advapi32) + OSD_WNT helpers.
-		if let Some(path) = find_osd("OSD_FileNode.cxx") {
-			stub_out_methods(&path, true);
-		}
-		// OSD_Process.cxx: OpenProcessToken, GetUserNameW, EqualSid (advapi32).
-		if let Some(path) = find_osd("OSD_Process.cxx") {
-			stub_out_methods(&path, true);
-		}
-	}
+			// musl: <execinfo.h> is a glibc extension. Stub backtrace() bodies
+			// then comment out the include so the preprocessor stops looking.
+			"Standard_StackTrace.cxx" => {
+				stub_out_methods(path, true);
+				comment_out_include(path, "execinfo.h");
+			}
 
-	// --- musl: execinfo.h is a glibc extension, not present in musl libc. ---
-	// Standard_StackTrace.cxx uses backtrace() / backtrace_symbols() for error
-	// reporting. Stub the method bodies so the calls disappear, then comment
-	// out the <execinfo.h> include so the preprocessor no longer tries to find
-	// the missing header.
-	let stack_trace = [
-		"src/FoundationClasses/TKernel/Standard/Standard_StackTrace.cxx",
-		"src/Standard/Standard_StackTrace.cxx",
-	];
-	if let Some(path) = find(&stack_trace) {
-		stub_out_methods(&path, true);
-		comment_out_include(&path, "execinfo.h");
+			// Windows OSD: cut advapi32 / user32 symbol references.
+			// OSD_WNT.cxx has a static init calling AllocateAndInitializeSid —
+			// must be emptied wholesale, not body-stubbed.
+			"OSD_WNT.cxx" if is_windows => stub_out_methods(path, false),
+			"OSD_File.cxx"
+			| "OSD_Protection.cxx"
+			| "OSD_signal.cxx"
+			| "OSD_FileNode.cxx"
+			| "OSD_Process.cxx"
+				if is_windows =>
+			{
+				stub_out_methods(path, true);
+			}
+
+			_ => {}
+		}
 	}
 }
 
@@ -539,21 +463,11 @@ fn stub_out_methods(path: &Path, keep_signatures: bool) {
 		return;
 	}
 
-	// Build the header comment that records the stub operation.
-	let timestamp = std::time::SystemTime::now()
-		.duration_since(std::time::UNIX_EPOCH)
-		.map(|d| {
-			let secs = d.as_secs();
-			let (h, mi, s) = (secs / 3600 % 24, secs / 60 % 60, secs % 60);
-			format!("{:02}:{:02}:{:02} UTC", h, mi, s)
-		})
-		.unwrap_or_else(|_| "unknown".to_string());
-	let description = if keep_signatures { "all method bodies replaced with empty stubs" } else { "file emptied" };
-	let header = format!(
-		"// Stubbed by cadrum build.rs: {}.\n\
-		 // Stubbed at: {}\n",
-		description, timestamp
-	);
+	// Header line records the stub op + unix timestamp so old/new stubs are
+	// distinguishable when inspecting a cached source tree.
+	let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_else(|_| "unknown".to_string());
+	let description = if keep_signatures { "method bodies stubbed" } else { "file emptied" };
+	let header = format!("// Stubbed by cadrum build.rs at unix={unix}: {description}.\n");
 
 	let patched = if keep_signatures {
 		let content = std::fs::read_to_string(path).expect("Failed to read file for stubbing");

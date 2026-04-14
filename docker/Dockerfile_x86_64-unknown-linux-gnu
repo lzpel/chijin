@@ -1,0 +1,25 @@
+# Prebuild OCCT for x86_64-unknown-linux-gnu using the manylinux_2_28 base
+# image. manylinux_2_28 is AlmaLinux 8 with glibc 2.28, which gives us static
+# libraries that link cleanly against any distro with glibc 2.28+ (Ubuntu
+# 18.10+, Debian 10+, RHEL/Rocky/AlmaLinux 8+, Fedora 29+, Arch, openSUSE
+# Leap 15.1+). Same portability strategy Python wheels use.
+#
+# The image ships gcc (C++17 capable), cmake, make, curl, and git out of the
+# box. Rust is NOT bundled, so we install it via rustup.
+FROM quay.io/pypa/manylinux_2_28_x86_64
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH=/root/.cargo/bin:$PATH
+
+ENV TARGET=x86_64-unknown-linux-gnu
+
+# target == host, so no cross-toolchain env vars are needed. The image's
+# default gcc/g++ is used for both host build-dependencies and the OCCT
+# cmake build.
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /src
+ENTRYPOINT ["/entrypoint.sh"]

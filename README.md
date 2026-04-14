@@ -650,9 +650,18 @@ matching the current target triple, and extracts it to `target/cadrum-occt-v800r
 First-time builds finish in seconds instead of the 10–30 minutes a source build would take.
 
 Prebuilts are published for these targets:
-- `x86_64-unknown-linux-musl`
+- `x86_64-unknown-linux-gnu` — built on manylinux_2_28 (AlmaLinux 8, glibc 2.28); works on Ubuntu 18.10+, Debian 10+, RHEL/Rocky/AlmaLinux 8+, Fedora 29+, Arch, openSUSE Leap 15.1+
+- `aarch64-unknown-linux-gnu` — built on manylinux_2_28_aarch64; works on Raspberry Pi 4/5 (64-bit OS), AWS Graviton, Oracle Ampere, Apple Silicon Linux VMs
 - `x86_64-pc-windows-gnu`
 - `x86_64-pc-windows-msvc`
+
+Other triples — Alpine (musl), macOS (x86_64/arm64), Windows on ARM — are not
+currently published. Users on those platforms should enable the `source-build`
+feature to build OCCT from upstream sources locally:
+
+```sh
+cargo build --features source-build
+```
 
 Resolution model (build.rs):
 
