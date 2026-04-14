@@ -34,6 +34,7 @@ ureq = "3"
 libflate = "2"
 tar = "0.4"
 cmake = "0.1"
+walkdir = "2"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
