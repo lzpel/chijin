@@ -71,14 +71,7 @@ fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, 
 		return build_occt_from_source(out_dir, &effective_root);
 	}
 
-	// musl is the only Linux prebuilt published; musl-built static OCCT links
-	// cleanly into a glibc Rust binary, so any *-linux-* target uses musl.
-	let prebuilt_target = match target.rsplit_once("-linux-") {
-		Some((arch_vendor, _)) => format!("{arch_vendor}-linux-musl"),
-		None => target.to_string(),
-	};
-
-	match try_prebuilt(out_dir, &effective_root, &prebuilt_target) {
+	match try_prebuilt(out_dir, &effective_root, target) {
 		Some(pair) => pair,
 		None => panic!(
 			"\nFailed to download prebuilt OCCT for target `{}`.\n\
