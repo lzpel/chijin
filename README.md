@@ -24,10 +24,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cadrum = "^0.4"
+cadrum = "^0.5"
 ```
 
-## Example
+## Examples
 
 #### Primitives
 
@@ -71,6 +71,7 @@ fn main() {
 }
 
 ```
+- [01_primitives.step](https://lzpel.github.io/cadrum/01_primitives.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/01_primitives.svg" alt="01_primitives" width="360"/>
@@ -143,10 +144,14 @@ fn main() -> Result<(), cadrum::Error> {
 }
 
 ```
+- [02_write_read.brep](https://lzpel.github.io/cadrum/02_write_read.brep)
+- [02_write_read.step](https://lzpel.github.io/cadrum/02_write_read.step)
+- [02_write_read.stl](https://lzpel.github.io/cadrum/02_write_read.stl)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/02_write_read.svg" alt="02_write_read" width="360"/>
 </p>
+- [02_write_read_text.brep](https://lzpel.github.io/cadrum/02_write_read_text.brep)
 
 #### Transform
 
@@ -201,6 +206,7 @@ fn main() {
 }
 
 ```
+- [03_transform.step](https://lzpel.github.io/cadrum/03_transform.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/03_transform.svg" alt="03_transform" width="360"/>
@@ -255,6 +261,7 @@ fn main() -> Result<(), cadrum::Error> {
 }
 
 ```
+- [04_boolean.step](https://lzpel.github.io/cadrum/04_boolean.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/04_boolean.svg" alt="04_boolean" width="360"/>
@@ -281,7 +288,7 @@ use glam::DVec3;
 
 /// Square polygon → box (simplest extrude).
 fn build_box() -> Result<Solid, Error> {
-	let profile = Edge::polygon([
+	let profile = Edge::polygon(&[
 		DVec3::new(0.0, 0.0, 0.0),
 		DVec3::new(5.0, 0.0, 0.0),
 		DVec3::new(5.0, 5.0, 0.0),
@@ -298,7 +305,7 @@ fn build_oblique_cylinder() -> Result<Solid, Error> {
 
 /// L-shaped polygon → L-beam.
 fn build_l_beam() -> Result<Solid, Error> {
-	let profile = Edge::polygon([
+	let profile = Edge::polygon(&[
 		DVec3::new(0.0, 0.0, 0.0),
 		DVec3::new(4.0, 0.0, 0.0),
 		DVec3::new(4.0, 1.0, 0.0),
@@ -312,7 +319,7 @@ fn build_l_beam() -> Result<Solid, Error> {
 /// Heart-shaped BSpline profile extruded along Z.
 fn build_heart() -> Result<Solid, Error> {
 	let profile = [Edge::bspline(
-		[
+		&[
 			DVec3::new(0.0, -4.0, 0.0),   // bottom tip
 			DVec3::new(2.0, -1.5, 0.0),
 			DVec3::new(4.0, 1.5, 0.0),
@@ -351,6 +358,7 @@ fn main() -> Result<(), Error> {
 }
 
 ```
+- [05_extrude.step](https://lzpel.github.io/cadrum/05_extrude.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/05_extrude.svg" alt="05_extrude" width="360"/>
@@ -384,7 +392,7 @@ fn build_frustum() -> Result<Solid, Error> {
 /// Square polygon → circle (2-section morph loft).
 fn build_morph() -> Result<Solid, Error> {
 	let r = 2.5;
-	let square = Edge::polygon([
+	let square = Edge::polygon(&[
 		DVec3::new(-r, -r, 0.0),
 		DVec3::new(r, -r, 0.0),
 		DVec3::new(r, r, 0.0),
@@ -429,6 +437,7 @@ fn main() -> Result<(), Error> {
 }
 
 ```
+- [06_loft.step](https://lzpel.github.io/cadrum/06_loft.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/06_loft.svg" alt="06_loft" width="360"/>
@@ -478,7 +487,7 @@ fn build_m2_screw() -> Result<Vec<Solid>, Error> {
 	let helix = Edge::helix(r - r_delta, h_pitch, h_thread, DVec3::Z, DVec3::X)?;
 
 	// Closed triangular profile in local coords (x: radial, y: along helix tangent).
-	let profile = Edge::polygon([DVec3::new(0.0, -h_pitch / 2.0, 0.0), DVec3::new(r_delta, 0.0, 0.0), DVec3::new(0.0, h_pitch / 2.0, 0.0)])?;
+	let profile = Edge::polygon(&[DVec3::new(0.0, -h_pitch / 2.0, 0.0), DVec3::new(r_delta, 0.0, 0.0), DVec3::new(0.0, h_pitch / 2.0, 0.0)])?;
 
 	// Align profile +Z with the helix start tangent, then translate to the start point.
 	let profile = profile.align_z(helix.start_tangent(), helix.start_point()).translate(helix.start_point());
@@ -568,6 +577,7 @@ fn main() {
 }
 
 ```
+- [07_sweep.step](https://lzpel.github.io/cadrum/07_sweep.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/07_sweep.svg" alt="07_sweep" width="360"/>
@@ -630,6 +640,7 @@ fn main() {
 }
 
 ```
+- [08_bspline.step](https://lzpel.github.io/cadrum/08_bspline.step)
 
 <p align="center">
   <img src="https://lzpel.github.io/cadrum/08_bspline.svg" alt="08_bspline" width="360"/>
