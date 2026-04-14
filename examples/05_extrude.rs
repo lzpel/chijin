@@ -68,12 +68,12 @@ fn main() -> Result<(), Error> {
 
 	let step_path = format!("{example_name}.step");
 	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
+	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
 	println!("wrote {step_path}");
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut f).expect("failed to write SVG");
+	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut f)).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())

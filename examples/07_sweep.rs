@@ -115,9 +115,9 @@ fn main() {
 	}
 
 	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
-	cadrum::io::write_step(&all, &mut f).expect("failed to write STEP");
+	cadrum::write_step(&all, &mut f).expect("failed to write STEP");
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
 	// Helical threads have dense hidden lines that clutter the SVG; disable them.
-	cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, -1.0), 0.5, false, false, &mut f_svg).expect("failed to write SVG");
+	cadrum::mesh(&all, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, -1.0), false, false, &mut f_svg)).expect("failed to write SVG");
 	println!("wrote {example_name}.step / {example_name}.svg ({} solids)", all.len());
 }

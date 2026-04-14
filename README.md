@@ -64,10 +64,10 @@ fn main() {
     ];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
-    cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
+    cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
 }
 
 ```
@@ -100,24 +100,24 @@ fn main() -> Result<(), cadrum::Error> {
 
     // 0. Original: read colored_box.step
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let original = cadrum::io::read_step(
+    let original = cadrum::read_step(
         &mut std::fs::File::open(format!("{manifest_dir}/steps/colored_box.step")).expect("open file"),
     )?;
 
     // 1. STEP round-trip: rotate 30° → write → read
     let a_written = original.clone().rotate_x(FRAC_PI_8);
-    cadrum::io::write_step(&a_written, &mut std::fs::File::create(&step_path).expect("create file"))?;
-    let a = cadrum::io::read_step(&mut std::fs::File::open(&step_path).expect("open file"))?;
+    cadrum::write_step(&a_written, &mut std::fs::File::create(&step_path).expect("create file"))?;
+    let a = cadrum::read_step(&mut std::fs::File::open(&step_path).expect("open file"))?;
 
     // 2. BRep text round-trip: rotate another 30° → write → read
     let b_written = a.clone().rotate_x(FRAC_PI_8);
-    cadrum::io::write_brep_text(&b_written, &mut std::fs::File::create(&text_path).expect("create file"))?;
-    let b = cadrum::io::read_brep_text(&mut std::fs::File::open(&text_path).expect("open file"))?;
+    cadrum::write_brep_text(&b_written, &mut std::fs::File::create(&text_path).expect("create file"))?;
+    let b = cadrum::read_brep_text(&mut std::fs::File::open(&text_path).expect("open file"))?;
 
     // 3. BRep binary round-trip: rotate another 30° → write → read
     let c_written = b.clone().rotate_x(FRAC_PI_8);
-    cadrum::io::write_brep_binary(&c_written, &mut std::fs::File::create(&brep_path).expect("create file"))?;
-    let c = cadrum::io::read_brep_binary(&mut std::fs::File::open(&brep_path).expect("open file"))?;
+    cadrum::write_brep_binary(&c_written, &mut std::fs::File::create(&brep_path).expect("create file"))?;
+    let c = cadrum::read_brep_binary(&mut std::fs::File::open(&brep_path).expect("open file"))?;
 
     // 4. Arrange side by side and export SVG + STL
     let [min, max] = original[0].bounding_box();
@@ -128,10 +128,10 @@ fn main() -> Result<(), cadrum::Error> {
         .collect();
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("create file");
-    cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, 2.0), 0.5, true, false, &mut svg)?;
+    cadrum::mesh(&all, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 2.0), true, false, &mut svg))?;
 
     let mut stl = std::fs::File::create(format!("{example_name}.stl")).expect("create file");
-    cadrum::io::write_stl(&all, 0.1, &mut stl)?;
+    cadrum::mesh(&all, 0.1).and_then(|m| m.write_stl(&mut stl))?;
 
     // 5. Print summary
     let stl_path = format!("{example_name}.stl");
@@ -199,10 +199,10 @@ fn main() {
     ];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
-    cadrum::io::write_step(&solids, &mut f).expect("failed to write STEP");
+    cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&solids, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
 }
 
 ```
@@ -252,10 +252,10 @@ fn main() -> Result<(), cadrum::Error> {
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
-    cadrum::io::write_step(&shapes, &mut f).expect("failed to write STEP");
+    cadrum::write_step(&shapes, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::io::write_svg(&shapes, DVec3::new(1.0, 1.0, 2.0), 0.5, true, false, &mut svg).expect("failed to write SVG");
+    cadrum::mesh(&shapes, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 2.0), true, false, &mut svg)).expect("failed to write SVG");
 
     Ok(())
 }
@@ -346,12 +346,12 @@ fn main() -> Result<(), Error> {
 
 	let step_path = format!("{example_name}.step");
 	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
+	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
 	println!("wrote {step_path}");
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut f).expect("failed to write SVG");
+	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut f)).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())
@@ -425,12 +425,12 @@ fn main() -> Result<(), Error> {
 
 	let step_path = format!("{example_name}.step");
 	let mut f = std::fs::File::create(&step_path).expect("failed to create STEP file");
-	cadrum::io::write_step(&result, &mut f).expect("failed to write STEP");
+	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
 	println!("wrote {step_path}");
 
 	let svg_path = format!("{example_name}.svg");
 	let mut f = std::fs::File::create(&svg_path).expect("failed to create SVG file");
-	cadrum::io::write_svg(&result, DVec3::new(1.0, 1.0, 1.0), 0.5, true, false, &mut f).expect("failed to write SVG");
+	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut f)).expect("failed to write SVG");
 	println!("wrote {svg_path}");
 
 	Ok(())
@@ -569,10 +569,10 @@ fn main() {
 	}
 
 	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
-	cadrum::io::write_step(&all, &mut f).expect("failed to write STEP");
+	cadrum::write_step(&all, &mut f).expect("failed to write STEP");
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
 	// Helical threads have dense hidden lines that clutter the SVG; disable them.
-	cadrum::io::write_svg(&all, DVec3::new(1.0, 1.0, -1.0), 0.5, false, false, &mut f_svg).expect("failed to write SVG");
+	cadrum::mesh(&all, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, -1.0), false, false, &mut f_svg)).expect("failed to write SVG");
 	println!("wrote {example_name}.step / {example_name}.svg ({} solids)", all.len());
 }
 
@@ -633,9 +633,9 @@ fn main() {
 	let plasma = Solid::bspline(grid, true).expect("2-period bspline torus should succeed");
 	let objects = [plasma.color("cyan")];
 	let mut f = std::fs::File::create(format!("{example_name}.step")).unwrap();
-	cadrum::io::write_step(&objects, &mut f).unwrap();
+	cadrum::write_step(&objects, &mut f).unwrap();
 	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).unwrap();
-	cadrum::io::write_svg(&objects, DVec3::new(0.05, 0.05, 1.0), 0.1, false, true, &mut f_svg).unwrap();
+	cadrum::mesh(&objects, 0.1).and_then(|m| m.write_svg(DVec3::new(0.05, 0.05, 1.0), false, true, &mut f_svg)).unwrap();
 	eprintln!("wrote {0}.step / {0}.svg", example_name);
 }
 

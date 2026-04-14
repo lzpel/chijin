@@ -17,7 +17,7 @@ fn read_brep_binary_with_trailing_garbage() {
 
 	// Write valid BRep binary
 	let mut buf = Vec::new();
-	cadrum::io::write_brep_binary(&shape, &mut buf).expect("write_brep_binary should succeed");
+	cadrum::write_brep_binary(&shape, &mut buf).expect("write_brep_binary should succeed");
 	let brep_len = buf.len();
 	assert!(brep_len > 0);
 
@@ -26,7 +26,7 @@ fn read_brep_binary_with_trailing_garbage() {
 	assert_eq!(buf.len(), brep_len + 1024);
 
 	// Read back — should succeed despite trailing garbage
-	let result = cadrum::io::read_brep_binary(&mut buf.as_slice());
+	let result = cadrum::read_brep_binary(&mut buf.as_slice());
 	match &result {
 		Ok(solids) => {
 			assert!(!solids.is_empty(), "should read at least one solid");
@@ -48,7 +48,7 @@ fn read_brep_text_with_trailing_garbage() {
 
 	// Write valid BRep text
 	let mut buf = Vec::new();
-	cadrum::io::write_brep_text(&shape, &mut buf).expect("write_brep_text should succeed");
+	cadrum::write_brep_text(&shape, &mut buf).expect("write_brep_text should succeed");
 	let brep_len = buf.len();
 	assert!(brep_len > 0);
 
@@ -57,7 +57,7 @@ fn read_brep_text_with_trailing_garbage() {
 	assert_eq!(buf.len(), brep_len + 1024);
 
 	// Read back — should succeed despite trailing garbage
-	let result = cadrum::io::read_brep_text(&mut buf.as_slice());
+	let result = cadrum::read_brep_text(&mut buf.as_slice());
 	match &result {
 		Ok(solids) => {
 			assert!(!solids.is_empty(), "should read at least one solid");

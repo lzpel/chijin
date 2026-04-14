@@ -108,6 +108,10 @@ impl Mesh {
 	/// 2. Detects silhouette edges from mesh adjacency
 	/// 3. Classifies edges as visible or hidden (only when `hidden_lines`)
 	/// 4. Renders colored triangles, visible edges (black), and optionally hidden edges
+	pub fn write_svg<W: std::io::Write>(&self, direction: DVec3, hidden_lines: bool, shading: bool, writer: &mut W) -> Result<(), super::error::Error> {
+		writer.write_all(self.to_svg(direction, hidden_lines, shading).as_bytes()).map_err(|_| super::error::Error::SvgExportFailed)
+	}
+
 	pub fn to_svg(&self, direction: DVec3, hidden_lines: bool, shading: bool) -> String {
 		let dir = direction.normalize();
 		let (u, v) = projection_basis(dir);

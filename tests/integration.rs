@@ -35,7 +35,7 @@ fn test_box_3() -> Solid {
 /// Helper: write shape to BRep binary bytes
 fn shape_to_brep_bytes<'a>(shape: impl IntoIterator<Item = &'a Solid>) -> Vec<u8> {
 	let mut buf = Vec::new();
-	cadrum::io::write_brep_binary(shape, &mut buf).unwrap();
+	cadrum::write_brep_binary(shape, &mut buf).unwrap();
 	buf
 }
 
@@ -109,7 +109,7 @@ fn test_t02_multiple_reads_no_crash() {
 	let original = test_box();
 	let brep_data = shape_to_brep_bytes(&[original]);
 	for _ in 0..5 {
-		let _shape = cadrum::io::read_brep_binary(&mut brep_data.as_slice()).unwrap();
+		let _shape = cadrum::read_brep_binary(&mut brep_data.as_slice()).unwrap();
 	}
 }
 
@@ -120,7 +120,7 @@ fn test_t02_multiple_reads_no_crash() {
 #[test]
 fn test_t03_mesh_normals_count() {
 	let shape = test_box();
-	let mesh = cadrum::io::mesh(&[shape], 0.1).unwrap();
+	let mesh = cadrum::mesh(&[shape], 0.1).unwrap();
 	assert_eq!(mesh.normals.len(), mesh.vertices.len());
 }
 
@@ -152,9 +152,9 @@ fn test_t05_translated_compound() {
 	let b = test_box_2();
 	let compound = a.union([&b]).unwrap();
 	let v = dvec3(100.0, 0.0, 0.0);
-	let orig_mesh = cadrum::io::mesh(&compound, 0.1).unwrap();
+	let orig_mesh = cadrum::mesh(&compound, 0.1).unwrap();
 	let shifted: Vec<Solid> = compound.into_iter().map(|s| s.translate(v)).collect();
-	let shifted_mesh = cadrum::io::mesh(&shifted, 0.1).unwrap();
+	let shifted_mesh = cadrum::mesh(&shifted, 0.1).unwrap();
 
 	assert_eq!(orig_mesh.vertices.len(), shifted_mesh.vertices.len());
 	for (o, s) in orig_mesh.vertices.iter().zip(shifted_mesh.vertices.iter()) {
@@ -170,11 +170,11 @@ fn test_t05_translated_compound() {
 #[test]
 fn test_t06_brep_roundtrip() {
 	let original = test_box();
-	let orig_mesh = cadrum::io::mesh([&original], 0.1).unwrap();
+	let orig_mesh = cadrum::mesh([&original], 0.1).unwrap();
 
 	let brep_data = shape_to_brep_bytes([&original]);
-	let restored = cadrum::io::read_brep_binary(&mut brep_data.as_slice()).unwrap();
-	let rest_mesh = cadrum::io::mesh(&restored, 0.1).unwrap();
+	let restored = cadrum::read_brep_binary(&mut brep_data.as_slice()).unwrap();
+	let rest_mesh = cadrum::mesh(&restored, 0.1).unwrap();
 
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
 	for (o, r) in orig_mesh.vertices.iter().zip(rest_mesh.vertices.iter()) {
@@ -207,7 +207,7 @@ fn test_hollow_cube_write_step() {
 
 	std::fs::create_dir_all("out").unwrap();
 	let mut file = std::fs::File::create("out/hollow_cube.step").unwrap();
-	cadrum::io::write_step(&hollow_cube, &mut file).unwrap();
+	cadrum::write_step(&hollow_cube, &mut file).unwrap();
 }
 
 // half_space は仕様書 §2.1 で定義されたプリミティブ。intersect との組み合わせ確認。
@@ -233,11 +233,11 @@ fn test_brep_text_roundtrip() {
 	let original = test_box();
 
 	let mut text_data = Vec::new();
-	cadrum::io::write_brep_text([&original], &mut text_data).unwrap();
+	cadrum::write_brep_text([&original], &mut text_data).unwrap();
 	assert!(!text_data.is_empty());
 
-	let restored = cadrum::io::read_brep_text(&mut text_data.as_slice()).unwrap();
-	let orig_mesh = cadrum::io::mesh([&original], 0.1).unwrap();
-	let rest_mesh = cadrum::io::mesh(&restored, 0.1).unwrap();
+	let restored = cadrum::read_brep_text(&mut text_data.as_slice()).unwrap();
+	let orig_mesh = cadrum::mesh([&original], 0.1).unwrap();
+	let rest_mesh = cadrum::mesh(&restored, 0.1).unwrap();
 	assert_eq!(orig_mesh.vertices.len(), rest_mesh.vertices.len());
 }
