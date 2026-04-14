@@ -12,13 +12,6 @@ const OCCT_VERSION: &str = "V8_0_0_rc5";
 /// Bump this when rebuilding prebuilts for the same OCCT version.
 const OCCT_PREBUILT_TAG: &str = "occt-v800rc5";
 
-/// Target triples for which prebuilt tarballs are published.
-const PREBUILT_TARGETS: &[&str] = &[
-	"x86_64-unknown-linux-musl",
-	"x86_64-pc-windows-gnu",
-	"x86_64-pc-windows-msvc",
-];
-
 /// `V8_0_0_rc5` → `v800rc5`. Shared rule: lowercase and drop underscores.
 fn slug(version: &str) -> String {
 	version.to_ascii_lowercase().replace('_', "")
@@ -26,6 +19,7 @@ fn slug(version: &str) -> String {
 
 fn main() {
 	println!("cargo:rerun-if-env-changed=OCCT_ROOT");
+	println!("cargo:rerun-if-env-changed=CARGO_TARGET_DIR");
 	println!("cargo:rerun-if-env-changed=CADRUM_PREBUILT_URL");
 	println!("cargo:rerun-if-changed=src/traits.rs");
 	println!("cargo:rerun-if-changed=build_delegation.rs");
@@ -45,58 +39,59 @@ fn main() {
 	link_occt_libraries(&occt_include, &occt_lib_dir, cfg!(feature = "color"));
 }
 
-/// Resolve (include_dir, lib_dir) by priority:
-///   1. explicit `OCCT_ROOT` env var (with libs already present → link-only)
-///   2. `prebuilt` feature + supported target → download & extract tarball
-///   3. fall back to building OCCT from source into `target/occt`
+/// Resolve (include_dir, lib_dir) for OCCT.
+///
+/// Model: `OCCT_ROOT` is the single cache location. If unset, it defaults to
+/// `target/cadrum-occt-<slug>-<target>/`. The `source-build` feature only
+/// changes how a cache miss is populated; it does nothing on a cache hit.
+///
+///   1. Compute `effective_root = OCCT_ROOT or default`
+///   2. If `effective_root` already has both lib and include → use it
+///   3. Otherwise, populate it:
+///        - `source-build` feature ON  → build from upstream OCCT sources
+///        - `source-build` feature OFF → download prebuilt tarball (panic on failure)
 fn resolve_occt(manifest_dir: &Path, out_dir: &Path, target: &str) -> (PathBuf, PathBuf) {
-	// Priority 1: explicit OCCT_ROOT
-	if let Ok(explicit) = env::var("OCCT_ROOT") {
-		let root = PathBuf::from(explicit);
-		let lib_dir = find_occt_lib_dir(&root);
-		println!("cargo:rerun-if-changed={}", lib_dir.display());
-		if lib_dir.exists() {
-			return (find_occt_include_dir(&root), lib_dir);
-		}
-		// OCCT_ROOT set but empty: build into it (legacy behaviour)
-		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", root.display());
-		return build_occt_from_source(out_dir, &root);
+	// Default cache dir lives alongside other cargo build artifacts. Honor
+	// `CARGO_TARGET_DIR` if set so that isolated-per-container builds (docker)
+	// don't all collide on the same OCCT install path.
+	let target_dir: PathBuf = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| manifest_dir.join("target"));
+	let default_root = target_dir.join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
+	let effective_root: PathBuf = env::var("OCCT_ROOT").map(PathBuf::from).unwrap_or_else(|_| default_root.clone());
+
+	println!("cargo:rerun-if-changed={}", effective_root.display());
+
+	let lib_dir = find_occt_lib_dir(&effective_root);
+	let include_dir = find_occt_include_dir(&effective_root);
+	if lib_dir.exists() && include_dir.exists() {
+		return (include_dir, lib_dir);
 	}
 
-	// Priority 2: prebuilt feature + supported target
-	if cfg!(feature = "prebuilt") && PREBUILT_TARGETS.contains(&target) {
-		let dest = manifest_dir.join("target").join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
-		if let Some(result) = try_prebuilt(&dest, target) {
-			return result;
-		}
-		eprintln!("cargo:warning=prebuilt OCCT download failed, falling back to source build");
+	// Cache miss: populate effective_root.
+	if cfg!(feature = "source-build") {
+		eprintln!("cargo:warning=OCCT cache miss at {} — building from source (this may take 10-30 minutes)", effective_root.display());
+		return build_occt_from_source(out_dir, &effective_root);
 	}
 
-	// Priority 3: source build into target/occt (default path when OCCT_ROOT unset)
-	let fallback_root = manifest_dir.join("target").join("occt");
-	let lib_dir = find_occt_lib_dir(&fallback_root);
-	println!("cargo:rerun-if-changed={}", lib_dir.display());
-	if lib_dir.exists() {
-		(find_occt_include_dir(&fallback_root), lib_dir)
-	} else {
-		eprintln!("cargo:warning=OCCT not found at {}. Building from source — this may take 10-30 minutes.", fallback_root.display());
-		build_occt_from_source(out_dir, &fallback_root)
+	match try_prebuilt(out_dir, &effective_root, target) {
+		Some(pair) => pair,
+		None => panic!(
+			"\nFailed to download prebuilt OCCT for target `{}`.\n\
+			 A prebuilt tarball for this target may not be published yet.\n\
+			 See README for the list of supported prebuilt targets, or enable\n\
+			 the `source-build` feature to build OCCT from upstream sources:\n\
+			 \n    cargo build --features source-build\n",
+			target
+		),
 	}
 }
 
 /// Attempt to download and extract a prebuilt OCCT tarball for `target` into `dest`.
-/// Returns None on any failure so the caller can fall back to a source build.
-fn try_prebuilt(dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
-	let lib_dir = find_occt_lib_dir(dest);
-	if lib_dir.exists() {
-		return Some((find_occt_include_dir(dest), lib_dir));
-	}
-
+/// Returns None on any failure; the caller decides whether to panic or fall back.
+fn try_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
 	let slug_ver = slug(OCCT_VERSION);
-	let tarball_name = format!("cadrum-occt-{}-{}.tar.gz", slug_ver, target);
-	let url = env::var("CADRUM_PREBUILT_URL").unwrap_or_else(|_| {
-		format!("https://github.com/lzpel/cadrum/releases/download/{}/{}", OCCT_PREBUILT_TAG, tarball_name)
-	});
+	let top_name = format!("cadrum-occt-{}-{}", slug_ver, target);
+	let tarball_name = format!("{}.tar.gz", top_name);
+	let url = env::var("CADRUM_PREBUILT_URL").unwrap_or_else(|_| format!("https://github.com/lzpel/cadrum/releases/download/{}/{}", OCCT_PREBUILT_TAG, tarball_name));
 
 	eprintln!("cargo:warning=Downloading prebuilt OCCT from {}", url);
 
@@ -108,15 +103,32 @@ fn try_prebuilt(dest: &Path, target: &str) -> Option<(PathBuf, PathBuf)> {
 		}
 	};
 
-	// Extract into the parent of `dest` — the tarball's top-level directory
-	// is `cadrum-occt-<slug>-<triple>/`, so entries land at `<parent>/<dirname>/...`
-	let parent = dest.parent().expect("dest must have a parent");
-	std::fs::create_dir_all(parent).ok()?;
+	// Extract into a staging directory inside OUT_DIR, then move the tarball's
+	// top-level `<top_name>/` into `dest`. Staging decouples the tarball's
+	// layout from the (possibly user-chosen) `OCCT_ROOT` path.
+	let staging = out_dir.join("occt-prebuilt-staging");
+	let _ = std::fs::remove_dir_all(&staging);
+	std::fs::create_dir_all(&staging).ok()?;
 
 	let gz = libflate::gzip::Decoder::new(&bytes[..]).map_err(|e| eprintln!("cargo:warning=gzip decode failed: {}", e)).ok()?;
 	let mut archive = tar::Archive::new(gz);
-	if let Err(e) = archive.unpack(parent) {
+	if let Err(e) = archive.unpack(&staging) {
 		eprintln!("cargo:warning=tar unpack failed: {}", e);
+		return None;
+	}
+
+	let extracted = staging.join(&top_name);
+	if !extracted.is_dir() {
+		eprintln!("cargo:warning=prebuilt tarball missing expected top-level dir `{}`", top_name);
+		return None;
+	}
+
+	if let Some(parent) = dest.parent() {
+		std::fs::create_dir_all(parent).ok()?;
+	}
+	let _ = std::fs::remove_dir_all(dest);
+	if let Err(e) = std::fs::rename(&extracted, dest) {
+		eprintln!("cargo:warning=failed to move extracted OCCT into {}: {}", dest.display(), e);
 		return None;
 	}
 
@@ -336,6 +348,19 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 			.define("BUILD_SAMPLES_QT", "OFF")
 			.define("BUILD_Inspector", "OFF")
 			.define("BUILD_ENABLE_FPE_SIGNAL_HANDLER", "OFF")
+			// llvm-rc (cargo-xwin MSVC path) defaults to codepage 0 (ASCII only)
+			// and rejects any non-ASCII byte in narrow string literals. OCCT's
+			// .rc files are cp1252-encoded (the © character arrives as a single
+			// 0xA9 byte, per the error's "codepoint (169)"), so tell llvm-rc to
+			// interpret narrow strings as cp1252.
+			//
+			// We pass this via CMAKE_RC_FLAGS_INIT, NOT CMAKE_RC_FLAGS, because
+			// cargo-xwin's override.cmake contains this line:
+			//   string(REPLACE "/D" "-D" CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS_INIT}")
+			// which unconditionally overwrites whatever we set in CMAKE_RC_FLAGS.
+			// CMAKE_RC_FLAGS_INIT survives the overwrite and flows through the
+			// REPLACE into CMAKE_RC_FLAGS. Harmless on Unix targets (no RC step).
+			.define("CMAKE_RC_FLAGS_INIT", "-C 1252")
 			.build();
 
 		eprintln!("OCCT built at: {}", built.display());
@@ -373,7 +398,8 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 	occt_root.join("lib")
 }
 
-/// Patch OCCT source files to remove unwanted link dependencies:
+/// Patch OCCT source files to work around unwanted link dependencies and
+/// platform-specific toolchain quirks:
 ///
 /// 1. TKService (Visualization) — even with BUILD_MODULE_Visualization=OFF:
 ///    - XCAFDoc_VisMaterial.cxx: stub bodies that use Graphic3d_* types.
@@ -386,6 +412,16 @@ fn find_occt_lib_dir(occt_root: &Path) -> PathBuf {
 ///    - OSD_signal.cxx: stub bodies (MessageBoxA / MessageBeep on MSVC).
 ///    - OSD_FileNode.cxx: stub bodies (SetFileSecurityW + OSD_WNT helpers).
 ///    - OSD_Process.cxx: stub bodies (OpenProcessToken, GetUserNameW, EqualSid).
+///
+/// 3. glibc-only headers (musl target):
+///    - Standard_StackTrace.cxx: stub bodies (backtrace, backtrace_symbols)
+///      and comment out `<execinfo.h>` which musl does not ship.
+///
+/// Note on the llvm-rc non-ASCII issue (cargo-xwin MSVC target): this is
+/// NOT patched here. It is handled at the CMake layer by passing
+/// `CMAKE_RC_FLAGS=-C 1252` so llvm-rc interprets narrow RC string literals
+/// as cp1252, accepting the whole range of Latin-1 characters instead of
+/// rejecting any byte above 0x7F.
 fn patch_occt_sources(source_dir: &Path) {
 	// OCCT 8.0.0 moved sources under src/<Module>/<Toolkit>/<Package>/ hierarchy.
 	// Try the new layout first, fall back to the legacy flat layout (≤7.9.x).
@@ -394,6 +430,14 @@ fn patch_occt_sources(source_dir: &Path) {
 
 	let find = |candidates: &[&str]| candidates.iter().map(|p| source_dir.join(p)).find(|p| p.exists());
 
+	let osd = |name: &str| [
+		format!("src/FoundationClasses/TKernel/OSD/{name}"),
+		format!("src/OSD/{name}"),
+	];
+	let find_osd = |name: &str| {
+		let candidates = osd(name);
+		candidates.into_iter().map(|p| source_dir.join(p)).find(|p| p.exists())
+	};
 	// Stub method bodies only: keep #includes and signatures, empty the bodies.
 	if let Some(path) = find(&vis_material) {
 		stub_out_methods(&path, true);
@@ -403,42 +447,75 @@ fn patch_occt_sources(source_dir: &Path) {
 	if let Some(path) = find(&prs_texture) {
 		stub_out_methods(&path, false);
 	}
-
 	// --- Eliminate advapi32 / user32 dependencies from TKernel's OSD package ---
-	let osd = |name: &str| [
-		format!("src/FoundationClasses/TKernel/OSD/{name}"),
-		format!("src/OSD/{name}"),
-	];
-	let find_osd = |name: &str| {
-		let candidates = osd(name);
-		candidates.into_iter().map(|p| source_dir.join(p)).find(|p| p.exists())
-	};
+	//
+	// These stubs are only needed when building OCCT for a Windows target: the
+	// advapi32/user32 symbols they reference (GetUserNameW, MessageBoxA, etc.)
+	// are Windows-only. On Linux the very same source files compile to real,
+	// working POSIX implementations via `#ifdef _WIN32`, so stubbing them on
+	// Linux deletes those implementations and — because `stub_out_methods`
+	// replaces non-void bodies with `{}` which is UB — GCC -O3 emits trap
+	// instructions that crash the moment any STEP/threadpool code path reaches
+	// `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
+	if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default().contains("windows") {
+		// OSD_WNT.cxx: static initialiser calls AllocateAndInitializeSid (advapi32).
+		// Module-internal only — no external interface needed.
+		if let Some(path) = find_osd("OSD_WNT.cxx") {
+			stub_out_methods(&path, false);
+		}
+		// OSD_File.cxx: OpenProcessToken, SetSecurityDescriptorDacl, etc. (advapi32).
+		if let Some(path) = find_osd("OSD_File.cxx") {
+			stub_out_methods(&path, true);
+		}
+		// OSD_Protection.cxx: EqualSid, LookupAccountNameW, etc. (advapi32).
+		if let Some(path) = find_osd("OSD_Protection.cxx") {
+			stub_out_methods(&path, true);
+		}
+		// OSD_signal.cxx: MessageBoxA / MessageBeep (user32) on MSVC.
+		if let Some(path) = find_osd("OSD_signal.cxx") {
+			stub_out_methods(&path, true);
+		}
+		// OSD_FileNode.cxx: SetFileSecurityW (advapi32) + OSD_WNT helpers.
+		if let Some(path) = find_osd("OSD_FileNode.cxx") {
+			stub_out_methods(&path, true);
+		}
+		// OSD_Process.cxx: OpenProcessToken, GetUserNameW, EqualSid (advapi32).
+		if let Some(path) = find_osd("OSD_Process.cxx") {
+			stub_out_methods(&path, true);
+		}
+	}
 
-	// OSD_WNT.cxx: static initialiser calls AllocateAndInitializeSid (advapi32).
-	// Module-internal only — no external interface needed.
-	if let Some(path) = find_osd("OSD_WNT.cxx") {
-		stub_out_methods(&path, false);
-	}
-	// OSD_File.cxx: OpenProcessToken, SetSecurityDescriptorDacl, etc. (advapi32).
-	if let Some(path) = find_osd("OSD_File.cxx") {
+	// --- musl: execinfo.h is a glibc extension, not present in musl libc. ---
+	// Standard_StackTrace.cxx uses backtrace() / backtrace_symbols() for error
+	// reporting. Stub the method bodies so the calls disappear, then comment
+	// out the <execinfo.h> include so the preprocessor no longer tries to find
+	// the missing header.
+	let stack_trace = [
+		"src/FoundationClasses/TKernel/Standard/Standard_StackTrace.cxx",
+		"src/Standard/Standard_StackTrace.cxx",
+	];
+	if let Some(path) = find(&stack_trace) {
 		stub_out_methods(&path, true);
+		comment_out_include(&path, "execinfo.h");
 	}
-	// OSD_Protection.cxx: EqualSid, LookupAccountNameW, etc. (advapi32).
-	if let Some(path) = find_osd("OSD_Protection.cxx") {
-		stub_out_methods(&path, true);
+}
+
+/// Comment out a `#include <name>` directive in `path`. Used to sever the
+/// dependency on platform-specific headers (e.g. `execinfo.h` on musl) after
+/// the referring method bodies have been stubbed out.
+fn comment_out_include(path: &Path, header: &str) {
+	if !path.exists() {
+		return;
 	}
-	// OSD_signal.cxx: MessageBoxA / MessageBeep (user32) on MSVC.
-	if let Some(path) = find_osd("OSD_signal.cxx") {
-		stub_out_methods(&path, true);
+	let content = std::fs::read_to_string(path).expect("Failed to read file for include patching");
+	let needle = format!("#include <{}>", header);
+	if !content.contains(&needle) {
+		return;
 	}
-	// OSD_FileNode.cxx: SetFileSecurityW (advapi32) + OSD_WNT helpers.
-	if let Some(path) = find_osd("OSD_FileNode.cxx") {
-		stub_out_methods(&path, true);
-	}
-	// OSD_Process.cxx: OpenProcessToken, GetUserNameW, EqualSid (advapi32).
-	if let Some(path) = find_osd("OSD_Process.cxx") {
-		stub_out_methods(&path, true);
-	}
+	let replacement = format!("// {} (patched out by cadrum build.rs)", needle);
+	let patched = content.replace(&needle, &replacement);
+	std::fs::write(path, patched).expect("Failed to write patched include file");
+	eprintln!("Patched out <{}> in {}", header, path.file_name().unwrap().to_string_lossy());
 }
 
 /// Neutralize a C++ source file at `path`.

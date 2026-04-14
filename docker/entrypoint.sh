@@ -1,69 +1,55 @@
-#!/bin/sh
-# docker/entrypoint.sh — shared entrypoint for all docker/Dockerfile_<target> images.
+#!/bin/bash
+# docker/entrypoint.sh — thin wrapper that source-builds OCCT via cargo and
+# packages the resulting target/cadrum-occt-* directory into a tarball.
 #
-# Runs inside the container with:
+# Inside the container:
 #   /src    = cadrum source tree (rw bind mount)
 #   /out    = artifact output directory (rw bind mount)
 #   $TARGET = rust target triple (set by the Dockerfile)
 #
-# Produces /out/cadrum-occt-<slug>-<TARGET>.tar.gz whose top-level directory
-# is `cadrum-occt-<slug>-<TARGET>/`, matching the extraction path used by
-# build.rs's prebuilt download path.
+# Output:
+#   /out/<TARGET>.log                       — full build log
+#   /out/cadrum-occt-<slug>-<TARGET>.tar.gz — prebuilt tarball
 
-set -eu
+set -euo pipefail
 
 : "${TARGET:?TARGET env var must be set by the Dockerfile}"
 
-# 1. Extract OCCT_VERSION from build.rs (single source of truth: the const).
-OCCT_VERSION=$(grep -oE 'OCCT_VERSION: &str = "[^"]+"' /src/build.rs | sed -E 's/.*"([^"]+)".*/\1/')
-if [ -z "$OCCT_VERSION" ]; then
-    echo "entrypoint.sh: failed to extract OCCT_VERSION from /src/build.rs" >&2
-    exit 1
-fi
-OCCT_SLUG=$(echo "$OCCT_VERSION" | tr 'A-Z' 'a-z' | tr -d '_')
+mkdir -p /out
+LOGFILE="/out/${TARGET}.log"
+: > "$LOGFILE"
+exec > >(tee -a "$LOGFILE") 2>&1
 
-DEST="/tmp/cadrum-occt-${OCCT_SLUG}-${TARGET}"
-TARBALL="/out/cadrum-occt-${OCCT_SLUG}-${TARGET}.tar.gz"
-
-export CARGO_TARGET_DIR=/tmp/target
-export OCCT_ROOT="$DEST"
-
-echo "=== Phase 1: building OCCT from source into $DEST ==="
 cd /src
 
-# prebuilt feature is off here — we are the side that produces the tarball.
-case "$TARGET" in
-    *-pc-windows-msvc)
-        cargo xwin build --release --no-default-features --features color --target "$TARGET"
-        ;;
-    *)
-        cargo build --release --no-default-features --features color --target "$TARGET"
-        ;;
-esac
+# Isolate cargo's target dir per container. /src is a bind mount shared by
+# all parallel make-jobs, so writing to /src/target would serialize every
+# container on cargo's file lock and occasionally cross-pollute caches.
+# Using /tmp (inside the container's own writable layer) gives each
+# container a private build dir and makes `make -j` actually parallel.
+# build.rs reads CARGO_TARGET_DIR to decide where to install OCCT.
+export CARGO_TARGET_DIR=/tmp/target-$TARGET
 
-if [ ! -d "$DEST" ]; then
-    echo "entrypoint.sh: expected OCCT install dir $DEST was not created" >&2
+CARGO=(cargo)
+[[ "$TARGET" == *-pc-windows-msvc ]] && CARGO=(cargo xwin)
+
+echo "=== Building OCCT from source for $TARGET ==="
+"${CARGO[@]}" build --release --no-default-features \
+    --features source-build,color --target "$TARGET"
+
+# build.rs installs OCCT into $CARGO_TARGET_DIR/cadrum-occt-<slug>-<TARGET>/.
+# We don't know <slug> here — glob for the directory.
+shopt -s nullglob
+DIRS=("$CARGO_TARGET_DIR"/cadrum-occt-*-"$TARGET")
+if [ ${#DIRS[@]} -ne 1 ]; then
+    echo "entrypoint.sh: expected exactly one $CARGO_TARGET_DIR/cadrum-occt-*-$TARGET dir, found: ${DIRS[*]}" >&2
     exit 1
 fi
+DIR="${DIRS[0]}"
+NAME="$(basename "$DIR")"
+TARBALL="/out/${NAME}.tar.gz"
 
-echo "=== Phase 2: creating tarball $TARBALL ==="
-mkdir -p /out
-tar czf "$TARBALL" -C /tmp "cadrum-occt-${OCCT_SLUG}-${TARGET}"
+echo "=== Creating tarball $TARBALL from $DIR ==="
+tar -czvf "$TARBALL" -C "$CARGO_TARGET_DIR" "$NAME"
 ls -lh "$TARBALL"
-
-echo "=== Phase 3: smoke test (prebuilt download path via file://) ==="
-rm -rf /tmp/target "$DEST"
-unset OCCT_ROOT
-
-# Now cargo check with default features (prebuilt on). build.rs should fetch
-# from the file:// URL, extract into target/cadrum-occt-<slug>-<target>/, and
-# link against it without triggering a source build.
-CADRUM_PREBUILT_URL="file://${TARBALL}" \
-    cargo check --release --target "$TARGET" 2>&1 | tee /tmp/smoke.log
-
-if grep -q "Building from source" /tmp/smoke.log; then
-    echo "entrypoint.sh: smoke test FAILED — build.rs fell back to source build" >&2
-    exit 1
-fi
-
 echo "=== entrypoint.sh: success ==="
