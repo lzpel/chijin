@@ -507,52 +507,12 @@ fn patch_occt_sources(source_dir: &Path) {
 	// non-void bodies into UB (`{}` with no return) and crashes at runtime
 	// the moment OCCT enters `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
 	let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
-	let is_gnu = env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu");
 
-	// windows-gnu: neutralise the `add_definitions(-DOCC_CONVERT_SIGNALS)`
-	// that OCCT's own `adm/cmake/occt_defs_flags.cmake` adds in the non-MSVC
-	// branch. With that define active, `Standard_ErrorHandler.hxx` expands
-	// `OCC_CATCH_SIGNALS` into a `setjmp`-based signal-to-exception shim
-	// that emits calls to the 2-arg SEH `_setjmp` provided by libmingwex.
-	// The export name of that symbol is not stable across mingw-w64
-	// versions, so a prebuilt compiled with Debian gcc 14 posix produces
-	// OCCT .o files that fail to link on downstream users with a different
-	// local mingw-w64 (e.g. gcc 15.2.0) — link errors like
-	// `undefined reference to _setjmp` inside ShapeBuild_Edge.cxx.obj,
-	// BRepLib.cxx.obj, IMeshTools_MeshBuilder.cxx.obj etc.
-	//
-	// Commenting out the `add_definitions` line makes OCCT compile with
-	// `OCC_CONVERT_SIGNALS` undefined, which turns `OCC_CATCH_SIGNALS` into
-	// an empty macro and eliminates every `_setjmp` reference from the
-	// prebuilt. Signal-to-exception conversion is then disabled on mingw-
-	// w64, meaning a SIGSEGV/SIGFPE inside OCCT propagates up through the
-	// OS handler instead of being caught as a `Standard_Failure` — the
-	// same behaviour that OCCT uses under MSVC by default, where the
-	// `OCC_CONVERT_SIGNALS` path is already disabled in favour of SEH.
-	if is_windows && is_gnu {
-		let cmake_file = source_dir.join("adm").join("cmake").join("occt_defs_flags.cmake");
-		if cmake_file.exists() {
-			if let Ok(content) = std::fs::read_to_string(&cmake_file) {
-				let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
-				let replacement =
-					"# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs — see patch_occt_sources()";
-				if content.contains(needle) && !content.contains(replacement) {
-					let patched = content.replace(needle, replacement);
-					if let Err(e) = std::fs::write(&cmake_file, patched) {
-						eprintln!(
-							"warning: failed to patch {}: {}",
-							cmake_file.display(),
-							e
-						);
-					} else {
-						eprintln!("patched out OCC_CONVERT_SIGNALS in {}", cmake_file.display());
-					}
-				}
-			}
-		}
-	}
-
-	for entry in walkdir::WalkDir::new(source_dir.join("src")).into_iter().flatten() {
+	for entry in walkdir::WalkDir::new(source_dir.join("src"))
+		.into_iter()
+		.chain(walkdir::WalkDir::new(source_dir.join("adm")).into_iter())
+		.flatten()
+	{
 		if !entry.file_type().is_file() {
 			continue;
 		}
@@ -584,6 +544,28 @@ fn patch_occt_sources(source_dir: &Path) {
 				if is_windows =>
 			{
 				stub_out_methods(path, true);
+			}
+
+			// Windows: drop `add_definitions(-DOCC_CONVERT_SIGNALS)`. On mingw-gnu
+			// it would expand `OCC_CATCH_SIGNALS` into a `setjmp`-based shim that
+			// emits 2-arg SEH `_setjmp` references whose symbol name is unstable
+			// across mingw-w64 versions, breaking downstream links. OCCT's cmake
+			// only hits this line in the non-MSVC branch, so patching it is a
+			// no-op under MSVC — matching the documented Windows default where
+			// `OCC_CONVERT_SIGNALS` is undefined.
+			"occt_defs_flags.cmake" if is_windows => {
+				let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
+				let replacement = "# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs";
+				if let Ok(content) = std::fs::read_to_string(path) {
+					if content.contains(needle) && !content.contains(replacement) {
+						let patched = content.replace(needle, replacement);
+						if let Err(e) = std::fs::write(path, patched) {
+							eprintln!("warning: failed to patch {}: {}", path.display(), e);
+						} else {
+							eprintln!("patched out OCC_CONVERT_SIGNALS in {}", path.display());
+						}
+					}
+				}
 			}
 
 			_ => {}
