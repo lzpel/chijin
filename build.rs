@@ -528,6 +528,168 @@ fn stub_out_methods(path: &Path, keep_signatures: bool) {
 	eprintln!("Stubbed {}", path.file_name().unwrap().to_string_lossy());
 }
 
+/// Choose the stub body for a function/method signature `sig` (text from the
+/// previous statement terminator up to — but not including — the opening `{`).
+///
+/// Returns `"{}"` for void returns, constructors, and destructors; returns
+/// `"{ return {}; }"` otherwise so MSVC does not emit C4716.
+///
+/// OCCT uses `Class :: method` spacing around `::`, so we normalise that
+/// whitespace before parsing.
+fn stub_body_for_sig(sig: &str) -> &'static str {
+	// If `sig` starts inside a block comment (outer scanner landed on a
+	// `}` that was itself inside `/* ... }*/`), skip everything up to the
+	// first orphan `*/`.
+	let sig_orphan_fixed = match sig.find("*/") {
+		Some(pos) if !sig[..pos].contains("/*") => &sig[pos + 2..],
+		_ => sig,
+	};
+
+	// Strip C/C++ comments — a trailing `// end ctor (1)` on the previous
+	// function would otherwise pollute `find('(')` below.
+	let sig_no_comments = {
+		let bytes = sig_orphan_fixed.as_bytes();
+		let mut out = String::with_capacity(sig_orphan_fixed.len());
+		let mut i = 0;
+		while i < bytes.len() {
+			if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+				while i < bytes.len() && bytes[i] != b'\n' {
+					i += 1;
+				}
+			} else if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+				i += 2;
+				while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+					i += 1;
+				}
+				if i + 1 < bytes.len() {
+					i += 2;
+				}
+			} else {
+				out.push(bytes[i] as char);
+				i += 1;
+			}
+		}
+		out
+	};
+
+	// Strip preprocessor lines — `#if defined(__CYGWIN32__)` contains `(`
+	// and would otherwise be mistaken for the function's parameter list.
+	let sig_stripped: String = sig_no_comments
+		.lines()
+		.filter(|l| !l.trim_start().starts_with('#'))
+		.collect::<Vec<_>>()
+		.join("\n");
+
+	// Normalise `A :: B` → `A::B` so walk-back can treat qualified ids as
+	// one token.
+	let sig_norm: String = {
+		let mut s = sig_stripped;
+		loop {
+			let next = s.replace(" ::", "::").replace(":: ", "::");
+			if next == s {
+				break s;
+			}
+			s = next;
+		}
+	};
+
+	// Find the `(` that belongs to the target function's parameter list,
+	// skipping macro invocations like `IMPLEMENT_STANDARD_RTTIEXT(...)`.
+	// Heuristic: if the identifier immediately before a `(` is entirely
+	// uppercase (macro convention), walk past its matching `)` and keep
+	// searching. Drop everything from the real `(` onward.
+	let paren_pos = {
+		let bytes = sig_norm.as_bytes();
+		let mut cursor = 0;
+		loop {
+			let Some(off) = sig_norm[cursor..].find('(') else { return "{}"; };
+			let pos = cursor + off;
+			let before = sig_norm[..pos].trim_end();
+			let id_start = before
+				.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+				.map(|p| p + 1)
+				.unwrap_or(0);
+			let ident = &before[id_start..];
+			let is_macro = !ident.is_empty()
+				&& ident.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+				&& ident.chars().any(|c| c.is_ascii_uppercase());
+			if !is_macro {
+				break pos;
+			}
+			// Skip to the matching close paren.
+			let mut depth = 1;
+			let mut j = pos + 1;
+			while j < bytes.len() && depth > 0 {
+				match bytes[j] {
+					b'(' => depth += 1,
+					b')' => depth -= 1,
+					_ => {}
+				}
+				j += 1;
+			}
+			cursor = j;
+		}
+	};
+	let head_full = sig_norm[..paren_pos].trim();
+	let head = head_full.rsplit('\n').next().unwrap_or(head_full).trim();
+	if head.is_empty() {
+		return "{}";
+	}
+
+	// Walk back from the end collecting the trailing qualified-id (function
+	// name, possibly `Class::method` or `~Class`).
+	let hb = head.as_bytes();
+	let mut start = hb.len();
+	while start > 0 {
+		let c = hb[start - 1];
+		if c.is_ascii_alphanumeric() || c == b'_' || c == b':' || c == b'~' {
+			start -= 1;
+		} else {
+			break;
+		}
+	}
+	let name = &head[start..];
+	let return_part = head[..start].trim();
+
+	// Destructor: `~Foo` or `Foo::~Foo`.
+	if name.contains('~') {
+		return "{}";
+	}
+	// Constructor: last two `::`-segments are identical (`Foo::Foo`), or the
+	// name has no return-type prefix at all.
+	let segs: Vec<&str> = name.split("::").collect();
+	if segs.len() >= 2 && segs[segs.len() - 1] == segs[segs.len() - 2] {
+		return "{}";
+	}
+	if return_part.is_empty() {
+		return "{}";
+	}
+
+	// Look for `void` as a whole word in the return-type portion, and make
+	// sure it is not `void*` / `void&`.
+	let rb = return_part.as_bytes();
+	let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+	let mut idx = 0;
+	while let Some(off) = return_part[idx..].find("void") {
+		let pos = idx + off;
+		let end = pos + 4;
+		let before_ok = pos == 0 || !is_ident(rb[pos - 1]);
+		let after_ok = end >= rb.len() || !is_ident(rb[end]);
+		if before_ok && after_ok {
+			let mut j = end;
+			while j < rb.len() && rb[j].is_ascii_whitespace() {
+				j += 1;
+			}
+			if j >= rb.len() || (rb[j] != b'*' && rb[j] != b'&') {
+				return "{}";
+			}
+		}
+		idx = end;
+	}
+
+	"{ return {}; }"
+}
+
 /// Replace every top-level (brace depth 0) `{ … }` block in `content` with
 /// `{}` or `{ return {}; }` and return the result.
 ///
@@ -547,14 +709,36 @@ fn stub_all_top_level_bodies(content: &str) -> String {
 			b'{' if depth == 0 => {
 				let prefix = &content[last_end..i];
 
-				// Detect brace-initialised variables: if the non-whitespace
-				// character immediately before '{' is '=' or the prefix since
-				// the last statement terminator contains no '(' (i.e. it is
-				// not a function/method signature), treat as variable init
-				// and skip the block without stubbing.
+				// Distinguish a function body from non-function brace blocks
+				// (class/struct/union/enum/namespace definitions, aggregate
+				// initialisers). Heuristic: after stripping trailing function
+				// qualifiers (`const`, `noexcept`, `override`, `final`,
+				// `= 0`, etc.), a function signature ends with `)` — the
+				// close of its parameter list or a constructor init-list
+				// entry. Class/struct/namespace headers end with an
+				// identifier or `>`; `T x = { ... }` ends with `=`.
+				// Preprocessor directives in `sig` (e.g. `#elif defined(X)`)
+				// can contain stray `)`, so we only inspect the last line.
 				let sig = prefix.rfind(|c| c == ';' || c == '}').map(|p| &prefix[p + 1..]).unwrap_or(prefix);
 				let trimmed = sig.trim_end();
-				let is_var_init = trimmed.ends_with('=') || !sig.contains('(');
+				let last_line = trimmed.rsplit('\n').next().unwrap_or(trimmed).trim();
+				let is_function = {
+					let mut t = last_line;
+					loop {
+						let prev_len = t.len();
+						for kw in ["const", "override", "final", "noexcept", "mutable", "volatile", "= 0", "=0"] {
+							if t.ends_with(kw) {
+								t = t[..t.len() - kw.len()].trim_end();
+								break;
+							}
+						}
+						if t.len() == prev_len {
+							break;
+						}
+					}
+					t.ends_with(')')
+				};
+				let is_var_init = trimmed.ends_with('=') || !is_function;
 
 				if is_var_init {
 					// Walk forward to find the matching '}' and preserve verbatim.
@@ -572,10 +756,11 @@ fn stub_all_top_level_bodies(content: &str) -> String {
 					continue;
 				}
 
-				// Function/method body: stub it.
-				// Always use "{}" — "{ return {}; }" would fail on constructors,
-				// and the CMake build uses -w to suppress missing-return warnings.
-				let stub_body = "{}";
+				// Function/method body: stub it. MSVC's C4716 ("must return
+				// a value") is an error, not a suppressible warning, so a
+				// bare `{}` fails for non-void returns. Use `{ return {}; }`
+				// for non-void and `{}` for void / constructor / destructor.
+				let stub_body = stub_body_for_sig(sig);
 
 				// Walk forward with brace counting to find the matching closing brace.
 				depth = 1;
