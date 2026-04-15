@@ -222,6 +222,24 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 		&& env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu")
 	{
 		println!("cargo:rustc-link-arg=-static");
+
+		// Force-link the libstdc++.a that `build_occt_from_source` bundles
+		// into `occt_lib_dir`. The `-l:libstdc++.a` syntax tells ld to look
+		// for a file literally named `libstdc++.a` on the `-L` search path
+		// (emitted at the top of this function), bypassing the Bstatic/
+		// Bdynamic state and avoiding confusion with `libstdc++.dll.a`.
+		//
+		// The purpose is to make downstream users whose local mingw-w64 gcc
+		// is a different major version than the one that built the prebuilt
+		// resolve libstdc++ symbols (e.g. `std::istream::seekg(fpos<int>)`)
+		// against the gcc-version-matched archive we ship rather than
+		// against the mismatched libstdc++-6.dll from their own sysroot.
+		// ld processes this as a file input, so archive members are pulled
+		// in on demand for any unresolved symbol remaining after the prior
+		// link-cplusplus-emitted `-lstdc++`. Existing
+		// `-Wl,--allow-multiple-definition` tolerates any redundant symbol
+		// that also came from the dynamic libstdc++.
+		println!("cargo:rustc-link-arg=-l:libstdc++.a");
 	}
 
 	// advapi32 / user32: no longer needed — patch_occt_sources() stubs the OSD
@@ -234,19 +252,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	#[cfg(feature = "color")]
 	build.define("CADRUM_COLOR", None);
-
-	// On MinGW (Windows GNU toolchain), GCC at -O0 emits inline C++ methods
-	// (from Standard_ErrorHandler.hxx) as strong (non-COMDAT) symbols in wrapper.o.
-	// TKernel.a unconditionally defines the same methods in Standard_ErrorHandler.cxx.obj.
-	// This causes "multiple definition" link errors.
-	//
-	// Standard_ErrorHandler.hxx only generates the inline stubs when OCC_CONVERT_SIGNALS
-	// is NOT defined (via `#if !defined(OCC_CONVERT_SIGNALS)`).  Defining it here
-	// suppresses those stubs in wrapper.o so only TKernel.a's implementation is linked.
-	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
-		build.define("OCC_CONVERT_SIGNALS", None);
-	}
-
+	
 	build.compile("cadrum_cpp");
 
 	println!("cargo:rerun-if-changed=src/occt/ffi.rs");
@@ -363,6 +369,80 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 	// Re-resolve dirs after build (in case they were just created)
 	let [include_dir, lib_dir] = find_occt_dirs(&occt_root);
 
+	// windows-gnu: bundle the toolchain's libstdc++.a into the OCCT lib dir.
+	//
+	// Motivation: OCCT .cxx files inline calls to libstdc++ header templates
+	// (e.g. `std::istream::seekg(std::fpos<int>)`, `std::basic_filebuf::seekpos`,
+	// `__gnu_cxx::stdio_filebuf` vtables) with mangling baked in at the gcc
+	// version that built them. When a downstream user's mingw-w64 is a
+	// different gcc major version (e.g. we build with Debian gcc 14 posix but
+	// users have mingw-w64 gcc 15 locally), some of those symbols are not
+	// exported identically by the user's libstdc++ and the link fails with
+	// "undefined reference" errors on a handful of stream helpers.
+	//
+	// Copying the build toolchain's libstdc++.a into the prebuilt lib dir
+	// lets the downstream link fall back to our gcc-14-compiled archive for
+	// any unresolved gcc-14-specific symbol. `link_occt_libraries` emits
+	// `cargo:rustc-link-arg=-l:libstdc++.a` (file-exact) to make ld pull in
+	// members from this archive regardless of Bstatic/Bdynamic state; the
+	// `-L` search path for lib_dir is already emitted there via
+	// `cargo:rustc-link-search=native=...` at the top of the function.
+	//
+	// The copy is idempotent and skipped if already present. Gated to
+	// windows-gnu because `libstdc++.a` on other targets is either absent
+	// (MSVC) or irrelevant (Linux resolves libstdc++ against the host).
+	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+		&& env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu")
+	{
+		let dest = lib_dir.join("libstdc++.a");
+		if !dest.exists() {
+			let cxx = env::var("CXX_x86_64_pc_windows_gnu")
+				.unwrap_or_else(|_| "x86_64-w64-mingw32-g++".to_string());
+			match std::process::Command::new(&cxx)
+				.arg("-print-file-name=libstdc++.a")
+				.output()
+			{
+				Ok(out) if out.status.success() => {
+					let src_path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					let src = Path::new(&src_path);
+					if src.is_file() {
+						std::fs::create_dir_all(&lib_dir).ok();
+						if let Err(e) = std::fs::copy(src, &dest) {
+							eprintln!(
+								"warning: failed to bundle libstdc++.a from {} to {}: {}",
+								src.display(),
+								dest.display(),
+								e
+							);
+						} else {
+							eprintln!(
+								"bundled libstdc++.a: {} -> {}",
+								src.display(),
+								dest.display()
+							);
+						}
+					} else {
+						eprintln!(
+							"warning: {} -print-file-name=libstdc++.a returned non-file path: {}",
+							cxx, src_path
+						);
+					}
+				}
+				Ok(out) => {
+					eprintln!(
+						"warning: {} -print-file-name failed (status {}): {}",
+						cxx,
+						out.status,
+						String::from_utf8_lossy(&out.stderr)
+					);
+				}
+				Err(e) => {
+					eprintln!("warning: could not invoke {} for libstdc++.a path: {}", cxx, e);
+				}
+			}
+		}
+	}
+
 	(include_dir, lib_dir)
 }
 
@@ -409,7 +489,11 @@ fn patch_occt_sources(source_dir: &Path) {
 	// the moment OCCT enters `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
 	let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
 
-	for entry in walkdir::WalkDir::new(source_dir.join("src")).into_iter().flatten() {
+	for entry in [source_dir.join("src"), source_dir.join("adm")]
+		.into_iter()
+		.flat_map(walkdir::WalkDir::new)
+		.flatten()
+	{
 		if !entry.file_type().is_file() {
 			continue;
 		}
@@ -441,6 +525,28 @@ fn patch_occt_sources(source_dir: &Path) {
 				if is_windows =>
 			{
 				stub_out_methods(path, true);
+			}
+
+			// Note on `OCC_CONVERT_SIGNALS`: OCCT's `adm/cmake/occt_defs_flags.cmake`
+			// auto-defines this on every non-MSVC build, which enables OCCT's
+			// `OCC_CATCH_SIGNALS` macro to emit `setjmp()` calls that convert C
+			// signals into C++ exceptions. For mingw-w64 that path emits calls to
+			// the 2-arg SEH `_setjmp`, whose libmingwex export name varies across
+			// mingw-w64 versions — the resulting prebuilt .a fails to link on
+			// downstream users who have a different mingw-w64 than we built with.
+			"occt_defs_flags.cmake" if is_windows => {
+				let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
+				let replacement = "# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs";
+				if let Ok(content) = std::fs::read_to_string(path) {
+					if content.contains(needle) && !content.contains(replacement) {
+						let patched = content.replace(needle, replacement);
+						if let Err(e) = std::fs::write(path, patched) {
+							eprintln!("warning: failed to patch {}: {}", path.display(), e);
+						} else {
+							eprintln!("patched out OCC_CONVERT_SIGNALS in {}", path.display());
+						}
+					}
+				}
 			}
 
 			_ => {}
