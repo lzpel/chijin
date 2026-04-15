@@ -56,6 +56,14 @@ jobs:
       - name: install make
         run: choco install make -y
 
+      # Git for Windows ships a GNU coreutils `link.exe` at /usr/bin/link.exe
+      # which shadows MSVC's `link.exe` when rustc drives the linker from a
+      # bash shell (bash prepends /usr/bin to PATH before msvc-dev-cmd's
+      # additions take effect). Remove it so rustc resolves MSVC's linker.
+      - name: unshadow MSVC link.exe
+        shell: bash
+        run: rm -f /usr/bin/link /usr/bin/link.exe
+
       - name: build
         shell: bash
         env:
