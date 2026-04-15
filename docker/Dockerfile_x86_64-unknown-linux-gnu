@@ -12,14 +12,21 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
 ENV PATH=/root/.cargo/bin:$PATH
 
-ENV TARGET=x86_64-unknown-linux-gnu
+# control cc crate and cargo command
+# target == host, so the image's default gcc/g++/ar cover both host build
+# dependencies and the OCCT cmake build.
+ENV CC=gcc
+ENV CXX=g++
+ENV AR=ar
+ENV CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
 
-# target == host, so no cross-toolchain env vars are needed. The image's
-# default gcc/g++ is used for both host build-dependencies and the OCCT
-# cmake build.
+# add cargo target
+RUN rustup target add ${CARGO_BUILD_TARGET}
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# copy source and build OCCT prebuilt
+COPY . /src
+WORKDIR /src/docker
+RUN make cadrum-occt-${CARGO_BUILD_TARGET}
 
-WORKDIR /src
-ENTRYPOINT ["/entrypoint.sh"]
+# on `docker run -v $PWD/out:/out ...`, extract the tarball from /src
+CMD ["sh", "-c", "cp /src/cadrum-occt-*.tar.gz /out/"]

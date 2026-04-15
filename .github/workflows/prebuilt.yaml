@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Linux / windows-gnu は Docker 経由 (cross toolchain が Linux 側で成熟している)
   build:
     strategy:
       fail-fast: false
@@ -17,8 +18,6 @@ jobs:
             runs-on: ubuntu-24.04-arm
           - target: x86_64-pc-windows-gnu
             runs-on: ubuntu-latest
-          - target: x86_64-pc-windows-msvc
-            runs-on: ubuntu-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -28,22 +27,50 @@ jobs:
           docker build \
             -f docker/Dockerfile_${{ matrix.target }} \
             -t cadrum-prebuild:${{ matrix.target }} \
-            docker/
+            .
 
-      - name: docker run
+      - name: docker run (extract tarball)
         run: |
-          docker run --rm \
-            -v "$PWD:/src" \
-            -v "$PWD/out:/out" \
-            cadrum-prebuild:${{ matrix.target }}
+          mkdir -p out
+          docker run --rm -v "$PWD/out:/out" cadrum-prebuild:${{ matrix.target }}
+          ls -lh out/
 
       - uses: actions/upload-artifact@v4
         with:
           name: cadrum-occt-${{ matrix.target }}
-          path: out/*.tar.gz
+          path: out/cadrum-occt-*.tar.gz
+
+  # windows-msvc は native Windows runner + native cl.exe で作る。
+  # cargo-xwin/clang-cl 経由の prebuild は MSVC STL template の COMDAT 排出判断が
+  # native cl.exe と食い違い、ユーザ側リンク時に `std::_Variant_storage_<...>`
+  # 未解決シンボルを量産する (issue #73)。native ビルドは ABI 境界を踏まない。
+  build-windows-msvc:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: install make
+        run: choco install make -y
+
+      - name: build
+        shell: bash
+        env:
+          CARGO_BUILD_TARGET: x86_64-pc-windows-msvc
+        run: make -C docker cadrum-occt-x86_64-pc-windows-msvc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadrum-occt-x86_64-pc-windows-msvc
+          path: cadrum-occt-*.tar.gz
 
   release:
-    needs: build
+    needs: [build, build-windows-msvc]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,48 +1,31 @@
-# docker/Makefile — drive all Dockerfile_<target> images locally.
+# docker/Makefile — prebuilt OCCT tarball 生成の共通入口。
 #
-# Usage:
-#   make -C docker run        # build + run every Dockerfile_*, producing ../out/*.tar.gz
-#   make -C docker run-<tgt>  # build + run a single target
-#   make -C docker build      # just build the images, do not run them
-#   make -C docker list       # show discovered targets
-#   make -C docker clean      # remove ../out
+# このファイルは 3 つの呼び出し経路から同じ recipe を踏むためのハブ:
 #
-# Tip: pass `-j` (e.g. `make -C docker -j run`) to build/run targets in parallel.
+#   1. 各 Dockerfile_<triple> の `RUN make cadrum-occt-${CARGO_BUILD_TARGET}`
+#      (docker build 時、Linux 系 target 全て)
+#   2. `.github/workflows/prebuilt.yaml` の windows-msvc ジョブが
+#      `windows-2022` runner 上で `make -C docker cadrum-occt-x86_64-pc-windows-msvc`
+#   3. ローカル開発での `make -C docker cadrum-occt-<triple>`
+#
+# どこから叩かれても repo root で cargo を走らせるよう、$(REPO_ROOT) を
+# このファイルの位置から絶対パスで解決する。
+#
+# 使い方:
+#   make -C docker cadrum-occt-x86_64-unknown-linux-gnu
+#   make -C docker cadrum-occt-aarch64-unknown-linux-gnu
+#   make -C docker cadrum-occt-x86_64-pc-windows-gnu
+#   make -C docker cadrum-occt-x86_64-pc-windows-msvc
 
-TARGETS := $(patsubst Dockerfile_%,%,$(wildcard Dockerfile_*))
-REPO    := $(abspath ..)
-OUT     := $(REPO)/out
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 
-.PHONY: list build run clean help \
-        $(addprefix build-,$(TARGETS)) \
-        $(addprefix run-,$(TARGETS))
-
-help:
-	@echo "Targets discovered: $(TARGETS)"
-	@echo
-	@echo "  make run         build + run every Dockerfile_*"
-	@echo "  make run-<tgt>   build + run a single target"
-	@echo "  make build       build images only"
-	@echo "  make list        print discovered targets"
-	@echo "  make clean       rm -rf $(OUT)"
-
-list:
-	@echo $(TARGETS)
-
-build: $(addprefix build-,$(TARGETS))
-run:   $(addprefix run-,$(TARGETS))
-
-# Generate explicit per-target rules. (Pattern rules with .PHONY are
-# unreliable in GNU make — eval'd explicit rules avoid the issue.)
-define TARGET_RULES
-build-$(1): Dockerfile_$(1)
-	docker build -f $$< -t cadrum-prebuild:$(1) .
-
-run-$(1): build-$(1)
-	docker run --rm -v "$$(REPO):/src" -v "$$(OUT):/out" cadrum-prebuild:$(1)
-endef
-
-$(foreach t,$(TARGETS),$(eval $(call TARGET_RULES,$(t))))
-
-clean:
-	rm -rf "$(OUT)"
+# build.rs が `target/cadrum-occt-<slug>-<triple>/` に OCCT を install する。
+# slug (`V8_0_0_rc5` → `v800rc5`) は build.rs を唯一のソースとし、ここでは
+# 計算せず glob で basename を拾う。成果物 tarball は repo root に出力する。
+cadrum-occt-%:
+	cd $(REPO_ROOT) && cargo build --release --features source-build,color --target $*
+	@cd $(REPO_ROOT) && \
+	 dir=$$(ls -d target/cadrum-occt-*-$* | head -1); \
+	 name=$$(basename $$dir); \
+	 tar -czvf $$name.tar.gz -C target $$name; \
+	 ls -lh $$name.tar.gz

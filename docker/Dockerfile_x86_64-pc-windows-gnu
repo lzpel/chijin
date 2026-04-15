@@ -5,13 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mingw-w64 cmake \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup target add x86_64-pc-windows-gnu
-
-ENV TARGET=x86_64-pc-windows-gnu
-
-# Target-prefixed env vars only — DO NOT set catch-all CC/CXX/AR, otherwise
-# build dependencies (compiled for the host) pick up the cross toolchain
-# and produce object files that cannot be linked into the host rlib.
+# control cc crate and cargo command
 #
 # Explicit `-posix` suffix on gcc/g++: Debian's mingw-w64 apt packages split
 # the toolchain by threading model (`gcc-mingw-w64-x86-64-posix` vs `-win32`),
@@ -30,10 +24,15 @@ ENV TARGET=x86_64-pc-windows-gnu
 # final exe's only runtime dependency is OS-shipped. libgcc / libwinpthread are
 # statically absorbed via `cargo:rustc-link-arg=-static` emitted from build.rs
 # (see the `CARGO_CFG_TARGET_ENV == gnu` branch). libstdc++ is absorbed via
-# the CXXSTDLIB override + RUSTFLAGS -L bake defined below.
-ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc-posix
-ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-posix
-ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+# the CXXSTDLIB override + RUSTFLAGS -L bake below.
+ENV CC=x86_64-w64-mingw32-gcc-posix
+ENV CXX=x86_64-w64-mingw32-g++-posix
+ENV AR=x86_64-w64-mingw32-ar
+ENV CARGO_BUILD_TARGET=x86_64-pc-windows-gnu
+
+# linker: rustc defaults to `x86_64-w64-mingw32-gcc` (unsuffixed) for this
+# target; pin the -posix variant explicitly to match CC/CXX above. Standard
+# cargo env var, not a cadrum-specific one.
 ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc-posix
 
 # link-cplusplus (a transitive dep of cxx) defaults to emitting
@@ -51,23 +50,23 @@ ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc-posix
 # libstdc++-6.dll runtime dep.
 ENV CXXSTDLIB_x86_64_pc_windows_gnu=static=stdc++
 
-# link-cplusplus declares `#[link(name="stdc++", kind="static")]` when the
-# CXXSTDLIB override above flips it to static mode, and rustc verifies that
-# libstdc++.a exists on the `-L` search path at link-cplusplus's own
-# compile time (well before cadrum's build.rs runs, so a build.rs-emitted
-# rustc-link-search arrives too late). Bake a global `-L` into RUSTFLAGS at
-# image build time by querying the installed cross g++ for the sysroot
-# containing libstdc++.a. Computed at build time so it tracks whatever gcc
-# version Debian apt-installed into this image; cached in a file that the
-# entrypoint-wrapper sources at container run time.
+# add cargo target
+RUN rustup target add ${CARGO_BUILD_TARGET}
+
+# copy source and build OCCT prebuilt
+#
+# libstdc++.a path resolution: link-cplusplus declares
+# `#[link(name="stdc++", kind="static")]` when the CXXSTDLIB override above
+# flips it to static mode, and rustc verifies that libstdc++.a exists on the
+# `-L` search path at link-cplusplus's own compile time (well before cadrum's
+# build.rs runs, so a build.rs-emitted rustc-link-search arrives too late).
+# We query the installed cross g++ for its libstdc++.a sysroot and inject it
+# via RUSTFLAGS -L for this single RUN.
+COPY . /src
+WORKDIR /src/docker
 RUN LIBSTDCXX_DIR="$(dirname "$(x86_64-w64-mingw32-g++-posix -print-file-name=libstdc++.a)")" && \
-    printf '#!/bin/sh\nexport RUSTFLAGS="-L %s ${RUSTFLAGS:-}"\nexec /entrypoint.sh "$@"\n' \
-        "$LIBSTDCXX_DIR" > /entrypoint-wrapper.sh && \
-    chmod +x /entrypoint-wrapper.sh && \
-    cat /entrypoint-wrapper.sh
+    export RUSTFLAGS="-L $LIBSTDCXX_DIR ${RUSTFLAGS:-}" && \
+    make cadrum-occt-${CARGO_BUILD_TARGET}
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-WORKDIR /src
-ENTRYPOINT ["/entrypoint-wrapper.sh"]
+# on `docker run -v $PWD/out:/out ...`, extract the tarball from /src
+CMD ["sh", "-c", "cp /src/cadrum-occt-*.tar.gz /out/"]
