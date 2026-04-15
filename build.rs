@@ -1,7 +1,6 @@
 mod build_delegation;
 
 use std::env;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// OCCT release used by cadrum. Update this tag when bumping OCCT versions;
@@ -138,7 +137,7 @@ fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<(), String> {
 	Ok(())
 }
 
-/// Fetch a URL into a byte vector. Supports `http(s)://` via ureq and
+/// Fetch a URL into a byte vector. Supports `http(s)://` via minreq and
 /// `file://` via the local filesystem (used by CI smoke tests).
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 	if let Some(rest) = url.strip_prefix("file://") {
@@ -150,10 +149,8 @@ fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 		};
 		std::fs::read(&path).map_err(|e| format!("read {}: {}", path.display(), e))
 	} else {
-		let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
-		let mut body = Vec::new();
-		resp.into_body().into_reader().read_to_end(&mut body).map_err(|e| e.to_string())?;
-		Ok(body)
+		let resp = minreq::get(url).send().map_err(|e| e.to_string())?;
+		Ok(resp.into_bytes())
 	}
 }
 
