@@ -107,3 +107,52 @@ llvm-mingw は SEH、Rust の self-contained mingw も SEH、gcc mingw-w64 (Debi
 - 層 3: **偶然揃っている**。SEH unwind は Debian gcc mingw / llvm-mingw / Rust self-contained mingw すべて共通なので現状は事故らない。ただし将来の toolchain 変動に対して脆弱。
 
 次アクションとしては「層 1 の事実確認」→「Dockerfile を llvm-mingw へ」→「build.rs に `-static-libstdc++` 追記」の順で詰めるのが最短。
+
+---
+
+## 実装結果 (2026-04-16 当日)
+
+**方針 A (llvm-mingw への載せ替え) でビルド成功**。結論から言うと、Dockerfile を `mstorsjo/llvm-mingw:latest` ベースに書き換え、ターゲットを `x86_64-pc-windows-gnullvm` に切り替えたことで、層 1 と層 2 の構造的問題が同時に解けた。
+
+### 変更点
+
+1. `docker/Dockerfile_x86_64-pc-windows-gnu`
+   - base image: `rust:latest` (+ Debian apt mingw-w64) → `mstorsjo/llvm-mingw:latest` (+ rustup 最小インストール)
+   - `CC` / `CXX` / `AR` を `x86_64-w64-mingw32-clang` / `clang++` / `ar` に
+   - `CARGO_BUILD_TARGET` を `x86_64-pc-windows-gnu` → **`x86_64-pc-windows-gnullvm`** に変更
+   - `CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=x86_64-w64-mingw32-clang` で linker を clang ドライバに固定
+   - `CXXSTDLIB_x86_64_pc_windows_gnullvm=c++` で link-cplusplus を libc++ にリマップ (llvm-mingw は libstdc++ alias を出荷しないため)
+   - 旧 `CXXSTDLIB_...=static=stdc++` + RUSTFLAGS -L の entrypoint ラッパー機構を**全撤去**。link-cplusplus を dynamic 名 (`c++`) で起動し、最終リンクで `build.rs` の `-static` が libc++.a / libunwind.a を静的吸収する構造に刷新。
+
+2. `build.rs`
+   - `let is_mingw_like = target_env == "gnu" || target_env == "gnullvm"` ヘルパーを導入
+   - `-Wl,--allow-multiple-definition` と `-static` の gating を `gnu` のみ → `gnu || gnullvm` に拡張
+   - `find_occt_dirs` の lib 候補に **`occt_root/win64/clang/lib`** を追加 (llvm-mingw でビルドした OCCT は `win64/clang/lib` に落ちる。従来は `win64/gcc/lib` と `win64/vc14/lib` しか見ていなかったため、最初の試行で `could not find native static library TKernel` が出ていた)。ついでに `pick` クロージャを固定長配列受け → スライス受けに変更して include 側と lib 側のサイズ差を吸収。
+
+### ビルド実績
+
+- `make cadrum-occt-x86_64-pc-windows-gnu` 経由で Docker ビルド → cargo compile (4m 48s) → tarball 生成まで一気通貫で成功
+- 産物: `out/x86_64-pc-windows-gnu/cadrum-occt-v800rc5-x86_64-pc-windows-gnullvm.tar.gz` (約 60 MB)
+- `cargo run --example 01_primitives` は Linux ホスト上で `.exe` を exec できないので `|| true` に吸収 (仕様通り、実行検証はスキップ)
+- tarball には `./win64/clang/lib/libTKernel.a` 等の OCCT 静的ライブラリが入っており、**libc++.a / libunwind.a は意図的に含まれていない** (downstream の rustup windows-gnullvm self-contained が供給するので二重出荷しない設計)
+
+### 設計上のトレードオフ
+
+- **downstream 契約が変わった**: 従来の cadrum prebuilt は `x86_64-pc-windows-gnu` target ユーザを想定していたが、新しい prebuilt は `x86_64-pc-windows-gnullvm` target ユーザ向け。downstream 側は `rustup target add x86_64-pc-windows-gnullvm` + `--target x86_64-pc-windows-gnullvm` のいずれかが必要。gnu と gnullvm は Rust 公式に別 target として定義されており互換ではないので、ここは意識的な分水嶺。
+- **利得**: 
+  - downstream ユーザは環境変数 (CXXSTDLIB / RUSTFLAGS) を一切設定する必要がない。build.rs の `-static` が効くだけで libc++ / libunwind / libgcc / libwinpthread がすべて静的吸収される。
+  - cadrum prebuilt と downstream Rust が同じ llvm-mingw 世界に乗るので CRT / unwind model のミスマッチが理論的に起きない。
+  - Dockerfile 側の RUSTFLAGS bake / entrypoint ラッパーという複雑な機構を捨てられる。
+- **naming の微妙な残存**: makefile の target 名と host 出力ディレクトリはまだ `x86_64-pc-windows-gnu` のまま (Dockerfile 内で gnullvm に切り替える構造)。コンテナ内のビルド産物は `cadrum-occt-v800rc5-x86_64-pc-windows-gnullvm.tar.gz` と正しく gnullvm を名乗るので機能上の問題はないが、ワークフローや Release アセット名を整理するなら makefile / Dockerfile / out ディレクトリをまとめて `x86_64-pc-windows-gnullvm` に rename するのが筋。後続タスクとして残す。
+
+### 未検証項目
+
+1. **downstream 実測**: 生成した prebuilt を使って Windows 上で `cargo add cadrum` → `cargo build --target x86_64-pc-windows-gnullvm` → `objdump -p` で `.exe` の DLL 依存を確認する検証がまだ終わっていない。ゴールは mandolin の依存セット (api-ms-win-crt-\* + kernel32/ntdll/bcryptprimitives/USERENV/WS2_32) + OCCT 由来の OS 同梱 system DLL (ADVAPI32 / GDI32 系) に収まること。
+2. **既存 gnu ユーザへの移行動線**: 新 prebuilt が gnullvm 専用になるので、既存の windows-gnu ユーザは rustup target 切替が必要。README / CHANGELOG に明示する必要あり。
+3. **CI workflow 側の整合**: `.github/workflows/prebuilt.yaml` の linux-gnu 3 target ジョブのうち windows-gnu 相当が今回の Dockerfile を指している前提。target triple の名寄せ (パス名を gnu のまま残すか gnullvm にリネームするか) を決定する必要あり。
+
+### 層別の再評価
+
+- 層 1 (CRT): **解決**。llvm-mingw base image + `x86_64-pc-windows-gnullvm` target で UCRT に統一。Rust 側 self-contained と同じ世界。
+- 層 2 (ランタイム静的吸収): **解決**。`build.rs` の既存 `-static` 1 行で libc++ / libunwind / libgcc / libwinpthread がすべて最終リンクで静的吸収される。downstream 自動化も同時達成。
+- 層 3 (unwind model): **解決**。llvm-mingw は SEH、Rust windows-gnullvm も SEH で一致。
