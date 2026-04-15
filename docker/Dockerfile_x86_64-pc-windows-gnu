@@ -27,9 +27,10 @@ ENV TARGET=x86_64-pc-windows-gnu
 # require switching rustc to `x86_64-pc-windows-gnullvm`; out of scope here.
 #
 # Runtime DLLs: msvcrt.dll is OS-bundled on every Windows since NT4.0, so the
-# final exe's only runtime dependency is OS-shipped. libgcc / libstdc++ /
-# libwinpthread are statically absorbed via cargo:rustc-link-arg emitted from
-# build.rs (see the `CARGO_CFG_TARGET_ENV == gnu` branch in build.rs).
+# final exe's only runtime dependency is OS-shipped. libgcc / libwinpthread are
+# statically absorbed via `cargo:rustc-link-arg=-static` emitted from build.rs
+# (see the `CARGO_CFG_TARGET_ENV == gnu` branch). libstdc++ is absorbed via
+# the CXXSTDLIB override + RUSTFLAGS -L bake defined below.
 ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc-posix
 ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-posix
 ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
