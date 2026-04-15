@@ -525,62 +525,146 @@ fn stub_out_methods(path: &Path, keep_signatures: bool) {
 	eprintln!("Stubbed {}", path.file_name().unwrap().to_string_lossy());
 }
 
-/// Choose the stub body for a function/method signature `sig` (text from the
-/// previous statement terminator up to — but not including — the opening `{`).
+/// Lexically normalise `content` so the brace-depth scanner sees a clean
+/// view: comments, string/char literals, and preprocessor directives are
+/// replaced with same-length whitespace. Newlines are preserved so line
+/// numbers (and downstream offsets) stay aligned with the original file.
+///
+/// The returned string has the same byte length as the input, which means
+/// byte offsets computed on the normalised view can be used to slice the
+/// original content verbatim.
+fn lex_normalize(content: &str) -> String {
+	let bytes = content.as_bytes();
+	let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+	let mut i = 0;
+	let mut at_line_start = true;
+
+	let push_blank = |out: &mut Vec<u8>, b: u8| {
+		out.push(if b == b'\n' { b'\n' } else { b' ' });
+	};
+
+	while i < bytes.len() {
+		let c = bytes[i];
+
+		// Line comment `// ... \n`
+		if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+			while i < bytes.len() && bytes[i] != b'\n' {
+				out.push(b' ');
+				i += 1;
+			}
+			continue;
+		}
+		// Block comment `/* ... */`
+		if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+			out.push(b' ');
+			out.push(b' ');
+			i += 2;
+			while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+				push_blank(&mut out, bytes[i]);
+				i += 1;
+			}
+			if i + 1 < bytes.len() {
+				out.push(b' ');
+				out.push(b' ');
+				i += 2;
+			} else {
+				while i < bytes.len() {
+					push_blank(&mut out, bytes[i]);
+					i += 1;
+				}
+			}
+			continue;
+		}
+		// String literal `"..."`
+		if c == b'"' {
+			out.push(b' ');
+			i += 1;
+			while i < bytes.len() && bytes[i] != b'"' {
+				if bytes[i] == b'\\' && i + 1 < bytes.len() {
+					out.push(b' ');
+					push_blank(&mut out, bytes[i + 1]);
+					i += 2;
+				} else {
+					push_blank(&mut out, bytes[i]);
+					i += 1;
+				}
+			}
+			if i < bytes.len() {
+				out.push(b' ');
+				i += 1;
+			}
+			continue;
+		}
+		// Char literal `'...'`
+		if c == b'\'' {
+			out.push(b' ');
+			i += 1;
+			while i < bytes.len() && bytes[i] != b'\'' {
+				if bytes[i] == b'\\' && i + 1 < bytes.len() {
+					out.push(b' ');
+					out.push(b' ');
+					i += 2;
+				} else {
+					out.push(b' ');
+					i += 1;
+				}
+			}
+			if i < bytes.len() {
+				out.push(b' ');
+				i += 1;
+			}
+			continue;
+		}
+		// Preprocessor directive `# ... \n` (honoring `\`-line-continuation)
+		if at_line_start && c == b'#' {
+			while i < bytes.len() {
+				if bytes[i] == b'\n' {
+					// Check for `\`-continuation: preceding non-space char.
+					let mut k = i;
+					while k > 0 && (bytes[k - 1] == b' ' || bytes[k - 1] == b'\t') {
+						k -= 1;
+					}
+					let continued = k > 0 && bytes[k - 1] == b'\\';
+					out.push(b'\n');
+					i += 1;
+					if !continued {
+						break;
+					}
+				} else {
+					out.push(b' ');
+					i += 1;
+				}
+			}
+			at_line_start = true;
+			continue;
+		}
+
+		if c == b'\n' {
+			at_line_start = true;
+		} else if !c.is_ascii_whitespace() {
+			at_line_start = false;
+		}
+		out.push(c);
+		i += 1;
+	}
+
+	debug_assert_eq!(out.len(), bytes.len(), "lex_normalize must preserve byte length");
+	String::from_utf8(out).expect("lex_normalize produced invalid utf-8")
+}
+
+/// Choose the stub body for a function/method signature `sig`, which is the
+/// text from the previous statement terminator up to (but not including) the
+/// opening `{`. `sig` is expected to already be lexically normalised via
+/// `lex_normalize`, so comments, string literals, and preprocessor lines
+/// are whitespace.
 ///
 /// Returns `"{}"` for void returns, constructors, and destructors; returns
 /// `"{ return {}; }"` otherwise so MSVC does not emit C4716.
-///
-/// OCCT uses `Class :: method` spacing around `::`, so we normalise that
-/// whitespace before parsing.
 fn stub_body_for_sig(sig: &str) -> &'static str {
-	// If `sig` starts inside a block comment (outer scanner landed on a
-	// `}` that was itself inside `/* ... }*/`), skip everything up to the
-	// first orphan `*/`.
-	let sig_orphan_fixed = match sig.find("*/") {
-		Some(pos) if !sig[..pos].contains("/*") => &sig[pos + 2..],
-		_ => sig,
-	};
-
-	// Strip C/C++ comments — a trailing `// end ctor (1)` on the previous
-	// function would otherwise pollute `find('(')` below.
-	let sig_no_comments = {
-		let bytes = sig_orphan_fixed.as_bytes();
-		let mut out = String::with_capacity(sig_orphan_fixed.len());
-		let mut i = 0;
-		while i < bytes.len() {
-			if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
-				while i < bytes.len() && bytes[i] != b'\n' {
-					i += 1;
-				}
-			} else if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
-				i += 2;
-				while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-					i += 1;
-				}
-				if i + 1 < bytes.len() {
-					i += 2;
-				}
-			} else {
-				out.push(bytes[i] as char);
-				i += 1;
-			}
-		}
-		out
-	};
-
-	// Strip preprocessor lines — `#if defined(__CYGWIN32__)` contains `(`
-	// and would otherwise be mistaken for the function's parameter list.
-	let sig_stripped: String = sig_no_comments
-		.lines()
-		.filter(|l| !l.trim_start().starts_with('#'))
-		.collect::<Vec<_>>()
-		.join("\n");
-
-	// Normalise `A :: B` → `A::B` so walk-back can treat qualified ids as
-	// one token.
+	// Normalise `A :: B` → `A::B` so walk-back treats qualified ids as one
+	// token. This is a semantic concern that survives lex_normalize.
 	let sig_norm: String = {
-		let mut s = sig_stripped;
+		let mut s = sig.to_string();
 		loop {
 			let next = s.replace(" ::", "::").replace(":: ", "::");
 			if next == s {
@@ -594,7 +678,7 @@ fn stub_body_for_sig(sig: &str) -> &'static str {
 	// skipping macro invocations like `IMPLEMENT_STANDARD_RTTIEXT(...)`.
 	// Heuristic: if the identifier immediately before a `(` is entirely
 	// uppercase (macro convention), walk past its matching `)` and keep
-	// searching. Drop everything from the real `(` onward.
+	// searching.
 	let paren_pos = {
 		let bytes = sig_norm.as_bytes();
 		let mut cursor = 0;
@@ -613,7 +697,6 @@ fn stub_body_for_sig(sig: &str) -> &'static str {
 			if !is_macro {
 				break pos;
 			}
-			// Skip to the matching close paren.
 			let mut depth = 1;
 			let mut j = pos + 1;
 			while j < bytes.len() && depth > 0 {
@@ -687,36 +770,36 @@ fn stub_body_for_sig(sig: &str) -> &'static str {
 	"{ return {}; }"
 }
 
-/// Replace every top-level (brace depth 0) `{ … }` block in `content` with
+/// Replace every top-level (brace depth 0) function body in `content` with
 /// `{}` or `{ return {}; }` and return the result.
 ///
-/// Brace-initialised variables (`static int x{0};`, `std::atomic<T> y{...};`)
-/// are preserved verbatim: a `{` preceded by `=`, or whose prefix line has no
-/// `(` (not a function signature), is treated as a variable initialiser and
-/// skipped rather than stubbed.
+/// Walks a lexically normalised view of `content` so that comments, string
+/// literals, and preprocessor directives cannot confuse the brace/sig
+/// scanner. Because `lex_normalize` preserves byte offsets, slices computed
+/// on the normalised view map one-to-one onto the original content, which
+/// is what we write out verbatim outside the stubbed bodies.
+///
+/// Non-function brace blocks (class/struct/namespace definitions, aggregate
+/// initialisers) are detected by checking whether the end of the preceding
+/// signature — after stripping trailing function qualifiers — is `)`.
 fn stub_all_top_level_bodies(content: &str) -> String {
-	let bytes = content.as_bytes();
+	let normalized = lex_normalize(content);
+	let nb = normalized.as_bytes();
 	let mut result = String::new();
 	let mut depth = 0usize;
 	let mut i = 0;
 	let mut last_end = 0;
 
-	while i < bytes.len() {
-		match bytes[i] {
+	while i < nb.len() {
+		match nb[i] {
 			b'{' if depth == 0 => {
-				let prefix = &content[last_end..i];
+				let brace_pos = i;
+				let prefix_norm = &normalized[last_end..brace_pos];
+				let sig = prefix_norm
+					.rfind(|c| c == ';' || c == '}')
+					.map(|p| &prefix_norm[p + 1..])
+					.unwrap_or(prefix_norm);
 
-				// Distinguish a function body from non-function brace blocks
-				// (class/struct/union/enum/namespace definitions, aggregate
-				// initialisers). Heuristic: after stripping trailing function
-				// qualifiers (`const`, `noexcept`, `override`, `final`,
-				// `= 0`, etc.), a function signature ends with `)` — the
-				// close of its parameter list or a constructor init-list
-				// entry. Class/struct/namespace headers end with an
-				// identifier or `>`; `T x = { ... }` ends with `=`.
-				// Preprocessor directives in `sig` (e.g. `#elif defined(X)`)
-				// can contain stray `)`, so we only inspect the last line.
-				let sig = prefix.rfind(|c| c == ';' || c == '}').map(|p| &prefix[p + 1..]).unwrap_or(prefix);
 				let trimmed = sig.trim_end();
 				let last_line = trimmed.rsplit('\n').next().unwrap_or(trimmed).trim();
 				let is_function = {
@@ -737,41 +820,27 @@ fn stub_all_top_level_bodies(content: &str) -> String {
 				};
 				let is_var_init = trimmed.ends_with('=') || !is_function;
 
-				if is_var_init {
-					// Walk forward to find the matching '}' and preserve verbatim.
-					depth = 1;
-					i += 1;
-					while i < bytes.len() && depth > 0 {
-						match bytes[i] {
-							b'{' => depth += 1,
-							b'}' => depth -= 1,
-							_ => {}
-						}
-						i += 1;
-					}
-					// Keep the original text (prefix + braced block).
-					continue;
-				}
-
-				// Function/method body: stub it. MSVC's C4716 ("must return
-				// a value") is an error, not a suppressible warning, so a
-				// bare `{}` fails for non-void returns. Use `{ return {}; }`
-				// for non-void and `{}` for void / constructor / destructor.
-				let stub_body = stub_body_for_sig(sig);
-
-				// Walk forward with brace counting to find the matching closing brace.
+				// Walk to the matching closing brace on the normalised view.
 				depth = 1;
 				i += 1;
-				while i < bytes.len() && depth > 0 {
-					match bytes[i] {
+				while i < nb.len() && depth > 0 {
+					match nb[i] {
 						b'{' => depth += 1,
 						b'}' => depth -= 1,
 						_ => {}
 					}
 					i += 1;
 				}
-				// i now points one past the closing '}'.
-				result.push_str(prefix);
+
+				if is_var_init {
+					// Leave the block untouched — continue without writing.
+					continue;
+				}
+
+				// Function body: write original prefix verbatim, then the
+				// stub. `last_end` advances past the original closing brace.
+				let stub_body = stub_body_for_sig(sig);
+				result.push_str(&content[last_end..brace_pos]);
 				result.push_str(stub_body);
 				last_end = i;
 				continue;
