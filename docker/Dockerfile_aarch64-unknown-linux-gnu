@@ -25,6 +25,5 @@ ENV CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu
 RUN rustup target add ${CARGO_BUILD_TARGET}
 
 # copy source and build OCCT prebuilt
-COPY . /
-WORKDIR /
-CMD ["make", "cadrum-occt"]
+WORKDIR /src
+COPY . /src
