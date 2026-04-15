@@ -252,26 +252,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	#[cfg(feature = "color")]
 	build.define("CADRUM_COLOR", None);
-
-	// Note on `OCC_CONVERT_SIGNALS`: OCCT's `adm/cmake/occt_defs_flags.cmake`
-	// auto-defines this on every non-MSVC build, which enables OCCT's
-	// `OCC_CATCH_SIGNALS` macro to emit `setjmp()` calls that convert C
-	// signals into C++ exceptions. For mingw-w64 that path emits calls to
-	// the 2-arg SEH `_setjmp`, whose libmingwex export name varies across
-	// mingw-w64 versions — the resulting prebuilt .a fails to link on
-	// downstream users who have a different mingw-w64 than we built with.
-	// `patch_occt_sources` comments out the auto-define for windows-gnu so
-	// OCCT (and therefore wrapper.cpp, via the same header) never emits
-	// setjmp calls in the first place. Concretely: `OCC_CATCH_SIGNALS`
-	// becomes an empty macro, `Standard_ErrorHandler::Callback::*` methods
-	// become header-inline (no `Standard_ErrorHandler.cxx.obj` bodies to
-	// collide with wrapper.o's inline stubs), and the `_setjmp` undefined
-	// references disappear. We therefore no longer set it on wrapper.cpp
-	// either; both sides stay consistently undefined.
-	// `-Wl,--allow-multiple-definition` (emitted above) covers any remaining
-	// duplicate of the inline Callback stubs across wrapper.o and downstream
-	// .o files under -O0 debug builds.
-
+	
 	build.compile("cadrum_cpp");
 
 	println!("cargo:rerun-if-changed=src/occt/ffi.rs");
@@ -508,9 +489,9 @@ fn patch_occt_sources(source_dir: &Path) {
 	// the moment OCCT enters `OSD_Process::SystemDate`, `OSD::SignalMode`, etc.
 	let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
 
-	for entry in walkdir::WalkDir::new(source_dir.join("src"))
+	for entry in [source_dir.join("src"), source_dir.join("adm")]
 		.into_iter()
-		.chain(walkdir::WalkDir::new(source_dir.join("adm")).into_iter())
+		.flat_map(walkdir::WalkDir::new)
 		.flatten()
 	{
 		if !entry.file_type().is_file() {
@@ -546,13 +527,13 @@ fn patch_occt_sources(source_dir: &Path) {
 				stub_out_methods(path, true);
 			}
 
-			// Windows: drop `add_definitions(-DOCC_CONVERT_SIGNALS)`. On mingw-gnu
-			// it would expand `OCC_CATCH_SIGNALS` into a `setjmp`-based shim that
-			// emits 2-arg SEH `_setjmp` references whose symbol name is unstable
-			// across mingw-w64 versions, breaking downstream links. OCCT's cmake
-			// only hits this line in the non-MSVC branch, so patching it is a
-			// no-op under MSVC — matching the documented Windows default where
-			// `OCC_CONVERT_SIGNALS` is undefined.
+			// Note on `OCC_CONVERT_SIGNALS`: OCCT's `adm/cmake/occt_defs_flags.cmake`
+			// auto-defines this on every non-MSVC build, which enables OCCT's
+			// `OCC_CATCH_SIGNALS` macro to emit `setjmp()` calls that convert C
+			// signals into C++ exceptions. For mingw-w64 that path emits calls to
+			// the 2-arg SEH `_setjmp`, whose libmingwex export name varies across
+			// mingw-w64 versions — the resulting prebuilt .a fails to link on
+			// downstream users who have a different mingw-w64 than we built with.
 			"occt_defs_flags.cmake" if is_windows => {
 				let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
 				let replacement = "# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs";
