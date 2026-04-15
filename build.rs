@@ -1,7 +1,6 @@
 mod build_delegation;
 
 use std::env;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// OCCT release used by cadrum. Update this tag when bumping OCCT versions;
@@ -138,7 +137,7 @@ fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<(), String> {
 	Ok(())
 }
 
-/// Fetch a URL into a byte vector. Supports `http(s)://` via ureq and
+/// Fetch a URL into a byte vector. Supports `http(s)://` via minreq and
 /// `file://` via the local filesystem (used by CI smoke tests).
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 	if let Some(rest) = url.strip_prefix("file://") {
@@ -150,10 +149,8 @@ fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 		};
 		std::fs::read(&path).map_err(|e| format!("read {}: {}", path.display(), e))
 	} else {
-		let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
-		let mut body = Vec::new();
-		resp.into_body().into_reader().read_to_end(&mut body).map_err(|e| e.to_string())?;
-		Ok(body)
+		let resp = minreq::get(url).send().map_err(|e| e.to_string())?;
+		Ok(resp.into_bytes())
 	}
 }
 
@@ -189,7 +186,9 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	// against OCCT static libraries on MinGW.  The primary fix is the
 	// OCC_CONVERT_SIGNALS define added below to the cxx_build step.
 	// Guard to GNU only: -Wl,... is GCC/ld syntax and is invalid on MSVC link.exe.
-	if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
+	let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+	let is_mingw_like = target_env == "gnu" || target_env == "gnullvm";
+	if is_mingw_like {
 		println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
 	}
 
@@ -218,9 +217,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	//
 	// Gated to windows+gnu because `-static` on linux-gnu would try to
 	// statically link glibc, which is neither shipped as a .a nor desired.
-	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-		&& env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu")
-	{
+	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && is_mingw_like {
 		println!("cargo:rustc-link-arg=-static");
 	}
 
@@ -230,6 +227,14 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	// Build cxx bridge + C++ wrapper
 	let mut build = cxx_build::bridge("src/occt/ffi.rs");
 	build.file("cpp/wrapper.cpp").include(occt_include).std("c++17").define("_USE_MATH_DEFINES", None);
+
+	// wrapper.cpp は UTF-8 (日本語コメント含む)。MSVC は既定でシステム既定コードページ
+	// (日本語環境なら CP932) で読むため、マルチバイトの末尾バイトが `\` などと解釈されて
+	// 行が結合され、パースがずれる (例: `const int n = ...;` が消えて `n` undeclared)。
+	// `/utf-8` を付けてソース/実行文字集合を UTF-8 に固定する。
+	if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+		build.flag("/utf-8");
+	}
 
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	#[cfg(feature = "color")]
@@ -356,13 +361,13 @@ fn build_occt_from_source(out_dir: &Path, install_prefix: &Path) -> (PathBuf, Pa
 
 /// Returns `[include_dir, lib_dir]`. Each entry is the first existing
 /// candidate, or the first candidate as fallback. Handles Linux
-/// (`include`,`lib`), MinGW (`inc`,`win64/gcc/lib`), and MSVC
-/// (`win64/vc14/lib`) install layouts.
+/// (`include`,`lib`), MinGW-gcc (`inc`,`win64/gcc/lib`), llvm-mingw
+/// (`win64/clang/lib`), and MSVC (`win64/vc14/lib`) install layouts.
 fn find_occt_dirs(occt_root: &Path) -> [PathBuf; 2] {
-	let pick = |cands: [PathBuf; 3]| cands.iter().find(|p| p.exists()).cloned().unwrap_or_else(|| cands[0].clone());
+	let pick = |cands: &[PathBuf]| cands.iter().find(|p| p.exists()).cloned().unwrap_or_else(|| cands[0].clone());
 	[
-		pick([occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")]),
-		pick([occt_root.join("lib"), occt_root.join("win64").join("gcc").join("lib"), occt_root.join("win64").join("vc14").join("lib")]),
+		pick(&[occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")]),
+		pick(&[occt_root.join("lib"), occt_root.join("win64").join("gcc").join("lib"), occt_root.join("win64").join("clang").join("lib"), occt_root.join("win64").join("vc14").join("lib")]),
 	]
 }
 

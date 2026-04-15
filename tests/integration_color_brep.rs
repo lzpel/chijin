@@ -2,7 +2,7 @@
 
 #![cfg(feature = "color")]
 
-use cadrum::{Color, Solid, SolidExt};
+use cadrum::{Color, Compound, Solid};
 use glam::DVec3;
 use std::fs;
 

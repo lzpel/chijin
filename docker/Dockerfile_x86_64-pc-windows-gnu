@@ -1,73 +1,47 @@
-# Prebuild OCCT for x86_64-pc-windows-gnu using the MinGW-w64 cross toolchain.
-FROM rust:latest
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        mingw-w64 cmake \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN rustup target add x86_64-pc-windows-gnu
-
-ENV TARGET=x86_64-pc-windows-gnu
-
-# Target-prefixed env vars only — DO NOT set catch-all CC/CXX/AR, otherwise
-# build dependencies (compiled for the host) pick up the cross toolchain
-# and produce object files that cannot be linked into the host rlib.
+# Prebuild OCCT for x86_64-pc-windows-gnullvm using the llvm-mingw toolchain.
 #
-# Explicit `-posix` suffix on gcc/g++: Debian's mingw-w64 apt packages split
-# the toolchain by threading model (`gcc-mingw-w64-x86-64-posix` vs `-win32`),
-# both installed by the `mingw-w64` meta-package. The unsuffixed binary is an
-# update-alternatives symlink that currently defaults to posix on bookworm
-# and trixie, but we pin explicitly so a future default flip doesn't silently
-# change our ABI. `ar` is not split by threading model so no suffix exists.
+# Why llvm-mingw (not Debian apt mingw-w64):
+# - UCRT-bound by default, matching Rust's self-contained mingw (1.80+), so
+#   cadrum prebuilt and downstream Rust agree on `FILE*` / CRT semantics.
+# - Ships libc++ and libunwind as static archives ready to absorb with
+#   `-static`, so the final exe has no libstdc++-6.dll / libgcc_s_seh-1.dll /
+#   libwinpthread-1.dll / libc++.dll / libunwind.dll runtime dependency.
+# - Same toolchain distribution used by upstream Rust for its windows-gnu
+#   self-contained component, so unwind model (SEH) and ABI stay aligned.
+FROM mstorsjo/llvm-mingw:latest
+
+# Base image ships cmake/make/git but not rustup. Install a minimal Rust.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH=/root/.cargo/bin:/opt/llvm-mingw/bin:$PATH
+
+# control cc crate and cargo command
 #
-# CRT choice: Debian's `gcc-mingw-w64-x86-64-*` packages target msvcrt.dll.
-# Rust's `x86_64-pc-windows-gnu` libstd is also msvcrt-bound, so matching OCCT
-# to msvcrt keeps the final exe on a single CRT. UCRT via `gcc-mingw-w64-ucrt64`
-# is a separate parallel toolchain with no posix/win32 suffix split and would
-# require switching rustc to `x86_64-pc-windows-gnullvm`; out of scope here.
-#
-# Runtime DLLs: msvcrt.dll is OS-bundled on every Windows since NT4.0, so the
-# final exe's only runtime dependency is OS-shipped. libgcc / libwinpthread are
-# statically absorbed via `cargo:rustc-link-arg=-static` emitted from build.rs
-# (see the `CARGO_CFG_TARGET_ENV == gnu` branch). libstdc++ is absorbed via
-# the CXXSTDLIB override + RUSTFLAGS -L bake defined below.
-ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc-posix
-ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-posix
-ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
-ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc-posix
+# llvm-mingw's default `x86_64-w64-mingw32-clang` targets UCRT; the `-uwp`
+# variant targets the Windows Store subset and is out of scope here. `ar` is
+# the Binutils-style wrapper that llvm-mingw ships alongside clang.
+ENV CC=x86_64-w64-mingw32-clang
+ENV CXX=x86_64-w64-mingw32-clang++
+ENV AR=x86_64-w64-mingw32-ar
+ENV CARGO_BUILD_TARGET=x86_64-pc-windows-gnullvm
 
-# link-cplusplus (a transitive dep of cxx) defaults to emitting
-# `cargo:rustc-link-lib=stdc++` (dynamic) on windows-gnu, which rustc places
-# inside its hardcoded `-Wl,-Bdynamic` region — making any downstream
-# `-static`/`-static-libstdc++` on the final link line ineffective for the
-# libstdc++ resolution. Overriding CXXSTDLIB_<target> flips link-cplusplus
-# to emit `cargo:rustc-link-lib=static=stdc++`, which rustc encodes with a
-# `-Wl,-Bstatic ... -Wl,-Bdynamic` bracket around `-lstdc++`, resolving it
-# against libstdc++.a.
-#
-# Downstream windows-gnu users who want the same self-contained result must
-# set this same env var (plus the RUSTFLAGS -L below) in their own build
-# environment (documented in the project README). Without it they get a
-# libstdc++-6.dll runtime dep.
-ENV CXXSTDLIB_x86_64_pc_windows_gnu=static=stdc++
+# linker: rustc defaults to `x86_64-w64-mingw32-gcc` for this target; point it
+# at the llvm-mingw clang driver instead so final-link flags (-static, etc.)
+# are interpreted by the same driver that compiled the C++ sources.
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=x86_64-w64-mingw32-clang
 
-# link-cplusplus declares `#[link(name="stdc++", kind="static")]` when the
-# CXXSTDLIB override above flips it to static mode, and rustc verifies that
-# libstdc++.a exists on the `-L` search path at link-cplusplus's own
-# compile time (well before cadrum's build.rs runs, so a build.rs-emitted
-# rustc-link-search arrives too late). Bake a global `-L` into RUSTFLAGS at
-# image build time by querying the installed cross g++ for the sysroot
-# containing libstdc++.a. Computed at build time so it tracks whatever gcc
-# version Debian apt-installed into this image; cached in a file that the
-# entrypoint-wrapper sources at container run time.
-RUN LIBSTDCXX_DIR="$(dirname "$(x86_64-w64-mingw32-g++-posix -print-file-name=libstdc++.a)")" && \
-    printf '#!/bin/sh\nexport RUSTFLAGS="-L %s ${RUSTFLAGS:-}"\nexec /entrypoint.sh "$@"\n' \
-        "$LIBSTDCXX_DIR" > /entrypoint-wrapper.sh && \
-    chmod +x /entrypoint-wrapper.sh && \
-    cat /entrypoint-wrapper.sh
+# link-cplusplus declares `#[link(name="stdc++")]` by default, but llvm-mingw
+# ships the C++ stdlib as `libc++.a` (no libstdc++ alias). Remap the library
+# name via the documented CXXSTDLIB_<target> env var so link-cplusplus emits
+# `-lc++` instead. Dynamic (not static=) so rustc defers the resolution to
+# final link, where `cargo:rustc-link-arg=-static` from build.rs tells the
+# clang driver to absorb libc++.a / libunwind.a statically alongside libgcc /
+# libwinpthread. Downstream users pick up the same behavior automatically
+# because `-static` is emitted by cadrum's own build.rs.
+ENV CXXSTDLIB_x86_64_pc_windows_gnullvm=c++
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# add cargo target
+RUN rustup target add ${CARGO_BUILD_TARGET}
 
+# copy source and build OCCT prebuilt
 WORKDIR /src
-ENTRYPOINT ["/entrypoint-wrapper.sh"]
+COPY . /src

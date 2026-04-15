@@ -6,4 +6,6 @@ linkedin.md
 *.step
 *.stl
 *.svg
+*.tar.gz
 uv.lock
+*.dockerignore

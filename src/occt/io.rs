@@ -1,4 +1,4 @@
-use super::compound::Compound;
+use super::compound::CompoundShape;
 use super::ffi;
 use super::solid::Solid;
 use super::stream::{RustReader, RustWriter};
@@ -50,7 +50,7 @@ fn resolve_color_trailer(inner: &ffi::TopoDS_Shape, index_colormap: &std::collec
 }
 
 #[cfg(feature = "color")]
-fn write_color_trailer<W: Write>(compound: &Compound, writer: &mut W) -> Result<(), Error> {
+fn write_color_trailer<W: Write>(compound: &CompoundShape, writer: &mut W) -> Result<(), Error> {
 	let colormap = compound.colormap();
 	if colormap.is_empty() {
 		return Ok(());
@@ -95,7 +95,7 @@ impl IoModule for Io {
 			for i in 0..ids.len() {
 				colormap.insert(ids[i], Color { r: r[i], g: g[i], b: b[i] });
 			}
-			Ok(Compound::from_raw(inner, colormap).decompose())
+			Ok(CompoundShape::from_raw(inner, colormap).decompose())
 		}
 		#[cfg(not(feature = "color"))]
 		{
@@ -104,7 +104,7 @@ impl IoModule for Io {
 			if inner.is_null() {
 				return Err(Error::StepReadFailed);
 			}
-			Ok(Compound::from_raw(inner).decompose())
+			Ok(CompoundShape::from_raw(inner).decompose())
 		}
 	}
 
@@ -125,7 +125,7 @@ impl IoModule for Io {
 				return Err(Error::BrepReadFailed);
 			}
 			let colormap = resolve_color_trailer(&inner, &index_colormap);
-			Ok(Compound::from_raw(inner, colormap).decompose())
+			Ok(CompoundShape::from_raw(inner, colormap).decompose())
 		}
 		#[cfg(not(feature = "color"))]
 		{
@@ -134,7 +134,7 @@ impl IoModule for Io {
 			if inner.is_null() {
 				return Err(Error::BrepReadFailed);
 			}
-			Ok(Compound::from_raw(inner).decompose())
+			Ok(CompoundShape::from_raw(inner).decompose())
 		}
 	}
 
@@ -155,7 +155,7 @@ impl IoModule for Io {
 				return Err(Error::BrepReadFailed);
 			}
 			let colormap = resolve_color_trailer(&inner, &index_colormap);
-			Ok(Compound::from_raw(inner, colormap).decompose())
+			Ok(CompoundShape::from_raw(inner, colormap).decompose())
 		}
 		#[cfg(not(feature = "color"))]
 		{
@@ -164,7 +164,7 @@ impl IoModule for Io {
 			if inner.is_null() {
 				return Err(Error::BrepReadFailed);
 			}
-			Ok(Compound::from_raw(inner).decompose())
+			Ok(CompoundShape::from_raw(inner).decompose())
 		}
 	}
 
@@ -175,7 +175,7 @@ impl IoModule for Io {
 	/// With the `color` feature enabled, face colors are automatically embedded
 	/// in the STEP file (XDE / AP214 styled items).
 	fn write_step<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
-		let compound = Compound::new(solids);
+		let compound = CompoundShape::new(solids);
 		#[cfg(feature = "color")]
 		{
 			let colormap = compound.colormap();
@@ -206,7 +206,7 @@ impl IoModule for Io {
 	/// With the `color` feature enabled, a color trailer is appended after the
 	/// BRep data so that face colors survive the round-trip.
 	fn write_brep_binary<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
-		let compound = Compound::new(solids);
+		let compound = CompoundShape::new(solids);
 		let mut rust_writer = RustWriter::from_ref(writer);
 		if !ffi::write_brep_bin_stream(compound.inner(), &mut rust_writer) {
 			return Err(Error::BrepWriteFailed);
@@ -221,7 +221,7 @@ impl IoModule for Io {
 	/// With the `color` feature enabled, a color trailer is appended after the
 	/// BRep data so that face colors survive the round-trip.
 	fn write_brep_text<'a, W: Write>(solids: impl IntoIterator<Item = &'a Solid>, writer: &mut W) -> Result<(), Error> {
-		let compound = Compound::new(solids);
+		let compound = CompoundShape::new(solids);
 		let mut rust_writer = RustWriter::from_ref(writer);
 		if !ffi::write_brep_text_stream(compound.inner(), &mut rust_writer) {
 			return Err(Error::BrepWriteFailed);
@@ -235,7 +235,7 @@ impl IoModule for Io {
 		use crate::common::mesh::{EdgeData, Mesh};
 		use glam::{DVec2, DVec3};
 
-		let compound = Compound::new(solids);
+		let compound = CompoundShape::new(solids);
 		let data = ffi::mesh_shape(compound.inner(), tolerance);
 		if !data.success {
 			return Err(Error::TriangulationFailed);

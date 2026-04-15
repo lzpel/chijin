@@ -1,7 +1,7 @@
 use super::ffi;
 use super::iterators::ApproximationSegmentIterator;
 use crate::common::error::Error;
-use crate::traits::{BSplineEnd, EdgeExt, EdgeStruct, Transform};
+use crate::traits::{BSplineEnd, EdgeStruct, Transform, Wire};
 use glam::DVec3;
 
 /// An edge topology shape.
@@ -153,7 +153,7 @@ impl EdgeStruct for Edge {
 	}
 }
 
-impl EdgeExt for Edge {
+impl Wire for Edge {
 	type Elem = Edge;
 
 	fn start_point(&self) -> DVec3 {

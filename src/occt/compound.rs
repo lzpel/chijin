@@ -6,13 +6,13 @@ use crate::common::color::Color;
 /// A compound shape wrapping multiple solids into a single `TopoDS_Compound`.
 ///
 /// Provides type-safe distinction from individual `Solid` handles.
-pub(crate) struct Compound {
+pub(crate) struct CompoundShape {
 	inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
 	#[cfg(feature = "color")]
 	colormap: std::collections::HashMap<u64, Color>,
 }
 
-impl Compound {
+impl CompoundShape {
 	/// Assemble solids into a compound, merging their colormaps.
 	pub fn new<'a>(solids: impl IntoIterator<Item = &'a Solid>) -> Self {
 		let mut inner = ffi::make_empty();
@@ -23,7 +23,7 @@ impl Compound {
 			#[cfg(feature = "color")]
 			colormap.extend(s.colormap().iter().map(|(&k, &v)| (k, v)));
 		}
-		Compound {
+		CompoundShape {
 			inner,
 			#[cfg(feature = "color")]
 			colormap,
@@ -32,7 +32,7 @@ impl Compound {
 
 	/// Create a compound from a raw `TopoDS_Shape` (e.g. from I/O or boolean ops).
 	pub fn from_raw(inner: cxx::UniquePtr<ffi::TopoDS_Shape>, #[cfg(feature = "color")] colormap: std::collections::HashMap<u64, Color>) -> Self {
-		Compound {
+		CompoundShape {
 			inner,
 			#[cfg(feature = "color")]
 			colormap,

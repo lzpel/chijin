@@ -1,10 +1,10 @@
-use super::compound::Compound;
+use super::compound::CompoundShape;
 use super::edge::Edge;
 use super::face::Face;
 use super::ffi;
 use super::iterators::{EdgeIterator, FaceIterator};
 use crate::common::error::Error;
-use crate::traits::{ProfileOrient, SolidExt, SolidStruct, Transform};
+use crate::traits::{Compound, ProfileOrient, SolidStruct, Transform};
 use glam::DVec3;
 use std::sync::Mutex;
 
@@ -369,11 +369,11 @@ impl Transform for Solid {
 	}
 }
 
-// ==================== impl SolidExt for Solid ====================
+// ==================== impl Compound for Solid ====================
 //
 // Solid-specific per-element ops (queries / color / boolean wrappers / clean).
 // `Vec<Solid>` and `[Solid; N]` impls live in src/traits.rs and delegate to this one.
-impl SolidExt for Solid {
+impl Compound for Solid {
 	type Elem = Solid;
 
 	fn clean(&self) -> Result<Self, Error> {
@@ -493,7 +493,7 @@ fn merge_colormaps(from_a: &[u64], from_b: &[u64], colormap_a: &std::collections
 // `color` feature; the boolean result and metadata are derived purely from
 // the FFI BooleanShape, so they go unused without `color`.
 #[cfg_attr(not(feature = "color"), allow(unused_variables))]
-fn build_boolean_result(r: cxx::UniquePtr<ffi::BooleanShape>, ca: Compound, cb: Compound) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
+fn build_boolean_result(r: cxx::UniquePtr<ffi::BooleanShape>, ca: CompoundShape, cb: CompoundShape) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
 	let from_a = ffi::boolean_shape_from_a(&r);
 	let from_b = ffi::boolean_shape_from_b(&r);
 	let inner = ffi::boolean_shape_shape(&r);
@@ -501,7 +501,7 @@ fn build_boolean_result(r: cxx::UniquePtr<ffi::BooleanShape>, ca: Compound, cb: 
 	#[cfg(feature = "color")]
 	let colormap = merge_colormaps(&from_a, &from_b, ca.colormap(), cb.colormap());
 
-	let compound = Compound::from_raw(
+	let compound = CompoundShape::from_raw(
 		inner,
 		#[cfg(feature = "color")]
 		colormap,
@@ -517,8 +517,8 @@ const BOOLEAN_OP_COMMON: u32 = 2;
 
 impl Solid {
 	fn boolean_op_impl<'a, 'b>(a: impl IntoIterator<Item = &'a Solid>, b: impl IntoIterator<Item = &'b Solid>, op_kind: u32) -> Result<(Vec<Solid>, [Vec<u64>; 2]), Error> {
-		let ca = Compound::new(a);
-		let cb = Compound::new(b);
+		let ca = CompoundShape::new(a);
+		let cb = CompoundShape::new(b);
 		let r = ffi::boolean_op(ca.inner(), cb.inner(), op_kind);
 		if r.is_null() { return Err(Error::BooleanOperationFailed); }
 		build_boolean_result(r, ca, cb)

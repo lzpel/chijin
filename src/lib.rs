@@ -12,7 +12,7 @@ pub mod occt;
 #[cfg(feature = "pure")]
 pub mod pure;
 pub(crate) mod traits;
-pub use traits::{BSplineEnd, ProfileOrient, SolidExt, Transform};
+pub use traits::{BSplineEnd, Compound, ProfileOrient, Transform, Wire};
 
 // Re-export backend types at crate root
 #[cfg(not(feature = "pure"))]

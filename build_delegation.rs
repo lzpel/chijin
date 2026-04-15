@@ -9,7 +9,7 @@
 //!   - "Module" suffix (e.g. IoModule → crate root): generates `pub fn ...` at crate root
 //!     (module name is intentionally discarded — the suffix is a developer-facing
 //!     organizational marker only, not part of the public API surface)
-//!   - その他のサフィックス (e.g. SolidExt) はトップレベル委譲を生成しないが、
+//!   - その他のサフィックス (e.g. Compound, Wire) はトップレベル委譲を生成しないが、
 //!     "Struct" トレイトのスーパートレイトとして参照された場合は、その中の
 //!     メソッドも inherent impl に取り込まれる
 //!
@@ -40,7 +40,7 @@ fn delegation_kind(trait_name: &str) -> Option<DelegationKind> {
 		let base = &trait_name[..trait_name.len() - 6];
 		Some(DelegationKind::FreeFn { struct_path: format!("crate::{}", base) })
 	} else {
-		None // skip traits with unrecognized suffix (e.g. SolidExt) — only used as supertraits
+		None // skip traits with unrecognized suffix (e.g. Compound, Wire) — only used as supertraits
 	}
 }
 
@@ -298,7 +298,7 @@ fn parse_traits(src: &str) -> Vec<TraitDef> {
 }
 
 /// Extract `(trait_name, supertraits)` from a line like
-/// `pub trait SolidStruct: Sized + Clone + SolidExt {`.
+/// `pub trait SolidStruct: Sized + Clone + Compound {`.
 ///
 /// Lifetime bounds (e.g. `'static`) are filtered out. Whether a returned name
 /// refers to a user-defined trait is decided later by lookup.

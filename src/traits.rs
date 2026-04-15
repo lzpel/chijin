@@ -3,8 +3,8 @@
 //! Trait hierarchy:
 //!
 //! ```text
-//! Transform  ─┬─  SolidExt   ──  SolidStruct  (pub(crate))
-//!             └─  EdgeExt    ──  EdgeStruct   (pub(crate))
+//! Transform  ─┬─  Compound   ──  SolidStruct  (pub(crate))
+//!             └─  Wire    ──  EdgeStruct   (pub(crate))
 //! ```
 //!
 //! `Face` 型はトレイトを持たない opaque な query handle で、`tshape_id` のみ
@@ -13,19 +13,19 @@
 //!
 //! `Edge` / `Vec<Edge>` の対称関係は `Solid` / `Vec<Solid>` と同じ:
 //!   - 単一エッジ向け constructor は `EdgeStruct` (cube/sphere に対応)
-//!   - エッジ列 (= Wire) を含む共通操作は `EdgeExt` (volume/clean に対応)
+//!   - エッジ列 (= Wire) を含む共通操作は `Wire` (volume/clean に対応)
 //!   - `Vec<Edge>` がそのまま Wire — 専用型は無い (`Vec<Solid>` = Compound と同様)
 //!
 //! - `Transform` (pub): spatial ops (translate/rotate/scale/mirror). Geometry-agnostic.
 //!   Implemented for shapes (`Solid`, future `Edge` etc.) and collections.
 //!
-//! - `SolidExt: Transform` (pub): solid-specific operations on Solid, Vec<T>, and [T; N]
+//! - `Compound: Transform` (pub): solid-specific operations on Solid, Vec<T>, and [T; N]
 //!   (clean/volume/contains/color/boolean wrappers). Inherits Transform's methods.
 //!
-//! - `SolidStruct: Sized + Clone + SolidExt` (pub(crate)): backend implementation trait.
+//! - `SolidStruct: Sized + Clone + Compound` (pub(crate)): backend implementation trait.
 //!   Adds Solid-only operations (constructors, topology accessors, boolean primitives).
 //!   build_delegation.rs parses this and generates pub inherent methods on Solid,
-//!   walking the supertrait chain so all `SolidExt` and `Transform` methods are also
+//!   walking the supertrait chain so all `Compound` and `Transform` methods are also
 //!   exposed inherently. Trait name follows `<Type>Struct` convention (SolidStruct → Solid).
 //!
 //! ## 関連型による型ヒエラルキー（バックエンド非依存ルール）
@@ -102,7 +102,7 @@ use glam::{DMat3, DQuat, DVec3};
 /// shapes (`Solid`, eventually `Edge` etc.) and for collections (`Vec<T>`,
 /// `[T; N]`) where the element type is itself `Transform`.
 ///
-/// `SolidExt: Transform`, so users of `Solid` get these methods inherently
+/// `Compound: Transform`, so users of `Solid` get these methods inherently
 /// (via build_delegation's supertrait walk) and never need to import this trait
 /// explicitly. Importing it is only required when calling these methods on
 /// `Vec<T>` / `[T; N]` directly.
@@ -246,13 +246,13 @@ pub enum BSplineEnd {
 	},
 }
 
-// ==================== EdgeExt / EdgeStruct ====================
+// ==================== Wire / EdgeStruct ====================
 
 /// Public trait: edge/wire-level operations on `Edge`, `Vec<Edge>` and `[Edge; N]`.
 ///
 /// `Vec<Edge>` plays the role of a wire in this library — there is no
 /// dedicated `Wire` type, mirroring how `Compound` is just `Vec<Solid>`.
-/// Methods on `EdgeExt` therefore have meaningful semantics for both a single
+/// Methods on `Wire` therefore have meaningful semantics for both a single
 /// edge and an ordered edge list:
 ///
 /// - `start_point` / `start_tangent` — the wire's starting position/direction.
@@ -264,10 +264,10 @@ pub enum BSplineEnd {
 /// - `approximation_segments` — polyline approximation. For a wire, all
 ///   sub-edges' segments are concatenated in order.
 ///
-/// Spatial transforms live on the supertrait `Transform`. As with `SolidExt`,
-/// `EdgeStruct: EdgeExt` so users of `Edge` get these methods inherently;
-/// importing `EdgeExt` is only required when chaining on `Vec<Edge>` / `[Edge; N]`.
-pub trait EdgeExt: Transform {
+/// Spatial transforms live on the supertrait `Transform`. As with `Compound`,
+/// `EdgeStruct: Wire` so users of `Edge` get these methods inherently;
+/// importing `Wire` is only required when chaining on `Vec<Edge>` / `[Edge; N]`.
+pub trait Wire: Transform {
 	type Elem: EdgeStruct;
 
 	fn start_point(&self) -> DVec3;
@@ -278,14 +278,14 @@ pub trait EdgeExt: Transform {
 
 /// Backend-independent edge trait (pub(crate) — not exposed to users).
 ///
-/// Single-edge constructors only. Wire/edge-list operations live on `EdgeExt`
+/// Single-edge constructors only. Wire/edge-list operations live on `Wire`
 /// and are inherited via the supertrait bound, in symmetry with `SolidStruct`.
 ///
 /// All constructors return `Result<..., Error>`. Invalid inputs (degenerate
 /// geometry, zero/negative radius, collinear arc points, etc.) yield
 /// `Error::InvalidEdge(String)` with a message that identifies the failing
 /// constructor and the offending parameters.
-pub trait EdgeStruct: Sized + Clone + EdgeExt {
+pub trait EdgeStruct: Sized + Clone + Wire {
 	/// Construct a single helical edge on a cylindrical surface centered at
 	/// the world origin.
 	///
@@ -359,16 +359,16 @@ pub trait EdgeStruct: Sized + Clone + EdgeExt {
 /// Backend-independent solid trait (pub(crate) — not exposed to users).
 ///
 /// `Solid`-specific operations only. The shared methods (transforms, queries,
-/// color, boolean wrappers) live on `SolidExt` and are inherited via the
+/// color, boolean wrappers) live on `Compound` and are inherited via the
 /// supertrait bound.
 ///
 
 /// build_delegation.rs generates `impl Solid { pub fn ... }` from this trait
-/// and walks the supertrait chain to expose `SolidExt` methods inherently as well.
+/// and walks the supertrait chain to expose `Compound` methods inherently as well.
 ///
 /// Associated types `Edge`/`Face` keep this trait backend-independent: each
 /// backend (occt / pure) binds them to its own concrete types in the impl.
-pub trait SolidStruct: Sized + Clone + SolidExt {
+pub trait SolidStruct: Sized + Clone + Compound {
 	type Edge: EdgeStruct;
 	type Face;
 
@@ -433,20 +433,20 @@ pub trait SolidStruct: Sized + Clone + SolidExt {
 	/// wraps the surface in a face, caps it if needed, sews, and makes a solid.
 	fn bspline<const M: usize, const N: usize>(grid: [[DVec3; N]; M], periodic: bool) -> Result<Self, Error>;
 
-	// --- Boolean primitives (consumed by SolidExt::*_with_metadata wrappers) ---
+	// --- Boolean primitives (consumed by Compound::*_with_metadata wrappers) ---
 	fn boolean_union<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;
 	fn boolean_subtract<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;
 	fn boolean_intersect<'a, 'b>(a: impl IntoIterator<Item = &'a Self>, b: impl IntoIterator<Item = &'b Self>) -> Result<(Vec<Self>, [Vec<u64>; 2]), Error> where Self: 'a + 'b;
 }
 
-// ==================== SolidExt ====================
+// ==================== Compound ====================
 
 /// Public trait: solid-specific operations on Solid, Vec<Solid>, and [Solid; N].
 ///
 /// Spatial transforms (translate/rotate/scale/mirror) live on the supertrait
-/// `Transform`. Users `use cadrum::SolidExt;` (and optionally `Transform`) to
+/// `Transform`. Users `use cadrum::Compound;` (and optionally `Transform`) to
 /// enable method chaining on collections.
-pub trait SolidExt: Transform {
+pub trait Compound: Transform {
 	type Elem: SolidStruct;
 
 	fn clean(&self) -> Result<Self, Error>;
@@ -472,10 +472,10 @@ pub trait SolidExt: Transform {
 	fn intersect<'a>(&self, tool: impl IntoIterator<Item = &'a Self::Elem>) -> Result<Vec<Self::Elem>, Error> where Self::Elem: 'a { Ok(self.intersect_with_metadata(tool)?.0) }
 }
 
-// `impl SolidExt for Solid` lives in the backend module (e.g. src/occt/solid.rs)
+// `impl Compound for Solid` lives in the backend module (e.g. src/occt/solid.rs)
 // because it needs direct access to the backend FFI for the per-element operations.
 
-// ==================== impl Transform / SolidExt for Vec<T> ====================
+// ==================== impl Transform / Compound for Vec<T> ====================
 
 impl<T: Transform> Transform for Vec<T> {
 	fn translate(self, v: DVec3) -> Self { self.into_iter().map(|s| s.translate(v)).collect() }
@@ -484,7 +484,7 @@ impl<T: Transform> Transform for Vec<T> {
 	fn mirror(self, o: DVec3, n: DVec3) -> Self { self.into_iter().map(|s| s.mirror(o, n)).collect() }
 }
 
-impl<T: SolidStruct> SolidExt for Vec<T> {
+impl<T: SolidStruct> Compound for Vec<T> {
 	type Elem = T;
 	fn clean(&self) -> Result<Self, Error> { self.iter().map(|s| s.clean()).collect() }
 	fn volume(&self) -> f64 { self.iter().map(|s| s.volume()).sum() }
@@ -515,7 +515,7 @@ impl<T: SolidStruct> SolidExt for Vec<T> {
 	}
 }
 
-// ==================== impl Transform / SolidExt for [T; N] ====================
+// ==================== impl Transform / Compound for [T; N] ====================
 
 impl<T: Transform, const N: usize> Transform for [T; N] {
 	fn translate(self, v: DVec3) -> Self { self.map(|s| s.translate(v)) }
@@ -524,7 +524,7 @@ impl<T: Transform, const N: usize> Transform for [T; N] {
 	fn mirror(self, o: DVec3, n: DVec3) -> Self { self.map(|s| s.mirror(o, n)) }
 }
 
-impl<T: SolidStruct, const N: usize> SolidExt for [T; N] {
+impl<T: SolidStruct, const N: usize> Compound for [T; N] {
 	type Elem = T;
 	fn clean(&self) -> Result<Self, Error> {
 		let v: Result<Vec<T>, Error> = self.iter().map(|s| s.clean()).collect();
@@ -558,12 +558,12 @@ impl<T: SolidStruct, const N: usize> SolidExt for [T; N] {
 	}
 }
 
-// ==================== impl EdgeExt for Vec<T> / [T; N] ====================
+// ==================== impl Wire for Vec<T> / [T; N] ====================
 //
 // Vec<Edge> is the wire representation in this library — these impls give
-// `Vec<Edge>` and `[Edge; N]` the same EdgeExt methods that single Edge has.
+// `Vec<Edge>` and `[Edge; N]` the same Wire methods that single Edge has.
 
-impl<T: EdgeStruct> EdgeExt for Vec<T> {
+impl<T: EdgeStruct> Wire for Vec<T> {
 	type Elem = T;
 
 	fn start_point(&self) -> DVec3 {
@@ -609,7 +609,7 @@ impl<T: EdgeStruct> EdgeExt for Vec<T> {
 	}
 }
 
-impl<T: EdgeStruct, const N: usize> EdgeExt for [T; N] {
+impl<T: EdgeStruct, const N: usize> Wire for [T; N] {
 	type Elem = T;
 
 	fn start_point(&self) -> DVec3 {

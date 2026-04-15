@@ -1,4 +1,4 @@
-use cadrum::{Solid, SolidExt};
+use cadrum::{Compound, Solid};
 use glam::DVec3;
 
 #[test]

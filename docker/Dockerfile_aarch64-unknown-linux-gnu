@@ -9,18 +9,21 @@
 #   `ubuntu-24.04-arm` runner (free for public repositories).
 FROM quay.io/pypa/manylinux_2_28_aarch64
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable --profile minimal
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
 ENV PATH=/root/.cargo/bin:$PATH
 
-ENV TARGET=aarch64-unknown-linux-gnu
+# control cc crate and cargo command
+# target == host (container runs as aarch64 via QEMU or on a native arm64
+# runner), so the image's default gcc/g++/ar cover both host build
+# dependencies and the OCCT cmake build.
+# ENV CC=gcc
+# ENV CXX=g++
+# ENV AR=ar
+ENV CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu
 
-# target == host, so no cross-toolchain env vars are needed. The image's
-# default gcc/g++ is used for both host build-dependencies and the OCCT
-# cmake build.
+# add cargo target
+RUN rustup target add ${CARGO_BUILD_TARGET}
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
+# copy source and build OCCT prebuilt
 WORKDIR /src
-ENTRYPOINT ["/entrypoint.sh"]
+COPY . /src

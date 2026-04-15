@@ -469,7 +469,7 @@ cargo run --example 07_sweep
 //!   gravity direction. On a helix, `Up(helix_axis)` is equivalent to `Torsion`.
 //!   Fails when the tangent becomes parallel to `axis`.
 
-use cadrum::{Edge, Error, ProfileOrient, Solid, SolidExt, Transform};
+use cadrum::{Compound, Edge, Error, ProfileOrient, Solid, Transform};
 use glam::DVec3;
 
 // ==================== Component 1: M2 ISO screw ====================

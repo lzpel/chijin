@@ -13,7 +13,7 @@
 //!   T-07: I/O  — read/write 中に一時ファイルが生成されない（ストリームAPI）
 //!   T-08: API設計 — boolean の戻り値が中間型でなく Shape（現 Vec<Solid>）に変換可能
 
-use cadrum::{Solid, SolidExt};
+use cadrum::{Compound, Solid};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {

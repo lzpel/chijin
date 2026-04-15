@@ -1,4 +1,4 @@
-use cadrum::{Solid, SolidExt, Transform};
+use cadrum::{Compound, Solid, Transform};
 use glam::DVec3;
 
 fn dvec3(x: f64, y: f64, z: f64) -> DVec3 {
