@@ -114,6 +114,10 @@ std::streambuf::int_type RustReadStreambuf::underflow() {
     return traits_type::to_int_type(*gptr());
 }
 
+std::streambuf::pos_type RustReadStreambuf::seekpos(pos_type, std::ios_base::openmode) {
+    return pos_type(off_type(-1));
+}
+
 // ==================== RustWriteStreambuf ====================
 
 std::streambuf::int_type RustWriteStreambuf::overflow(int_type ch) {
@@ -153,6 +157,10 @@ bool RustWriteStreambuf::flush_buf() {
     if (n < pos_) return false;
     pos_ = 0;
     return true;
+}
+
+std::streambuf::pos_type RustWriteStreambuf::seekpos(pos_type, std::ios_base::openmode) {
+    return pos_type(off_type(-1));
 }
 
 // ==================== Shape I/O (streambuf callback) ====================
