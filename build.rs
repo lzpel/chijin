@@ -231,6 +231,14 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 	let mut build = cxx_build::bridge("src/occt/ffi.rs");
 	build.file("cpp/wrapper.cpp").include(occt_include).std("c++17").define("_USE_MATH_DEFINES", None);
 
+	// wrapper.cpp は UTF-8 (日本語コメント含む)。MSVC は既定でシステム既定コードページ
+	// (日本語環境なら CP932) で読むため、マルチバイトの末尾バイトが `\` などと解釈されて
+	// 行が結合され、パースがずれる (例: `const int n = ...;` が消えて `n` undeclared)。
+	// `/utf-8` を付けてソース/実行文字集合を UTF-8 に固定する。
+	if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+		build.flag("/utf-8");
+	}
+
 	// Define CADRUM_COLOR for C++ when the "color" feature is enabled.
 	#[cfg(feature = "color")]
 	build.define("CADRUM_COLOR", None);
