@@ -27,6 +27,28 @@ Add this to your `Cargo.toml`:
 cadrum = "^0.5"
 ```
 
+## Build
+
+`cargo build` automatically downloads a prebuilt OCCT 8.0.0-rc5 binary for the targets below.
+
+| | Target | Prebuilt |
+|--|--------|----------|
+| <img src="figure/linux.svg" width="16"> | `x86_64-unknown-linux-gnu` | ✅ |
+| <img src="figure/linux.svg" width="16"> | `aarch64-unknown-linux-gnu` | ✅ |
+| <img src="figure/windows.svg" width="16"> | `x86_64-pc-windows-msvc` | ✅ |
+| <img src="figure/windows.svg" width="16"> | `x86_64-pc-windows-gnu` | ✅ |
+
+For other targets, build OCCT from source:
+
+    OCCT_ROOT=/path/to/occt cargo build --features source-build
+
+If `OCCT_ROOT` is not set, built binaries are cached under `target/`.
+
+#### Requirements when building OpenCASCADE from source
+
+- C++17 compiler (GCC, Clang, or MSVC)
+- CMake
+
 ## Examples
 
 #### Primitives
@@ -445,14 +467,15 @@ fn main() -> Result<(), Error> {
 
 #### Sweep
 
-Sweep showcase: M2 screw (helix spine) + U-shaped pipe (line+arc+line spine).
+Sweep showcase: M2 screw (helix spine) + U-shaped pipe (line+arc+line spine)
 
 ```sh
 cargo run --example 07_sweep
 ```
 
 ```rust
-//! Sweep showcase: M2 screw (helix spine) + U-shaped pipe (line+arc+line spine).
+//! Sweep showcase: M2 screw (helix spine) + U-shaped pipe (line+arc+line spine)
+//! + twisted ribbon (`Auxiliary` aux-spine mode).
 //!
 //! `ProfileOrient` controls how the profile is oriented as it travels along the spine:
 //!
@@ -468,6 +491,9 @@ cargo run --example 07_sweep
 //!   tangent–`axis` plane. Suited for roads/rails/pipes that must preserve a
 //!   gravity direction. On a helix, `Up(helix_axis)` is equivalent to `Torsion`.
 //!   Fails when the tangent becomes parallel to `axis`.
+//! - `Auxiliary(aux_spine)`: profile's tracked axis points from the main spine
+//!   toward a parallel auxiliary spine. Arbitrary twist control — e.g. a
+//!   helical `aux_spine` on a straight `spine` produces a twisted ribbon.
 
 use cadrum::{Compound, Edge, Error, ProfileOrient, Solid, Transform};
 use glam::DVec3;
@@ -502,9 +528,9 @@ fn build_m2_screw() -> Result<Vec<Solid>, Error> {
 	let crest = Solid::cylinder(r - r_delta / 8.0, DVec3::Z, h_thread);
 	let thread_shaft = thread.union([&shaft])?.intersect([&crest])?;
 
-	// Stack the flat head on top.
+	// Stack the flat head on top. Screw ends up centered on the origin.
 	let head = Solid::cylinder(r_head, DVec3::Z, h_head).translate(DVec3::Z * h_thread);
-	thread_shaft.union([&head])
+	Ok(thread_shaft.union([&head])?.color("red"))
 }
 
 // ==================== Component 2: U-shaped pipe ====================
@@ -513,67 +539,69 @@ fn build_u_pipe() -> Result<Vec<Solid>, Error> {
 	let pipe_radius = 0.4;
 	let leg_length = 6.0;
 	let gap = 3.0;
-	let bend_radius = gap / 2.0;
+	let half_gap = gap / 2.0;
+	let bend_radius = half_gap;
 
-	// U-shaped path in the XZ plane: A↑B ⌒ C↓D
-	let a = DVec3::ZERO;
-	let b = DVec3::new(0.0, 0.0, leg_length);
-	let arc_mid = DVec3::new(bend_radius, 0.0, leg_length + bend_radius);
-	let c = DVec3::new(gap, 0.0, leg_length);
-	let d = DVec3::new(gap, 0.0, 0.0);
+	// U-shaped path in the XZ plane, centered on origin in X: A↑B ⌒ C↓D.
+	let a = DVec3::new(-half_gap, 0.0, 0.0);
+	let b = DVec3::new(-half_gap, 0.0, leg_length);
+	let arc_mid = DVec3::new(0.0, 0.0, leg_length + bend_radius);
+	let c = DVec3::new(half_gap, 0.0, leg_length);
+	let d = DVec3::new(half_gap, 0.0, 0.0);
 
 	// Spine wire: line → semicircle → line.
 	let up_leg = Edge::line(a, b)?;
 	let bend = Edge::arc_3pts(b, arc_mid, c)?;
 	let down_leg = Edge::line(c, d)?;
 
-	// Circular profile in XY (normal +Z) — already aligned with the spine start tangent.
-	let profile = Edge::circle(pipe_radius, DVec3::Z)?;
+	// Circular profile in XY (normal +Z) translated to the spine start `a`.
+	// Spine tangent at `a` is +Z, so the XY-plane circle is already aligned.
+	let profile = Edge::circle(pipe_radius, DVec3::Z)?.translate(a);
 
 	// Up(+Y) fixes the binormal to the path-plane normal, avoiding Frenet
 	// degeneracy on the straight segments.
 	let pipe = Solid::sweep(&[profile], &[up_leg, bend, down_leg], ProfileOrient::Up(DVec3::Y))?;
-	Ok(vec![pipe])
+	Ok(vec![pipe].translate(DVec3::X * 6.0).color("blue"))
+}
+
+// ==================== Component 3: Auxiliary-spine twisted ribbon ====================
+
+// 直線 spine を `Auxiliary(&[helix])` で掃引すると、各点で profile の tracked 軸が
+// 対応するヘリックス点を向くように回転される。pitch=h のヘリックスは [0, h] の
+// あいだにちょうど 360° 一周するので、平たい長方形 profile は 1 回捻れた
+// リボンになる — `Fixed` や `Torsion` だと直線 spine では profile は全く
+// 回転しないので、ねじれが見えれば Auxiliary が効いている証拠。
+fn build_twisted_ribbon() -> Result<Vec<Solid>, Error> {
+	let h = 8.0;
+	let aux_r = 3.0;
+
+	let spine = Edge::line(DVec3::ZERO, DVec3::Z * h)?;
+	let aux = Edge::helix(aux_r, h, h, DVec3::Z, DVec3::X)?;
+
+	// 平たい長方形 (10:1 アスペクト) — 円や正方形ではねじれが見えない。
+	let profile = Edge::polygon(&[DVec3::new(-2.0, -0.2, 0.0), DVec3::new(2.0, -0.2, 0.0), DVec3::new(2.0, 0.2, 0.0), DVec3::new(-2.0, 0.2, 0.0)])?;
+
+	let ribbon = Solid::sweep(&profile, &[spine], ProfileOrient::Auxiliary(&[aux]))?;
+	Ok(vec![ribbon].translate(DVec3::X * 12.0).color("green"))
 }
 
 // ==================== main: side-by-side layout ====================
+//
+// Each builder places its component at its final world position (screw at
+// origin, U-pipe at x=6, ribbon at x=12) and applies its color, so main
+// just concatenates them.
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+	let all: Vec<Solid> = [build_m2_screw()?, build_u_pipe()?, build_twisted_ribbon()?].concat();
 
-	// Screw at origin, U-pipe offset along +X.
-	let x_offset = 6.0;
-
-	let mut all: Vec<Solid> = Vec::new();
-
-	match build_m2_screw() {
-		Ok(screw) => {
-			all.extend(screw.color("red"));
-			println!("✓ screw built (red, centered at origin)");
-		}
-		Err(e) => eprintln!("✗ screw failed: {e}"),
-	}
-
-	match build_u_pipe() {
-		Ok(pipe) => {
-			let placed: Vec<Solid> = pipe.translate(DVec3::X * x_offset).color("blue");
-			all.extend(placed);
-			println!("✓ U-pipe built (blue, offset x={x_offset})");
-		}
-		Err(e) => eprintln!("✗ U-pipe failed: {e}"),
-	}
-
-	if all.is_empty() {
-		eprintln!("nothing to write");
-		return;
-	}
-
-	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
-	cadrum::write_step(&all, &mut f).expect("failed to write STEP");
-	let mut f_svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
+	let mut f = std::fs::File::create(format!("{example_name}.step"))?;
+	cadrum::write_step(&all, &mut f)?;
+	let mut f_svg = std::fs::File::create(format!("{example_name}.svg"))?;
 	// Helical threads have dense hidden lines that clutter the SVG; disable them.
-	cadrum::mesh(&all, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, -1.0), false, false, &mut f_svg)).expect("failed to write SVG");
+	cadrum::mesh(&all, 0.5)?.write_svg(DVec3::new(1.0, 1.0, -1.0), false, false, &mut f_svg)?;
 	println!("wrote {example_name}.step / {example_name}.svg ({} solids)", all.len());
+	Ok(())
 }
 
 ```
@@ -647,68 +675,12 @@ fn main() {
 </p>
 
 
-## Requirements
-
-- A C++17 compiler (GCC, Clang, or MSVC)
-- CMake
-
-Tested with GCC 15.2.0 (MinGW-w64) and CMake 3.31.11 on Windows.
-
-## Build
-
-By default, `cargo build` downloads a **prebuilt OCCT 8.0.0-rc5 binary** from GitHub Releases
-matching the current target triple, and extracts it to `target/cadrum-occt-v800rc5-<triple>/`.
-First-time builds finish in seconds instead of the 10–30 minutes a source build would take.
-
-Prebuilts are published for these targets:
-- `x86_64-unknown-linux-gnu` — built on manylinux_2_28 (AlmaLinux 8, glibc 2.28); works on Ubuntu 18.10+, Debian 10+, RHEL/Rocky/AlmaLinux 8+, Fedora 29+, Arch, openSUSE Leap 15.1+
-- `aarch64-unknown-linux-gnu` — built on manylinux_2_28_aarch64; works on Raspberry Pi 4/5 (64-bit OS), AWS Graviton, Oracle Ampere, Apple Silicon Linux VMs
-- `x86_64-pc-windows-gnu`
-- `x86_64-pc-windows-msvc`
-
-Other triples — Alpine (musl), macOS (x86_64/arm64), Windows on ARM — are not
-currently published. Users on those platforms should enable the `source-build`
-feature to build OCCT from upstream sources locally:
-
-```sh
-cargo build --features source-build
-```
-
-Resolution model (build.rs):
-
-1. `OCCT_ROOT` defines the single cache location. If unset, it defaults to
-   `target/cadrum-occt-v800rc5-<triple>/`. Whether explicit or default, the
-   semantics are the same: if the directory already contains OCCT headers
-   and libs, link directly.
-2. **Cache miss** — populate the cache:
-   - Without `source-build` feature (default): download the prebuilt tarball
-     for `<triple>` from GitHub Release and extract into the cache dir.
-     If the target is not in the supported list, `build.rs` panics with a
-     pointer back here.
-   - With `source-build` feature: download OCCT source from upstream and
-     build with CMake into the cache dir (10–30 minutes).
-
-To build on an unsupported triple, or to patch OCCT locally:
-
-```sh
-cargo build --features source-build
-```
-
-To pin OCCT to a persistent location across `cargo clean`:
-
-```sh
-export OCCT_ROOT=~/occt
-cargo build
-```
-
 ## Features
 
-- `color` (default): Colored STEP I/O via XDE (`STEPCAFControl`). Enables `write_step_with_colors`,
+- `color` (default): Colored STEP I/O via XDE. Enables `write_step_with_colors`,
   `read_step_with_colors`, and per-face color on `Solid`.
-  Colors are preserved through boolean operations and other transformations.
-- `source-build` (default OFF): Build OCCT from upstream sources via CMake when the cache is
-  empty, instead of downloading a prebuilt tarball. Enable this if you are on a triple with no
-  published prebuilt, or if you want to patch OCCT locally.
+- `source-build`: Download and build OCCT from upstream sources via CMake.
+  Enable this on triples without a published prebuilt.
 
 ## Showcase
 
