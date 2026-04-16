@@ -7,13 +7,6 @@ on:
 
 jobs:
   # Docker 経由 (cross toolchain が Linux 側で成熟している)。
-  #
-  # windows-gnullvm は Dockerfile ファイル名をあえて `Dockerfile_x86_64-pc-windows-gnu`
-  # のまま維持している (llvm-mingw 移行前の名前と互換を保つため)。そのため make target
-  # 名と成果物 target 名が分離している: `make_target` が makefile のパターンルール
-  # `cadrum-occt-%` に渡される文字列 (= Dockerfile 末尾の拡張子)、`target` が最終的に
-  # 配布される triple 名 (= tarball ファイル名の中身、CARGO_BUILD_TARGET と一致)。
-  # Linux 2 target は両者が一致するので make_target は省略可能。
   build:
     strategy:
       fail-fast: false
@@ -23,20 +16,17 @@ jobs:
             runs-on: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             runs-on: ubuntu-24.04-arm
-          - target: x86_64-pc-windows-gnullvm
-            make_target: x86_64-pc-windows-gnu
-            runs-on: ubuntu-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
 
       - name: build
-        run: make cadrum-occt-${{ matrix.make_target || matrix.target }}
+        run: make cadrum-occt-${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: cadrum-occt-${{ matrix.target }}
-          path: out/${{ matrix.make_target || matrix.target }}/cadrum-occt-*.tar.gz
+          path: out/${{ matrix.target }}/cadrum-occt-*.tar.gz
 
   # native Windows runner + native cl.exe で作る。
   # cargo-xwin/clang-cl 経由の prebuild は MSVC STL template の COMDAT 排出判断が
