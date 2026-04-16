@@ -18,4 +18,4 @@ cadrum-occt-all: # cross all build
 cadrum-occt: generate # native build (01_primitivesのテストも兼ねる)
 	cargo run --example 01_primitives --release --features source-build 2>&1 | tee out/log.txt || true # colorはdefaultの一部なのでfeature指定不要
 	echo "is is ok that 01_primitives fails in windows-gnu target." >> out/log.txt
-	find target -maxdepth 1 -type d -name 'cadrum*' | xargs -IX sh -c 'tar -czvf out/$$(basename X).tar.gz -C X .'
+	find target -maxdepth 1 -type d -name 'cadrum*' | xargs -IX sh -c 'tar -czvf out/$$(basename X).tar.gz -C $$(dirname X) $$(basename X)'
