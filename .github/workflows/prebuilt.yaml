@@ -23,7 +23,7 @@ jobs:
             runs-on: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             runs-on: ubuntu-24.04-arm
-          - target: x86_64-pc-windows-gnullvm
+          - target: x86_64-pc-windows-gnu
             make_target: x86_64-pc-windows-gnu
             runs-on: ubuntu-latest
     runs-on: ${{ matrix.runs-on }}
