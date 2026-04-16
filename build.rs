@@ -32,7 +32,16 @@ fn main() {
 
 	let target = env::var("TARGET").unwrap();
 
-	let [occt_include, occt_lib_dir] = resolve_occt(&out_dir, &target);
+	let target_dir = target_dir_from_out_dir(&out_dir, &target);
+	let default_root = target_dir.join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), &target));
+	let effective_root = env::var("OCCT_ROOT")
+		.map(|r| {
+			let p = PathBuf::from(r);
+			if p.is_relative() { env::current_dir().unwrap().join(p) } else { p }
+		})
+		.unwrap_or(default_root);
+
+	let [occt_include, occt_lib_dir] = resolve_occt(&effective_root, &target);
 
 	link_occt_libraries(&occt_include, &occt_lib_dir);
 }
@@ -42,9 +51,6 @@ fn main() {
 /// `OUT_DIR` layout:
 ///   `<target_dir>/<profile>/build/<pkg>-<hash>/out`            (no `--target`)
 ///   `<target_dir>/<triple>/<profile>/build/<pkg>-<hash>/out`   (with `--target`)
-///
-/// Walking up 4 levels from `out` lands on either `<triple>` or `<target_dir>`.
-/// If it matches `TARGET`, one more parent gives the real target dir.
 fn target_dir_from_out_dir(out_dir: &Path, target: &str) -> PathBuf {
 	let above_profile = out_dir.ancestors().nth(4).expect("unexpected OUT_DIR layout");
 	if above_profile.file_name().map_or(false, |n| n == target) {
@@ -59,30 +65,22 @@ fn target_dir_from_out_dir(out_dir: &Path, target: &str) -> PathBuf {
 ///   1. Cache hit → use it
 ///   2. Cache miss + `source-build` → build from upstream sources
 ///   3. Cache miss otherwise → download prebuilt tarball
-fn resolve_occt(out_dir: &Path, target: &str) -> [PathBuf; 2] {
-	let target_dir = target_dir_from_out_dir(out_dir, target);
-	let default_root = target_dir.join(format!("cadrum-occt-{}-{}", slug(OCCT_VERSION), target));
-	let effective_root = env::var("OCCT_ROOT")
-		.map(|r| {
-			let p = PathBuf::from(r);
-			if p.is_relative() { env::current_dir().unwrap().join(p) } else { p }
-		})
-		.unwrap_or(default_root);
-
+fn resolve_occt(effective_root: &Path, target: &str) -> [PathBuf; 2] {
+	let _ = target; // used only in #[cfg(not(feature = "source-build"))]
 	println!("cargo:rerun-if-changed={}", effective_root.display());
 
-	match find_occt_dirs(&effective_root) {
+	match find_occt_dirs(effective_root) {
 		Some(dirs) => return dirs,
 		None => {
 			#[cfg(feature = "source-build")]
 			{
 				eprintln!("cargo:warning=OCCT cache miss at {} — building from source (this may take 10-30 minutes)", effective_root.display());
-				return source::build_from_source(out_dir, &effective_root)
+				return source::build_from_source(effective_root)
 					.expect("Failed to build OCCT from source");
 			}
 			#[cfg(not(feature = "source-build"))]
 			{
-				return download_prebuilt(out_dir, &effective_root, target)
+				return download_prebuilt(effective_root, target)
 					.unwrap_or_else(|| panic!(
 						"\nFailed to download prebuilt OCCT for target `{}`.\n\
 						 See README for the list of supported prebuilt targets, or enable\n\
@@ -97,8 +95,6 @@ fn resolve_occt(out_dir: &Path, target: &str) -> [PathBuf; 2] {
 
 /// Probe `occt_root` for include and lib directories.
 /// Returns `Some([include_dir, lib_dir])` if both exist, `None` otherwise.
-/// Handles Linux (`include`,`lib`), MinGW-gcc (`inc`,`win64/gcc/lib`),
-/// llvm-mingw (`win64/clang/lib`), and MSVC (`win64/vc14/lib`) layouts.
 fn find_occt_dirs(occt_root: &Path) -> Option<[PathBuf; 2]> {
 	let pick = |cands: &[PathBuf]| cands.iter().find(|p| p.exists()).cloned();
 	let inc = pick(&[occt_root.join("include").join("opencascade"), occt_root.join("inc"), occt_root.join("include")])?;
@@ -106,18 +102,7 @@ fn find_occt_dirs(occt_root: &Path) -> Option<[PathBuf; 2]> {
 	Some([inc, lib])
 }
 
-/// OCCT toolkits to link against (OCCT 7.8+ / 8.x naming). In 7.8+,
-/// TKSTEP*/TKBinTools/TKShapeUpgrade were reorganized into TKDESTEP/TKBin/
-/// TKShHealing. TKService is intentionally excluded — it pulls
-/// Image_AlienPixMap → ole32/windowscodecs on Windows and image I/O is unused.
-///
-/// The `color`-gated XDE (STEP-with-color) ApplicationFramework toolkits
-/// reference Graphic3d_* symbols that normally live in TKService; those
-/// references are stubbed out by `patch_occt_sources`. Layout verified by nm:
-///   TKLCAF — TDocStd_Document/Application
-///   TKXCAF — XCAFApp_Application, XCAFDoc_ColorTool/ShapeTool/DocumentTool
-///   TKCAF  — TNaming_NamedShape/Builder (needed by TKXCAF's XCAFDoc)
-///   TKCDF  — CDM_Document/Application (needed by TKLCAF's TDocStd_Document)
+/// OCCT toolkits to link against (OCCT 7.8+ / 8.x naming).
 const OCC_LIBS: &[&str] = &[
 	"TKernel", "TKMath", "TKBRep", "TKTopAlgo", "TKPrim", "TKBO", "TKBool",
 	"TKShHealing", "TKMesh", "TKGeomBase", "TKGeomAlgo", "TKG3d", "TKG2d",
@@ -140,23 +125,13 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 		println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
 	}
 
-	// windows-gnu: absorb libgcc / libstdc++ / libwinpthread statically so
-	// the final exe's only runtime dep is msvcrt.dll (OS-bundled on every
-	// Windows since NT4.0). Safe because wrapper.cpp exposes only a C ABI
-	// via cxx — no libstdc++ types cross the boundary, so downstream's
-	// libstdc++ version cannot conflict with the one frozen inside our
-	// objects.
 	if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && is_mingw_like {
 		println!("cargo:rustc-link-arg=-static");
 	}
 
-	// Build cxx bridge + C++ wrapper
 	let mut build = cxx_build::bridge("src/occt/ffi.rs");
 	build.file("cpp/wrapper.cpp").include(occt_include).std("c++17").define("_USE_MATH_DEFINES", None);
 
-	// wrapper.cpp は UTF-8 (日本語コメント含む)。MSVC は既定でシステム既定コードページ
-	// (日本語環境なら CP932) で読むため、マルチバイトの末尾バイトが `\` などと解釈されて
-	// 行が結合され、パースがずれる。`/utf-8` でソース/実行文字集合を UTF-8 に固定。
 	if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
 		build.flag("/utf-8");
 	}
@@ -173,7 +148,7 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 
 /// Download a prebuilt OCCT tarball for `target` into `dest`.
 #[cfg(not(feature = "source-build"))]
-fn download_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<[PathBuf; 2]> {
+fn download_prebuilt(dest: &Path, target: &str) -> Option<[PathBuf; 2]> {
 	let slug_ver = slug(OCCT_VERSION);
 	let top_name = format!("cadrum-occt-{}-{}", slug_ver, target);
 	let tarball_name = format!("{}.tar.gz", top_name);
@@ -181,28 +156,26 @@ fn download_prebuilt(out_dir: &Path, dest: &Path, target: &str) -> Option<[PathB
 
 	eprintln!("cargo:warning=Downloading prebuilt OCCT from {}", url);
 
-	let staging = out_dir.join("occt-prebuilt-staging");
-	let _ = std::fs::remove_dir_all(&staging);
-	std::fs::create_dir_all(&staging).ok()?;
+	let parent = dest.parent()?;
+	std::fs::create_dir_all(parent).ok()?;
 
-	if let Err(e) = download_and_extract_tar_gz(&url, &staging) {
+	if let Err(e) = download_and_extract_tar_gz(&url, parent) {
 		eprintln!("cargo:warning=prebuilt fetch failed: {}", e);
 		return None;
 	}
 
-	let extracted = staging.join(&top_name);
+	let extracted = parent.join(&top_name);
 	if !extracted.is_dir() {
 		eprintln!("cargo:warning=prebuilt tarball missing expected top-level dir `{}`", top_name);
 		return None;
 	}
 
-	if let Some(parent) = dest.parent() {
-		std::fs::create_dir_all(parent).ok()?;
-	}
-	let _ = std::fs::remove_dir_all(dest);
-	if let Err(e) = std::fs::rename(&extracted, dest) {
-		eprintln!("cargo:warning=failed to move extracted OCCT into {}: {}", dest.display(), e);
-		return None;
+	if extracted != *dest {
+		let _ = std::fs::remove_dir_all(dest);
+		if let Err(e) = std::fs::rename(&extracted, dest) {
+			eprintln!("cargo:warning=failed to move extracted OCCT into {}: {}", dest.display(), e);
+			return None;
+		}
 	}
 
 	find_occt_dirs(dest)
@@ -239,17 +212,17 @@ mod source {
 	use std::env;
 	use std::path::{Path, PathBuf};
 
-	/// Download OCCT source, patch, and build with CMake into `install_prefix`.
-	pub fn build_from_source(out_dir: &Path, install_prefix: &Path) -> Option<[PathBuf; 2]> {
-		// Already built?
-		if find_occt_dirs(install_prefix).is_some() {
-			return find_occt_dirs(install_prefix);
+	/// Download OCCT source, patch, build with CMake, then remove non-patched
+	/// source files (LGPL 2.1 §2: keep only the modified files).
+	pub fn build_from_source(effective_root: &Path) -> Option<[PathBuf; 2]> {
+		if let Some(dirs) = find_occt_dirs(effective_root) {
+			return Some(dirs);
 		}
 
 		let occt_version = OCCT_VERSION;
 		let occt_url = format!("https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/{}.tar.gz", occt_version);
 
-		let download_dir = out_dir.join("occt-source");
+		let download_dir = effective_root.join("occt-source");
 		let extraction_sentinel = download_dir.join(".extraction_done");
 
 		if !extraction_sentinel.exists() {
@@ -279,14 +252,20 @@ mod source {
 			.map(|e| e.path())
 			.expect("OCCT source directory not found after extraction");
 
-		patch_occt_sources(&source_dir);
+		// Apply patches
+		walk_occt_sources(&source_dir, |path| {
+			if let Some(patched) = patch_or_none(path) {
+				std::fs::write(path, patched).expect("patch write failed");
+				eprintln!("Patched {}", path.file_name().unwrap().to_string_lossy());
+			}
+		});
 
 		eprintln!("Building OCCT with CMake (this may take a while)...");
 
 		let built = cmake::Config::new(&source_dir)
 			.profile("Release")
 			.define("BUILD_LIBRARY_TYPE", "Static")
-			.define("CMAKE_INSTALL_PREFIX", install_prefix.to_str().unwrap())
+			.define("CMAKE_INSTALL_PREFIX", effective_root.to_str().unwrap())
 			.define("USE_FREETYPE", "OFF")
 			.define("USE_FREEIMAGE", "OFF")
 			.define("USE_OPENVR", "OFF")
@@ -322,97 +301,99 @@ mod source {
 
 		eprintln!("OCCT built at: {}", built.display());
 
-		find_occt_dirs(install_prefix)
+		// LGPL 2.1 §2: keep only patched files; remove everything else
+		walk_occt_sources(&source_dir, |path| {
+			if path.is_dir() {
+				let _ = std::fs::remove_dir_all(path);
+			} else if patch_or_none(path).is_none() {
+				let _ = std::fs::remove_file(path);
+			}
+		});
+
+		find_occt_dirs(effective_root)
 	}
 
-	/// Patch OCCT source files to remove unwanted link dependencies.
-	///
-	/// 1. TKService (Visualization) — stub XCAFDoc_VisMaterial.cxx, empty XCAFPrs_Texture.cxx
-	/// 2. advapi32 / user32 (Windows) — stub OSD_WNT/File/Protection/signal/FileNode/Process
-	/// 3. glibc-only headers (musl) — stub Standard_StackTrace.cxx, comment out <execinfo.h>
-	/// 4. OCC_CONVERT_SIGNALS — comment out to avoid mingw _setjmp ABI issues
-	fn patch_occt_sources(source_dir: &Path) {
-		let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
-
-		for entry in [source_dir.join("src"), source_dir.join("adm")]
-			.into_iter()
-			.flat_map(walkdir::WalkDir::new)
-			.flatten()
-		{
-			if !entry.file_type().is_file() {
-				continue;
-			}
-			let path = entry.path();
-			let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue };
-			match name {
-				"XCAFDoc_VisMaterial.cxx" => stub_out_methods(path, true),
-				"XCAFPrs_Texture.cxx" => stub_out_methods(path, false),
-
-				"Standard_StackTrace.cxx" => {
-					stub_out_methods(path, true);
-					comment_out_include(path, "execinfo.h");
-				}
-
-				"OSD_WNT.cxx" if is_windows => stub_out_methods(path, false),
-				"OSD_File.cxx" | "OSD_Protection.cxx" | "OSD_signal.cxx" | "OSD_FileNode.cxx" | "OSD_Process.cxx"
-					if is_windows =>
-				{
-					stub_out_methods(path, true);
-				}
-
-				"occt_defs_flags.cmake" if is_windows => {
-					let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
-					let replacement = "# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs";
-					if let Ok(content) = std::fs::read_to_string(path) {
-						if content.contains(needle) && !content.contains(replacement) {
-							let patched = content.replace(needle, replacement);
-							if let Err(e) = std::fs::write(path, patched) {
-								eprintln!("warning: failed to patch {}: {}", path.display(), e);
-							} else {
-								eprintln!("patched out OCC_CONVERT_SIGNALS in {}", path.display());
-							}
-						}
+	/// Walk the OCCT source tree.
+	/// - `src/` and `adm/`: recurse and yield every **file**
+	/// - other top-level directories (`data/`, `dox/`, `tests/`, …): yield the **directory** itself
+	/// - top-level files (`CMakeLists.txt`, `LICENSE_LGPL_21.txt`, …): skipped
+	fn walk_occt_sources(source_dir: &Path, mut f: impl FnMut(&Path)) {
+		for entry in walkdir::WalkDir::new(source_dir).min_depth(1).max_depth(1).into_iter().flatten() {
+			let name = entry.file_name().to_string_lossy();
+			if name == "src" || name == "adm" {
+				for child in walkdir::WalkDir::new(entry.path()).into_iter().flatten() {
+					if child.file_type().is_file() {
+						f(child.path());
 					}
 				}
-
-				_ => {}
+			} else if entry.file_type().is_dir() {
+				f(entry.path());
 			}
 		}
 	}
 
-	fn comment_out_include(path: &Path, header: &str) {
-		if !path.exists() {
-			return;
+	/// Return the patched content for a file if it needs patching, `None` otherwise.
+	/// Pure function — does not write to disk.
+	fn patch_or_none(path: &Path) -> Option<String> {
+		let name = path.file_name()?.to_str()?;
+		let is_windows = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
+
+		match name {
+			"XCAFDoc_VisMaterial.cxx" => Some(stub_content(path, true)),
+			"XCAFPrs_Texture.cxx" => Some(stub_content(path, false)),
+
+			"Standard_StackTrace.cxx" => {
+				let stubbed = stub_content(path, true);
+				Some(comment_out_include_in(&stubbed, "execinfo.h"))
+			}
+
+			"OSD_WNT.cxx" if is_windows => Some(stub_content(path, false)),
+			"OSD_File.cxx" | "OSD_Protection.cxx" | "OSD_signal.cxx"
+			| "OSD_FileNode.cxx" | "OSD_Process.cxx"
+				if is_windows =>
+			{
+				Some(stub_content(path, true))
+			}
+
+			"occt_defs_flags.cmake" if is_windows => {
+				let content = std::fs::read_to_string(path).ok()?;
+				let needle = "add_definitions(-DOCC_CONVERT_SIGNALS)";
+				let replacement = "# add_definitions(-DOCC_CONVERT_SIGNALS)  # patched out by cadrum build.rs";
+				if content.contains(needle) {
+					Some(content.replace(needle, replacement))
+				} else if content.contains(replacement) {
+					Some(content) // already patched — keep as-is
+				} else {
+					None
+				}
+			}
+
+			_ => None,
 		}
-		let content = std::fs::read_to_string(path).expect("Failed to read file for include patching");
-		let needle = format!("#include <{}>", header);
-		if !content.contains(&needle) {
-			return;
-		}
-		let replacement = format!("// {} (patched out by cadrum build.rs)", needle);
-		let patched = content.replace(&needle, &replacement);
-		std::fs::write(path, patched).expect("Failed to write patched include file");
-		eprintln!("Patched out <{}> in {}", header, path.file_name().unwrap().to_string_lossy());
 	}
 
-	fn stub_out_methods(path: &Path, keep_signatures: bool) {
-		if !path.exists() {
-			return;
-		}
-
-		let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_else(|_| "unknown".to_string());
+	/// Generate stubbed content for a C++ source file without writing to disk.
+	fn stub_content(path: &Path, keep_signatures: bool) -> String {
+		let unix = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.map(|d| d.as_secs().to_string())
+			.unwrap_or_else(|_| "unknown".to_string());
 		let description = if keep_signatures { "method bodies stubbed" } else { "file emptied" };
 		let header = format!("// Stubbed by cadrum build.rs at unix={unix}: {description}.\n");
 
-		let patched = if keep_signatures {
+		if keep_signatures {
 			let content = std::fs::read_to_string(path).expect("Failed to read file for stubbing");
 			header + &stub_all_top_level_bodies(&content)
 		} else {
 			header
-		};
+		}
+	}
 
-		std::fs::write(path, patched).expect("Failed to write stubbed file");
-		eprintln!("Stubbed {}", path.file_name().unwrap().to_string_lossy());
+	/// Comment out `#include <header>` in a string and return the result.
+	fn comment_out_include_in(content: &str, header: &str) -> String {
+		let needle = format!("#include <{}>", header);
+		let replacement = format!("// {} (patched out by cadrum build.rs)", needle);
+		content.replace(&needle, &replacement)
 	}
 
 	fn lex_normalize(content: &str) -> String {
