@@ -1,0 +1,40 @@
+# Prebuild OCCT for x86_64-pc-windows-gnu using Debian mingw-w64.
+#
+# Cross-compiles OCCT into static libraries (.a) from a Linux host.
+# The resulting Windows .exe cannot execute inside this container;
+# `cadrum-occt` tolerates the execution failure via `|| true`.
+FROM debian:bookworm-slim
+
+# gcc/g++: HOST compiler for build-dependencies (aws-lc-rs, ring, etc.)
+# gcc-mingw-w64-*: TARGET cross-compiler for OCCT and cxx-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates git make cmake \
+    gcc g++ \
+    gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+    && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
+    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH=/root/.cargo/bin:$PATH
+
+# control cc crate and cargo command
+#
+# Target-specific CC_<target>/CXX_<target> so that HOST build-dependencies
+# use the native gcc while OCCT cmake and cxx-build use the mingw
+# cross-compiler.
+ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+ENV CARGO_BUILD_TARGET=x86_64-pc-windows-gnu
+
+# linker: point rustc at the mingw cross-compiler so final-link flags
+# (-static etc. emitted by build.rs) are interpreted by the correct driver.
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+
+# add cargo target
+RUN rustup target add ${CARGO_BUILD_TARGET}
+
+# copy source and build OCCT prebuilt
+WORKDIR /src
+COPY . /src
