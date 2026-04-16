@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/cadrum.svg?logo=rust)](https://crates.io/crates/cadrum)
 [![Docs](https://img.shields.io/badge/docs-lzpel.github.io%2Fcadrum-blue)](https://lzpel.github.io/cadrum)
 
-Rust CAD library powered by [OpenCASCADE](https://dev.opencascade.org/) (OCCT 8.0.0-rc5).
+Rust CAD library powered by statically linked, headless [OpenCASCADE](https://dev.opencascade.org/) (OCCT 8.0.0-rc5).
 
 <p align="center">
   <img src="figure/chijin.svg" alt="chijin — a drum of Amami Oshima" width="360"/>
