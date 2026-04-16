@@ -19,7 +19,8 @@ cadrum-occt: generate # native build (01_primitivesのテストも兼ねる)
 	cargo run --example 01_primitives --release --features source-build 2>&1 | tee out/log.txt || true # colorはdefaultの一部なのでfeature指定不要
 	echo "is is ok that 01_primitives fails in windows-gnu target." >> out/log.txt
 	find target -maxdepth 1 -type d -name 'cadrum*' | xargs -IX sh -c 'tar -czvf out/$$(basename X).tar.gz -C $$(dirname X) $$(basename X)'
-test: # 仮想環境で作ったwindows-gnuプレビルドをホストでテスト、exit 0なら使い物になる
+	find target -type f -executable -path '*/examples/*' | xargs -IX cp X out/ 2>/dev/null || true
+cross-test: # 仮想環境で作ったwindows-gnuプレビルドをホストでテスト、exit 0なら使い物になる
 	rm -rf out/x86_64-pc-windows-gnu
 	make cadrum-occt-x86_64-pc-windows-gnu
-	out/x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/examples/01_primitives.exe
+	out/x86_64-pc-windows-gnu/01_primitives.exe
