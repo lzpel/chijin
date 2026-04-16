@@ -19,7 +19,7 @@ pure = []
 # Build OCCT from upstream sources when the cache is empty, instead of
 # downloading a prebuilt tarball. Off by default — most users will use the
 # prebuilt binary path.
-source-build = []
+source-build = ["dep:cmake", "dep:walkdir"]
 
 [dependencies]
 cxx = "1"
@@ -28,13 +28,13 @@ glam = { version = "0.29", features = ["std"] }
 
 [build-dependencies]
 cxx-build = "1"
-# download OpenCASCADE
+# download and extract prebuilt OCCT tarball
 minreq = { version = "2", features = ["https-rustls"] }
-# extract tar.gz
 libflate = "2"
 tar = "0.4"
-cmake = "0.1"
-walkdir = "2"
+# source-build only: build OCCT from upstream sources
+cmake = { version = "0.1", optional = true }
+walkdir = { version = "2", optional = true }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
