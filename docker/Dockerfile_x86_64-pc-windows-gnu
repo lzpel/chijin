@@ -32,15 +32,23 @@ ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=x86_64-w64-mingw32-clang
 # link-cplusplus declares `#[link(name="stdc++")]` by default, but llvm-mingw
 # ships the C++ stdlib as `libc++.a` (no libstdc++ alias). Remap the library
 # name via the documented CXXSTDLIB_<target> env var so link-cplusplus emits
-# `-lc++` instead. Dynamic (not static=) so rustc defers the resolution to
-# final link, where `cargo:rustc-link-arg=-static` from build.rs tells the
-# clang driver to absorb libc++.a / libunwind.a statically alongside libgcc /
-# libwinpthread. Downstream users pick up the same behavior automatically
-# because `-static` is emitted by cadrum's own build.rs.
-ENV CXXSTDLIB_x86_64_pc_windows_gnullvm=c++
+# `cargo:rustc-link-lib=static=c++` — forcing static resolution of libc++.
+# Without `static=`, rustc's `-Wl,-Bdynamic` before the native-library block
+# resolves `-lc++` against libc++.dll.a, producing a runtime dependency on
+# libc++.dll. RUSTFLAGS=-L tells rustc where to find the static archive so
+# the link-cplusplus compile-time check passes (link-cplusplus builds before
+# cadrum's build.rs, so cargo:rustc-link-search from build.rs arrives too late).
+ENV CXXSTDLIB_x86_64_pc_windows_gnullvm=static=c++
+ENV RUSTFLAGS="-L /opt/llvm-mingw/x86_64-w64-mingw32/lib"
 
 # add cargo target
 RUN rustup target add ${CARGO_BUILD_TARGET}
+
+# Force libunwind static linkage. Rust's `unwind` crate declares
+# `#[link(name = "unwind")]` which, under rustc's `-Wl,-Bdynamic`, resolves
+# against `libunwind.dll.a` (the import library for libunwind.dll). Removing
+# the import library forces the linker to fall back to `libunwind.a`.
+RUN rm -f /opt/llvm-mingw/x86_64-w64-mingw32/lib/libunwind.dll.a
 
 # copy source and build OCCT prebuilt
 WORKDIR /src

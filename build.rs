@@ -221,6 +221,8 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 		println!("cargo:rustc-link-arg=-static");
 	}
 
+
+
 	// advapi32 / user32: no longer needed — patch_occt_sources() stubs the OSD
 	// files (OSD_WNT, OSD_File, OSD_Protection, OSD_signal) that reference them.
 
