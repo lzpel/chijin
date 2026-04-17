@@ -16,11 +16,15 @@
 //!   - エッジ列 (= Wire) を含む共通操作は `Wire` (volume/clean に対応)
 //!   - `Vec<Edge>` がそのまま Wire — 専用型は無い (`Vec<Solid>` = Compound と同様)
 //!
-//! - `Transform` (pub): spatial ops (translate/rotate/scale/mirror). Geometry-agnostic.
-//!   Implemented for shapes (`Solid`, future `Edge` etc.) and collections.
+//! - `Transform` (crate-internal): spatial ops (translate/rotate/scale/mirror).
+//!   Geometry-agnostic. Implemented for shapes (`Solid`, `Edge`) and collections
+//!   (`Vec<T>`, `[T; N]`). Not re-exported from `lib.rs`, so external users cannot
+//!   name it — they reach the same methods via `Compound` / `Wire` forwarders.
 //!
 //! - `Compound: Transform` (pub): solid-specific operations on Solid, Vec<T>, and [T; N]
-//!   (clean/volume/contains/color/boolean wrappers). Inherits Transform's methods.
+//!   (clean/volume/contains/color/boolean wrappers). Also exposes 1-line forwarders
+//!   for every Transform method so `use cadrum::Compound;` alone enables
+//!   `vec.translate(...)` etc. on `Vec<Solid>` / `[Solid; N]`.
 //!
 //! - `SolidStruct: Sized + Clone + Compound` (pub(crate)): backend implementation trait.
 //!   Adds Solid-only operations (constructors, topology accessors, boolean primitives).
@@ -99,13 +103,31 @@ use glam::{DMat3, DQuat, DVec3};
 /// Spatial-transform operations: translate / rotate / scale / mirror.
 ///
 /// Orthogonal to any specific geometry kind. Implemented for individual
-/// shapes (`Solid`, eventually `Edge` etc.) and for collections (`Vec<T>`,
-/// `[T; N]`) where the element type is itself `Transform`.
+/// shapes (`Solid`, `Edge`) and for collections (`Vec<T>`, `[T; N]`) where the
+/// element type is itself `Transform`.
 ///
-/// `Compound: Transform`, so users of `Solid` get these methods inherently
-/// (via build_delegation's supertrait walk) and never need to import this trait
-/// explicitly. Importing it is only required when calling these methods on
-/// `Vec<T>` / `[T; N]` directly.
+/// **Visibility**: this trait is declared `pub` but the enclosing `traits`
+/// module is `pub(crate)` in `lib.rs`, and `Transform` is intentionally NOT
+/// re-exported at the crate root. External users therefore cannot name it and
+/// cannot `use` it. They reach the same methods through `Compound` / `Wire`,
+/// which declare 1-line forwarders (`fn translate(self, ...) -> Self {
+/// <Self as Transform>::translate(self, ...) }`) as default methods. This
+/// keeps transforms a single source of truth inside the crate while letting
+/// `use cadrum::Compound;` alone expose them externally (including on
+/// collections like `Vec<Solid>` where method resolution would otherwise
+/// require an import).
+///
+/// For `Solid` / `Edge` themselves the forwarders are unnecessary —
+/// `build_delegation.rs` walks the supertrait chain and emits inherent
+/// methods, so no trait import is needed on the single types.
+///
+/// TODO(#90): the per-method forwarders in `Compound` / `Wire` are
+/// mechanical and could be generated. A future refactor could extend
+/// `build_delegation.rs` (or introduce a proc-macro) to auto-emit
+/// `fn foo(self, ..) -> Self { <Self as Transform>::foo(self, ..) }` for
+/// every method of a referenced trait, so that Transform's surface is
+/// listed exactly once in this file. Not urgent — see the issue for
+/// priority notes.
 pub trait Transform: Sized {
 	fn translate(self, translation: DVec3) -> Self;
 	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self;
@@ -264,9 +286,15 @@ pub enum BSplineEnd {
 /// - `approximation_segments` — polyline approximation. For a wire, all
 ///   sub-edges' segments are concatenated in order.
 ///
-/// Spatial transforms live on the supertrait `Transform`. As with `Compound`,
-/// `EdgeStruct: Wire` so users of `Edge` get these methods inherently;
-/// importing `Wire` is only required when chaining on `Vec<Edge>` / `[Edge; N]`.
+/// Spatial transforms live on the (crate-private) supertrait `Transform`.
+/// Since `Transform` is not re-exported from the crate root, users cannot
+/// bring it into scope directly. Instead `Wire` exposes 1-line forwarders
+/// for every `Transform` method as default methods, so `use cadrum::Wire;`
+/// alone enables `vec_of_edges.translate(...)` etc.
+///
+/// As with `Compound`, `EdgeStruct: Wire` so users of `Edge` get these
+/// methods inherently via `build_delegation.rs`; the `use` import is only
+/// required when chaining on `Vec<Edge>` / `[Edge; N]`.
 pub trait Wire: Transform {
 	type Elem: EdgeStruct;
 
@@ -274,6 +302,23 @@ pub trait Wire: Transform {
 	fn start_tangent(&self) -> DVec3;
 	fn is_closed(&self) -> bool;
 	fn approximation_segments(&self, tolerance: f64) -> Vec<DVec3>;
+
+	// --- Transform forwarders ---
+	// Let `use cadrum::Wire;` alone pull the Transform surface into scope.
+	// TODO(#90): auto-generate these from `Transform` (extend
+	// build_delegation.rs or introduce a proc-macro) so the list doesn't have
+	// to be mirrored by hand. See the `Transform` doc comment for the design
+	// note. Not urgent.
+	fn translate(self, translation: DVec3) -> Self { <Self as Transform>::translate(self, translation) }
+	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
+	fn rotate_x(self, angle: f64) -> Self { <Self as Transform>::rotate_x(self, angle) }
+	fn rotate_y(self, angle: f64) -> Self { <Self as Transform>::rotate_y(self, angle) }
+	fn rotate_z(self, angle: f64) -> Self { <Self as Transform>::rotate_z(self, angle) }
+	fn scale(self, center: DVec3, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
+	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
+	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
+	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
+	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
 }
 
 /// Backend-independent edge trait (pub(crate) — not exposed to users).
@@ -443,13 +488,33 @@ pub trait SolidStruct: Sized + Clone + Compound {
 
 /// Public trait: solid-specific operations on Solid, Vec<Solid>, and [Solid; N].
 ///
-/// Spatial transforms (translate/rotate/scale/mirror) live on the supertrait
-/// `Transform`. Users `use cadrum::Compound;` (and optionally `Transform`) to
-/// enable method chaining on collections.
+/// Spatial transforms (translate/rotate/scale/mirror) live on the crate-private
+/// supertrait `Transform`. `Compound` re-exposes them through 1-line
+/// forwarders as default methods, so `use cadrum::Compound;` alone is enough
+/// to call `vec.translate(...)` / `[a,b].rotate_z(...)` on collections — no
+/// separate `Transform` import is needed (and none is possible from outside
+/// the crate).
 pub trait Compound: Transform {
 	type Elem: SolidStruct;
 
 	fn clean(&self) -> Result<Self, Error>;
+
+	// --- Transform forwarders ---
+	// Let `use cadrum::Compound;` alone pull the Transform surface into scope.
+	// TODO(#90): auto-generate these from `Transform` (extend
+	// build_delegation.rs or introduce a proc-macro) so the list doesn't have
+	// to be mirrored by hand. See the `Transform` doc comment for the design
+	// note. Not urgent.
+	fn translate(self, translation: DVec3) -> Self { <Self as Transform>::translate(self, translation) }
+	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
+	fn rotate_x(self, angle: f64) -> Self { <Self as Transform>::rotate_x(self, angle) }
+	fn rotate_y(self, angle: f64) -> Self { <Self as Transform>::rotate_y(self, angle) }
+	fn rotate_z(self, angle: f64) -> Self { <Self as Transform>::rotate_z(self, angle) }
+	fn scale(self, center: DVec3, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
+	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
+	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
+	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
+	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
 
 	// --- Queries ---
 	fn volume(&self) -> f64;

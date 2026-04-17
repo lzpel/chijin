@@ -1,6 +1,6 @@
 //! Boolean operations: union, subtract, and intersect between a box and a cylinder.
 
-use cadrum::{Solid, Transform};
+use cadrum::{Compound, Solid};
 use glam::DVec3;
 
 fn main() -> Result<(), cadrum::Error> {

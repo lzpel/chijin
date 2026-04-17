@@ -12,7 +12,12 @@ pub mod occt;
 #[cfg(feature = "pure")]
 pub mod pure;
 pub(crate) mod traits;
-pub use traits::{BSplineEnd, Compound, ProfileOrient, Transform, Wire};
+// `Transform` is intentionally NOT re-exported. It remains reachable only as
+// `crate::traits::Transform` for internal use; external callers reach the same
+// surface through `Compound` / `Wire` forwarder default methods. See the
+// `Transform` doc comment in `traits.rs` for the rationale and the future
+// auto-delegation plan.
+pub use traits::{BSplineEnd, Compound, ProfileOrient, Wire};
 
 // Re-export backend types at crate root
 #[cfg(not(feature = "pure"))]

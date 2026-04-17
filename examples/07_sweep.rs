@@ -19,7 +19,7 @@
 //!   toward a parallel auxiliary spine. Arbitrary twist control — e.g. a
 //!   helical `aux_spine` on a straight `spine` produces a twisted ribbon.
 
-use cadrum::{Compound, Edge, Error, ProfileOrient, Solid, Transform};
+use cadrum::{Compound, Edge, Error, ProfileOrient, Solid, Wire};
 use glam::DVec3;
 
 // ==================== Component 1: M2 ISO screw ====================
