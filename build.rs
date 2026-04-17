@@ -119,6 +119,18 @@ fn link_occt_libraries(occt_include: &Path, occt_lib_dir: &Path) {
 		println!("cargo:rustc-link-lib=static={}", lib);
 	}
 
+	// Tarball 側が "cadrum" を含む名前の static library を同梱していれば拾う。
+	// 典型: mingw 向けに libcadrum_stdc++.a / libcadrum_gcc.a 等を同梱して、
+	// ホスト側 GCC のバージョン差による libstdc++ ABI ミスマッチを回避する (#89)。
+	// OCC_LIBS ループの後に置くので OCCT libs の未解決 symbol を後段で満たす順序になる。
+	for entry in walkdir::WalkDir::new(occt_lib_dir).min_depth(1).max_depth(1).into_iter().flatten() {
+		let Some(name) = entry.file_name().to_str() else { continue };
+		if name.contains("cadrum") {
+			let name=name.strip_prefix("lib").unwrap_or(name).strip_suffix(".a").or(name.strip_suffix(".lib")).unwrap_or(name);
+			println!("cargo:rustc-link-lib=static={}", name);
+		}
+	}
+
 	let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
 	let is_mingw_like = target_env == "gnu" || target_env == "gnullvm";
 	if is_mingw_like {

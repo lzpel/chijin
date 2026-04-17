@@ -1,5 +1,6 @@
 target/
 out/
+logs/
 linkedin.md
 .venv/
 *.brep
