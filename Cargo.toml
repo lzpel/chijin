@@ -1,6 +1,6 @@
 [package]
 name = "cadrum"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Rust CAD library powered by statically linked, headless OpenCASCADE (OCCT 8.0.0-rc5)"
 license = "MIT"
@@ -23,7 +23,7 @@ source-build = ["dep:cmake"]
 
 [dependencies]
 cxx = "1"
-glam = { version = "0.29", features = ["std"] }
+glam = { version = ">=0.29", features = ["std"] }
 
 
 [build-dependencies]
