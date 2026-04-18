@@ -5,8 +5,7 @@
 //! - **L-beam**: L-shaped polygon extruded along Z
 //! - **Heart**: BSpline heart-shaped profile extruded along Z
 
-use cadrum::{BSplineEnd, Edge, Error, Solid};
-use glam::DVec3;
+use cadrum::{BSplineEnd, DVec3, Edge, Error, Solid};
 
 /// Square polygon → box (simplest extrude).
 fn build_box() -> Result<Solid, Error> {

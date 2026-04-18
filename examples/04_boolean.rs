@@ -1,7 +1,6 @@
 //! Boolean operations: union, subtract, and intersect between a box and a cylinder.
 
-use cadrum::{Compound, Solid};
-use glam::DVec3;
+use cadrum::{Compound, DVec3, Solid};
 
 fn main() -> Result<(), cadrum::Error> {
     let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();

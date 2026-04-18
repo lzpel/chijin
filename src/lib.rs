@@ -34,7 +34,13 @@ pub use occt::solid::Solid;
 pub use common::color::Color;
 pub use common::error::Error;
 pub use common::mesh::{EdgeData, Mesh};
-pub use glam::DVec3;
+// Re-export glam types used in cadrum's public API. Users should reach glam
+// through these re-exports (or the `cadrum::glam` module below) instead of
+// adding a direct `glam` dependency — otherwise a mismatched glam minor
+// version pulls in two incompatible `glam` crates and call sites fail with
+// "expected `cadrum::DVec3`, found `glam::DVec3`".
+pub use glam::{DMat3, DMat4, DQuat, DVec2, DVec3};
+pub use glam;
 
 // ==================== Boolean metadata helpers ====================
 //

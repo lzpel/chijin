@@ -4,8 +4,7 @@
 //! - **Morph**: square polygon → circle (cross-section shape transition)
 //! - **Tilted**: three non-parallel circular sections → twisted loft
 
-use cadrum::{Edge, Error, Solid};
-use glam::DVec3;
+use cadrum::{DVec3, Edge, Error, Solid};
 
 /// Two circles → frustum (minimal loft example).
 fn build_frustum() -> Result<Solid, Error> {

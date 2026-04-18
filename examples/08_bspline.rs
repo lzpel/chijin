@@ -1,5 +1,4 @@
-use cadrum::Solid;
-use glam::{DQuat, DVec3};
+use cadrum::{DQuat, DVec3, Solid};
 use std::f64::consts::TAU;
 
 // 2 field-period stellarator-like torus.

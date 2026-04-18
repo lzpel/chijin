@@ -1,7 +1,6 @@
 //! Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
 
-use cadrum::Solid;
-use glam::DVec3;
+use cadrum::{DVec3, Solid};
 
 fn main() {
     let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();

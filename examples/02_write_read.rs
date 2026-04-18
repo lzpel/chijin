@@ -1,7 +1,6 @@
 //! Read and write: chain STEP, BRep text, and BRep binary round-trips with progressive rotation.
 
-use cadrum::{Compound, Solid};
-use glam::DVec3;
+use cadrum::{Compound, DVec3, Solid};
 use std::f64::consts::FRAC_PI_8;
 
 fn main() -> Result<(), cadrum::Error> {

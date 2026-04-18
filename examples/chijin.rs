@@ -1,7 +1,6 @@
 //! Build a chijin (hand drum from Amami Oshima) with colors, boolean ops, and SVG export.
 
-use cadrum::{Color, Compound, Edge, ProfileOrient, Solid};
-use glam::DVec3;
+use cadrum::{Color, Compound, DVec3, Edge, ProfileOrient, Solid};
 use std::f64::consts::PI;
 
 pub fn chijin() -> Result<Solid, cadrum::Error> {

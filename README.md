@@ -27,6 +27,8 @@ Add this to your `Cargo.toml`:
 cadrum = "^0.6"
 ```
 
+> **Note**: do **not** add `glam` as a separate dependency. cadrum's public API takes `glam` types (`DVec3`, `DQuat`, …), so a mismatched `glam` minor version leads to `expected cadrum::DVec3, found glam::DVec3` errors. Use `cadrum::{DVec3, DQuat, ...}` (re-exported at the crate root) or `cadrum::glam::*` instead.
+
 ## Build
 
 `cargo build` automatically downloads a prebuilt OCCT 8.0.0-rc5 binary for the targets below.
@@ -62,8 +64,7 @@ cargo run --example 01_primitives
 ```rust
 //! Primitive solids: box, cylinder, sphere, cone, torus — colored and exported as STEP + SVG.
 
-use cadrum::Solid;
-use glam::DVec3;
+use cadrum::{DVec3, Solid};
 
 fn main() {
     let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
@@ -110,8 +111,7 @@ cargo run --example 02_write_read
 ```rust
 //! Read and write: chain STEP, BRep text, and BRep binary round-trips with progressive rotation.
 
-use cadrum::{Solid, Transform};
-use glam::DVec3;
+use cadrum::{Compound, DVec3, Solid};
 use std::f64::consts::FRAC_PI_8;
 
 fn main() -> Result<(), cadrum::Error> {
@@ -186,8 +186,7 @@ cargo run --example 03_transform
 ```rust
 //! Transform operations: translate, rotate, scale, and mirror applied to a cone.
 
-use cadrum::Solid;
-use glam::DVec3;
+use cadrum::{DVec3, Solid};
 use std::f64::consts::PI;
 
 fn main() {
@@ -245,8 +244,7 @@ cargo run --example 04_boolean
 ```rust
 //! Boolean operations: union, subtract, and intersect between a box and a cylinder.
 
-use cadrum::{Solid, Transform};
-use glam::DVec3;
+use cadrum::{Compound, DVec3, Solid};
 
 fn main() -> Result<(), cadrum::Error> {
     let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
@@ -305,8 +303,7 @@ cargo run --example 05_extrude
 //! - **L-beam**: L-shaped polygon extruded along Z
 //! - **Heart**: BSpline heart-shaped profile extruded along Z
 
-use cadrum::{BSplineEnd, Edge, Error, Solid};
-use glam::DVec3;
+use cadrum::{BSplineEnd, DVec3, Edge, Error, Solid};
 
 /// Square polygon → box (simplest extrude).
 fn build_box() -> Result<Solid, Error> {
@@ -401,8 +398,7 @@ cargo run --example 06_loft
 //! - **Morph**: square polygon → circle (cross-section shape transition)
 //! - **Tilted**: three non-parallel circular sections → twisted loft
 
-use cadrum::{Edge, Error, Solid};
-use glam::DVec3;
+use cadrum::{DVec3, Edge, Error, Solid};
 
 /// Two circles → frustum (minimal loft example).
 fn build_frustum() -> Result<Solid, Error> {
@@ -495,8 +491,7 @@ cargo run --example 07_sweep
 //!   toward a parallel auxiliary spine. Arbitrary twist control — e.g. a
 //!   helical `aux_spine` on a straight `spine` produces a twisted ribbon.
 
-use cadrum::{Compound, Edge, Error, ProfileOrient, Solid, Transform};
-use glam::DVec3;
+use cadrum::{Compound, DVec3, Edge, Error, ProfileOrient, Solid, Wire};
 
 // ==================== Component 1: M2 ISO screw ====================
 
@@ -566,11 +561,12 @@ fn build_u_pipe() -> Result<Vec<Solid>, Error> {
 
 // ==================== Component 3: Auxiliary-spine twisted ribbon ====================
 
-// 直線 spine を `Auxiliary(&[helix])` で掃引すると、各点で profile の tracked 軸が
-// 対応するヘリックス点を向くように回転される。pitch=h のヘリックスは [0, h] の
-// あいだにちょうど 360° 一周するので、平たい長方形 profile は 1 回捻れた
-// リボンになる — `Fixed` や `Torsion` だと直線 spine では profile は全く
-// 回転しないので、ねじれが見えれば Auxiliary が効いている証拠。
+// Sweeping a straight spine with `Auxiliary(&[helix])` rotates the tracked
+// axis of the profile at each point to face the corresponding helix point.
+// A pitch=h helix makes exactly one 360° turn over [0, h], so a flat
+// rectangular profile becomes a ribbon twisted once. With `Fixed` or
+// `Torsion` the profile wouldn't rotate along a straight spine — visible
+// twist is therefore proof that Auxiliary is in effect.
 fn build_twisted_ribbon() -> Result<Vec<Solid>, Error> {
 	let h = 8.0;
 	let aux_r = 3.0;
@@ -578,7 +574,7 @@ fn build_twisted_ribbon() -> Result<Vec<Solid>, Error> {
 	let spine = Edge::line(DVec3::ZERO, DVec3::Z * h)?;
 	let aux = Edge::helix(aux_r, h, h, DVec3::Z, DVec3::X)?;
 
-	// 平たい長方形 (10:1 アスペクト) — 円や正方形ではねじれが見えない。
+	// Flat rectangle (10:1 aspect) — circles or squares wouldn't reveal any twist.
 	let profile = Edge::polygon(&[DVec3::new(-2.0, -0.2, 0.0), DVec3::new(2.0, -0.2, 0.0), DVec3::new(2.0, 0.2, 0.0), DVec3::new(-2.0, 0.2, 0.0)])?;
 
 	let ribbon = Solid::sweep(&profile, &[spine], ProfileOrient::Auxiliary(&[aux]))?;
@@ -618,8 +614,7 @@ cargo run --example 08_bspline
 ```
 
 ```rust
-use cadrum::Solid;
-use glam::{DQuat, DVec3};
+use cadrum::{DQuat, DVec3, Solid};
 use std::f64::consts::TAU;
 
 // 2 field-period stellarator-like torus.
