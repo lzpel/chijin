@@ -88,6 +88,7 @@
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <Message_ProgressRange.hxx>
+#include <Message.hxx>
 
 // --- C++ standard library ---
 #include <istream>
@@ -98,10 +99,17 @@
 #include <cstdint>
 #include <algorithm>
 #include <unordered_map>
-#include <unordered_set>
 #include <array>
 
 namespace cadrum {
+
+// OCCT defaults to a stdout printer that emits "Statistics on Transfer" banners on STEP read/write.
+// Clear all printers at load time per the documented recommendation.
+// ******        Statistics on Transfer (Write)                 ******
+static const int _silence_occt_default_printer = []() {
+    Message::DefaultMessenger()->ChangePrinters().Clear();
+    return 0;
+}();
 
 // ==================== RustReadStreambuf ====================
 
