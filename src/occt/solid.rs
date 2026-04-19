@@ -129,7 +129,8 @@ impl SolidStruct for Solid {
 		)
 	}
 
-	fn cylinder(r: f64, axis: DVec3, h: f64) -> Solid {
+	fn cylinder(r: f64, axis: impl Into<DVec3>, h: f64) -> Solid {
+		let axis: DVec3 = axis.into();
 		let inner = ffi::make_cylinder(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r, h);
 		Solid::new(
 			inner,
@@ -147,7 +148,8 @@ impl SolidStruct for Solid {
 		)
 	}
 
-	fn cone(r1: f64, r2: f64, axis: DVec3, h: f64) -> Solid {
+	fn cone(r1: f64, r2: f64, axis: impl Into<DVec3>, h: f64) -> Solid {
+		let axis: DVec3 = axis.into();
 		let inner = ffi::make_cone(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r1, r2, h);
 		Solid::new(
 			inner,
@@ -156,7 +158,8 @@ impl SolidStruct for Solid {
 		)
 	}
 
-	fn torus(r1: f64, r2: f64, axis: DVec3) -> Solid {
+	fn torus(r1: f64, r2: f64, axis: impl Into<DVec3>) -> Solid {
+		let axis: DVec3 = axis.into();
 		let inner = ffi::make_torus(0.0, 0.0, 0.0, axis.x, axis.y, axis.z, r1, r2);
 		Solid::new(
 			inner,
@@ -165,7 +168,8 @@ impl SolidStruct for Solid {
 		)
 	}
 
-	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Solid {
+	fn half_space(plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Solid {
+		let (plane_origin, plane_normal): (DVec3, DVec3) = (plane_origin.into(), plane_normal.into());
 		let inner = ffi::make_half_space(plane_origin.x, plane_origin.y, plane_origin.z, plane_normal.x, plane_normal.y, plane_normal.z);
 		Solid::new(
 			inner,
@@ -186,7 +190,8 @@ impl SolidStruct for Solid {
 
 	// ==================== Extrude ====================
 
-	fn extrude<'a>(profile: impl IntoIterator<Item = &'a Edge>, dir: DVec3) -> Result<Self, Error> {
+	fn extrude<'a>(profile: impl IntoIterator<Item = &'a Edge>, dir: impl Into<DVec3>) -> Result<Self, Error> {
+		let dir: DVec3 = dir.into();
 		let mut profile_vec = ffi::edge_vec_new();
 		for e in profile {
 			ffi::edge_vec_push(profile_vec.pin_mut(), &e.inner);
@@ -318,7 +323,8 @@ impl SolidStruct for Solid {
 // ==================== impl Transform for Solid ====================
 
 impl Transform for Solid {
-	fn translate(self, translation: DVec3) -> Self {
+	fn translate(self, translation: impl Into<DVec3>) -> Self {
+		let translation: DVec3 = translation.into();
 		let inner = ffi::translate_shape(&self.inner, translation.x, translation.y, translation.z);
 		Solid {
 			#[cfg(feature = "color")]
@@ -327,7 +333,8 @@ impl Transform for Solid {
 		}
 	}
 
-	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self {
+	fn rotate(self, axis_origin: impl Into<DVec3>, axis_direction: impl Into<DVec3>, angle: f64) -> Self {
+		let (axis_origin, axis_direction): (DVec3, DVec3) = (axis_origin.into(), axis_direction.into());
 		let inner = ffi::rotate_shape(&self.inner, axis_origin.x, axis_origin.y, axis_origin.z, axis_direction.x, axis_direction.y, axis_direction.z, angle);
 		Solid {
 			#[cfg(feature = "color")]
@@ -346,7 +353,8 @@ impl Transform for Solid {
 	// See: https://dev.opencascade.org/content/how-scale-or-mirror-shape
 	//      BRepBuilderAPI_Transform.cxx:48-49 (myUseModif branch)
 
-	fn scale(self, center: DVec3, factor: f64) -> Self {
+	fn scale(self, center: impl Into<DVec3>, factor: f64) -> Self {
+		let center: DVec3 = center.into();
 		let inner = ffi::scale_shape(&self.inner, center.x, center.y, center.z, factor);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
@@ -357,7 +365,8 @@ impl Transform for Solid {
 		)
 	}
 
-	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self {
+	fn mirror(self, plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self {
+		let (plane_origin, plane_normal): (DVec3, DVec3) = (plane_origin.into(), plane_normal.into());
 		let inner = ffi::mirror_shape(&self.inner, plane_origin.x, plane_origin.y, plane_origin.z, plane_normal.x, plane_normal.y, plane_normal.z);
 		#[cfg(feature = "color")]
 		let colormap = remap_colormap_by_order(&self.inner, &inner, &self.colormap);
@@ -418,7 +427,8 @@ impl Compound for Solid {
 		ffi::shape_shell_count(&self.inner)
 	}
 
-	fn contains(&self, point: DVec3) -> bool {
+	fn contains(&self, point: impl Into<DVec3>) -> bool {
+		let point: DVec3 = point.into();
 		ffi::shape_contains_point(&self.inner, point.x, point.y, point.z)
 	}
 

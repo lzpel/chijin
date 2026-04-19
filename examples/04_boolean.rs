@@ -8,7 +8,7 @@ fn main() -> Result<(), cadrum::Error> {
     let make_box = Solid::cube(20.0, 20.0, 20.0)
         .color("#4a90d9");
     let make_cyl = Solid::cylinder(8.0, DVec3::Z, 30.0)
-        .translate(DVec3::new(10.0, 10.0, -5.0))
+        .translate([10.0, 10.0, -5.0])
         .color("#e67e22");
 
     // union: merge both shapes into one — offset X=0
@@ -18,12 +18,12 @@ fn main() -> Result<(), cadrum::Error> {
     // subtract: box minus cylinder — offset X=40
     let subtract = make_box
         .subtract(&[make_cyl.clone()])?
-        .translate(DVec3::new(40.0, 0.0, 0.0));
+        .translate([40.0, 0.0, 0.0]);
 
     // intersect: only the overlapping volume — offset X=80
     let intersect = make_box
         .intersect(&[make_cyl])?
-        .translate(DVec3::new(80.0, 0.0, 0.0));
+        .translate([80.0, 0.0, 0.0]);
 
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
 

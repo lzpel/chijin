@@ -15,22 +15,22 @@ fn main() {
         // translate — shift +20 along Z
         base.clone()
             .color("#4a90d9")
-            .translate(DVec3::new(40.0, 0.0, 20.0)),
+            .translate([40.0, 0.0, 20.0]),
         // rotate — 90° around X axis so the cone tips toward Y
         base.clone()
             .color("#e67e22")
             .rotate_x(PI / 2.0)
-            .translate(DVec3::new(80.0, 0.0, 0.0)),
+            .translate([80.0, 0.0, 0.0]),
         // scaled — 1.5x from its local origin
         base.clone()
             .color("#2ecc71")
             .scale(DVec3::ZERO, 1.5)
-            .translate(DVec3::new(120.0, 0.0, 0.0)),
+            .translate([120.0, 0.0, 0.0]),
         // mirror — flip across Z=0 plane so the tip points down
         base.clone()
             .color("#e74c3c")
             .mirror(DVec3::ZERO, DVec3::Z)
-            .translate(DVec3::new(160.0, 0.0, 0.0)),
+            .translate([160.0, 0.0, 0.0]),
     ];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");

@@ -6,7 +6,7 @@ use std::f64::consts::PI;
 pub fn chijin() -> Result<Solid, cadrum::Error> {
 	// ── Body (cylinder): r=15, h=8, centered at origin (z=-4..+4) ────────
 	let cylinder = Solid::cylinder(15.0, DVec3::Z, 8.0)
-		.translate(DVec3::new(0.0, 0.0, -4.0))
+		.translate([0.0, 0.0, -4.0])
 		.color("#999");
 
 	// ── Sheet: closed polygon in the XZ plane (y=0), swept 360° around Z
@@ -29,13 +29,13 @@ pub fn chijin() -> Result<Solid, cadrum::Error> {
 
 	// ── Lacing blocks: 2x8x1, rotated 60° around Z, placed at y=15 ──────
 	let block_proto = Solid::cube(2.0, 8.0, 1.0)
-		.translate(DVec3::new(-1.0, -4.0, -0.5))
+		.translate([-1.0, -4.0, -0.5])
 		.rotate_z(60.0_f64.to_radians())
-		.translate(DVec3::new(0.0, 15.0, 0.0));
+		.translate([0.0, 15.0, 0.0]);
 
 	// ── Lacing holes: thin cylinders through each block ──────────────────
-	let hole_proto = Solid::cylinder(0.7, DVec3::new(10.0, 0.0, 30.0), 30.0)
-		.translate(DVec3::new(-5.0, 16.0, -15.0));
+	let hole_proto = Solid::cylinder(0.7, [10.0, 0.0, 30.0], 30.0)
+		.translate([-5.0, 16.0, -15.0]);
 
 	// Distribute N blocks and holes evenly around Z, each block in a rainbow color
 	// N 個のブロックと穴を Z 軸周りに等間隔配置、各ブロックに虹色を割り当て

@@ -129,16 +129,17 @@ use glam::{DMat3, DQuat, DVec3};
 /// listed exactly once in this file. Not urgent — see the issue for
 /// priority notes.
 pub trait Transform: Sized {
-	fn translate(self, translation: DVec3) -> Self;
-	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self;
+	fn translate(self, translation: impl Into<DVec3>) -> Self;
+	fn rotate(self, axis_origin: impl Into<DVec3>, axis_direction: impl Into<DVec3>, angle: f64) -> Self;
 	fn rotate_x(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::X, angle) }
 	fn rotate_y(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::Y, angle) }
 	fn rotate_z(self, angle: f64) -> Self { self.rotate(DVec3::ZERO, DVec3::Z, angle) }
-	fn scale(self, center: DVec3, factor: f64) -> Self;
-	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self;
+	fn scale(self, center: impl Into<DVec3>, factor: f64) -> Self;
+	fn mirror(self, plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self;
 	/// Rotate so that local +X axis aligns with `new_x`, with local +Y projected toward `y_hint`.
 	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
-	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self {
+	fn align_x(self, new_x: impl Into<DVec3>, y_hint: impl Into<DVec3>) -> Self {
+		let (new_x, y_hint): (DVec3, DVec3) = (new_x.into(), y_hint.into());
 		let x = new_x.try_normalize().expect("align_x: new_x is zero");
 		let z = x.cross(y_hint).try_normalize().expect("align_x: y_hint parallel to new_x");
 		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(x, z.cross(x), z)).to_axis_angle();
@@ -146,7 +147,8 @@ pub trait Transform: Sized {
 	}
 	/// Rotate so that local +Y axis aligns with `new_y`, with local +Z projected toward `z_hint`.
 	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
-	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self {
+	fn align_y(self, new_y: impl Into<DVec3>, z_hint: impl Into<DVec3>) -> Self {
+		let (new_y, z_hint): (DVec3, DVec3) = (new_y.into(), z_hint.into());
 		let y = new_y.try_normalize().expect("align_y: new_y is zero");
 		let x = y.cross(z_hint).try_normalize().expect("align_y: z_hint parallel to new_y");
 		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(x, y, x.cross(y))).to_axis_angle();
@@ -154,7 +156,8 @@ pub trait Transform: Sized {
 	}
 	/// Rotate so that local +Z axis aligns with `new_z`, with local +X projected toward `x_hint`.
 	/// Rotation is around the world origin. Panics on degenerate input (zero or parallel vectors).
-	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self {
+	fn align_z(self, new_z: impl Into<DVec3>, x_hint: impl Into<DVec3>) -> Self {
+		let (new_z, x_hint): (DVec3, DVec3) = (new_z.into(), x_hint.into());
 		let z = new_z.try_normalize().expect("align_z: new_z is zero");
 		let y = z.cross(x_hint).try_normalize().expect("align_z: x_hint parallel to new_z");
 		let (axis, angle) = DQuat::from_mat3(&DMat3::from_cols(y.cross(z), y, z)).to_axis_angle();
@@ -309,16 +312,16 @@ pub trait Wire: Transform {
 	// build_delegation.rs or introduce a proc-macro) so the list doesn't have
 	// to be mirrored by hand. See the `Transform` doc comment for the design
 	// note. Not urgent.
-	fn translate(self, translation: DVec3) -> Self { <Self as Transform>::translate(self, translation) }
-	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
+	fn translate(self, translation: impl Into<DVec3>) -> Self { <Self as Transform>::translate(self, translation) }
+	fn rotate(self, axis_origin: impl Into<DVec3>, axis_direction: impl Into<DVec3>, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
 	fn rotate_x(self, angle: f64) -> Self { <Self as Transform>::rotate_x(self, angle) }
 	fn rotate_y(self, angle: f64) -> Self { <Self as Transform>::rotate_y(self, angle) }
 	fn rotate_z(self, angle: f64) -> Self { <Self as Transform>::rotate_z(self, angle) }
-	fn scale(self, center: DVec3, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
-	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
-	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
-	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
-	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
+	fn scale(self, center: impl Into<DVec3>, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
+	fn mirror(self, plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
+	fn align_x(self, new_x: impl Into<DVec3>, y_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
+	fn align_y(self, new_y: impl Into<DVec3>, z_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
+	fn align_z(self, new_z: impl Into<DVec3>, x_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
 }
 
 /// Backend-independent edge trait (pub(crate) — not exposed to users).
@@ -346,7 +349,7 @@ pub trait EdgeStruct: Sized + Clone + Wire {
 	/// Making `x_ref` explicit guarantees the start point is deterministic
 	/// rather than depending on whatever orthogonal direction OCCT picks
 	/// from `axis` alone.
-	fn helix(radius: f64, pitch: f64, height: f64, axis: DVec3, x_ref: DVec3) -> Result<Self, Error>;
+	fn helix(radius: f64, pitch: f64, height: f64, axis: impl Into<DVec3>, x_ref: impl Into<DVec3>) -> Result<Self, Error>;
 
 	/// Build a closed polygon from a sequence of points and return its
 	/// constituent edges in order. The polygon is **always closed**: the
@@ -364,18 +367,18 @@ pub trait EdgeStruct: Sized + Clone + Wire {
 	/// arbitrary orthogonal direction to `axis`. Callers that need a
 	/// deterministic start point should translate/rotate the resulting
 	/// edge into place rather than relying on the implicit choice.
-	fn circle(radius: f64, axis: DVec3) -> Result<Self, Error>;
+	fn circle(radius: f64, axis: impl Into<DVec3>) -> Result<Self, Error>;
 
 	/// Straight line segment from `a` to `b`. Fails with `InvalidEdge` if
 	/// `a == b` (zero-length segment).
-	fn line(a: DVec3, b: DVec3) -> Result<Self, Error>;
+	fn line(a: impl Into<DVec3>, b: impl Into<DVec3>) -> Result<Self, Error>;
 
 	/// Circular arc through three points: start, mid, end. The unique circle
 	/// passing through the three points defines the arc; `mid` disambiguates
 	/// which of the two possible arcs is returned (the one passing through
 	/// `mid`). Fails with `InvalidEdge` if `mid` is collinear with `start`
 	/// and `end`, or if any pair of points coincides.
-	fn arc_3pts(start: DVec3, mid: DVec3, end: DVec3) -> Result<Self, Error>;
+	fn arc_3pts(start: impl Into<DVec3>, mid: impl Into<DVec3>, end: impl Into<DVec3>) -> Result<Self, Error>;
 
 	/// Cubic B-spline curve interpolating the given data points.
 	///
@@ -420,10 +423,10 @@ pub trait SolidStruct: Sized + Clone + Compound {
 	// --- Constructors ---
 	fn cube(x: f64, y: f64, z: f64) -> Self;
 	fn sphere(radius: f64) -> Self;
-	fn cylinder(r: f64, axis: DVec3, h: f64) -> Self;
-	fn cone(r1: f64, r2: f64, axis: DVec3, h: f64) -> Self;
-	fn torus(r1: f64, r2: f64, axis: DVec3) -> Self;
-	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
+	fn cylinder(r: f64, axis: impl Into<DVec3>, h: f64) -> Self;
+	fn cone(r1: f64, r2: f64, axis: impl Into<DVec3>, h: f64) -> Self;
+	fn torus(r1: f64, r2: f64, axis: impl Into<DVec3>) -> Self;
+	fn half_space(plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self;
 
 	// --- Topology ---
 	fn faces(&self) -> Vec<Self::Face>;
@@ -433,7 +436,7 @@ pub trait SolidStruct: Sized + Clone + Compound {
 	///
 	/// Internally builds a face from the wire and uses `BRepPrimAPI_MakePrism`.
 	/// Fails if the profile is empty, not closed, or the direction is zero-length.
-	fn extrude<'a>(profile: impl IntoIterator<Item = &'a Self::Edge>, dir: DVec3) -> Result<Self, Error> where Self::Edge: 'a;
+	fn extrude<'a>(profile: impl IntoIterator<Item = &'a Self::Edge>, dir: impl Into<DVec3>) -> Result<Self, Error> where Self::Edge: 'a;
 
 	// --- Sweep ---
 	/// Sweep a closed profile wire (= ordered edge list) along a spine wire
@@ -505,21 +508,21 @@ pub trait Compound: Transform {
 	// build_delegation.rs or introduce a proc-macro) so the list doesn't have
 	// to be mirrored by hand. See the `Transform` doc comment for the design
 	// note. Not urgent.
-	fn translate(self, translation: DVec3) -> Self { <Self as Transform>::translate(self, translation) }
-	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
+	fn translate(self, translation: impl Into<DVec3>) -> Self { <Self as Transform>::translate(self, translation) }
+	fn rotate(self, axis_origin: impl Into<DVec3>, axis_direction: impl Into<DVec3>, angle: f64) -> Self { <Self as Transform>::rotate(self, axis_origin, axis_direction, angle) }
 	fn rotate_x(self, angle: f64) -> Self { <Self as Transform>::rotate_x(self, angle) }
 	fn rotate_y(self, angle: f64) -> Self { <Self as Transform>::rotate_y(self, angle) }
 	fn rotate_z(self, angle: f64) -> Self { <Self as Transform>::rotate_z(self, angle) }
-	fn scale(self, center: DVec3, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
-	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
-	fn align_x(self, new_x: DVec3, y_hint: DVec3) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
-	fn align_y(self, new_y: DVec3, z_hint: DVec3) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
-	fn align_z(self, new_z: DVec3, x_hint: DVec3) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
+	fn scale(self, center: impl Into<DVec3>, factor: f64) -> Self { <Self as Transform>::scale(self, center, factor) }
+	fn mirror(self, plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self { <Self as Transform>::mirror(self, plane_origin, plane_normal) }
+	fn align_x(self, new_x: impl Into<DVec3>, y_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_x(self, new_x, y_hint) }
+	fn align_y(self, new_y: impl Into<DVec3>, z_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_y(self, new_y, z_hint) }
+	fn align_z(self, new_z: impl Into<DVec3>, x_hint: impl Into<DVec3>) -> Self { <Self as Transform>::align_z(self, new_z, x_hint) }
 
 	// --- Queries ---
 	fn volume(&self) -> f64;
 	fn bounding_box(&self) -> [DVec3; 2];
-	fn contains(&self, point: DVec3) -> bool;
+	fn contains(&self, point: impl Into<DVec3>) -> bool;
 	fn shell_count(&self) -> u32;
 
 	// --- Color ---
@@ -543,10 +546,10 @@ pub trait Compound: Transform {
 // ==================== impl Transform / Compound for Vec<T> ====================
 
 impl<T: Transform> Transform for Vec<T> {
-	fn translate(self, v: DVec3) -> Self { self.into_iter().map(|s| s.translate(v)).collect() }
-	fn rotate(self, o: DVec3, d: DVec3, a: f64) -> Self { self.into_iter().map(|s| s.rotate(o, d, a)).collect() }
-	fn scale(self, c: DVec3, f: f64) -> Self { self.into_iter().map(|s| s.scale(c, f)).collect() }
-	fn mirror(self, o: DVec3, n: DVec3) -> Self { self.into_iter().map(|s| s.mirror(o, n)).collect() }
+	fn translate(self, v: impl Into<DVec3>) -> Self { let v: DVec3 = v.into(); self.into_iter().map(|s| s.translate(v)).collect() }
+	fn rotate(self, o: impl Into<DVec3>, d: impl Into<DVec3>, a: f64) -> Self { let (o, d): (DVec3, DVec3) = (o.into(), d.into()); self.into_iter().map(|s| s.rotate(o, d, a)).collect() }
+	fn scale(self, c: impl Into<DVec3>, f: f64) -> Self { let c: DVec3 = c.into(); self.into_iter().map(|s| s.scale(c, f)).collect() }
+	fn mirror(self, o: impl Into<DVec3>, n: impl Into<DVec3>) -> Self { let (o, n): (DVec3, DVec3) = (o.into(), n.into()); self.into_iter().map(|s| s.mirror(o, n)).collect() }
 }
 
 impl<T: SolidStruct> Compound for Vec<T> {
@@ -558,7 +561,7 @@ impl<T: SolidStruct> Compound for Vec<T> {
 			.reduce(|[amin, amax], [bmin, bmax]| [amin.min(bmin), amax.max(bmax)])
 			.unwrap_or([DVec3::ZERO, DVec3::ZERO])
 	}
-	fn contains(&self, p: DVec3) -> bool { self.iter().any(|s| s.contains(p)) }
+	fn contains(&self, p: impl Into<DVec3>) -> bool { let p: DVec3 = p.into(); self.iter().any(|s| s.contains(p)) }
 	fn shell_count(&self) -> u32 { self.iter().map(|s| s.shell_count()).sum() }
 	#[cfg(feature = "color")]
 	fn color(self, color: impl Into<Color>) -> Self {
@@ -583,10 +586,10 @@ impl<T: SolidStruct> Compound for Vec<T> {
 // ==================== impl Transform / Compound for [T; N] ====================
 
 impl<T: Transform, const N: usize> Transform for [T; N] {
-	fn translate(self, v: DVec3) -> Self { self.map(|s| s.translate(v)) }
-	fn rotate(self, o: DVec3, d: DVec3, a: f64) -> Self { self.map(|s| s.rotate(o, d, a)) }
-	fn scale(self, c: DVec3, f: f64) -> Self { self.map(|s| s.scale(c, f)) }
-	fn mirror(self, o: DVec3, n: DVec3) -> Self { self.map(|s| s.mirror(o, n)) }
+	fn translate(self, v: impl Into<DVec3>) -> Self { let v: DVec3 = v.into(); self.map(|s| s.translate(v)) }
+	fn rotate(self, o: impl Into<DVec3>, d: impl Into<DVec3>, a: f64) -> Self { let (o, d): (DVec3, DVec3) = (o.into(), d.into()); self.map(|s| s.rotate(o, d, a)) }
+	fn scale(self, c: impl Into<DVec3>, f: f64) -> Self { let c: DVec3 = c.into(); self.map(|s| s.scale(c, f)) }
+	fn mirror(self, o: impl Into<DVec3>, n: impl Into<DVec3>) -> Self { let (o, n): (DVec3, DVec3) = (o.into(), n.into()); self.map(|s| s.mirror(o, n)) }
 }
 
 impl<T: SolidStruct, const N: usize> Compound for [T; N] {
@@ -601,7 +604,7 @@ impl<T: SolidStruct, const N: usize> Compound for [T; N] {
 			.reduce(|[amin, amax], [bmin, bmax]| [amin.min(bmin), amax.max(bmax)])
 			.unwrap_or([DVec3::ZERO, DVec3::ZERO])
 	}
-	fn contains(&self, p: DVec3) -> bool { self.iter().any(|s| s.contains(p)) }
+	fn contains(&self, p: impl Into<DVec3>) -> bool { let p: DVec3 = p.into(); self.iter().any(|s| s.contains(p)) }
 	fn shell_count(&self) -> u32 { self.iter().map(|s| s.shell_count()).sum() }
 	#[cfg(feature = "color")]
 	fn color(self, color: impl Into<Color>) -> Self {

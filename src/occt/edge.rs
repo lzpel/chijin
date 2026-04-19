@@ -57,7 +57,8 @@ impl Clone for Edge {
 }
 
 impl EdgeStruct for Edge {
-	fn helix(radius: f64, pitch: f64, height: f64, axis: DVec3, x_ref: DVec3) -> Result<Self, Error> {
+	fn helix(radius: f64, pitch: f64, height: f64, axis: impl Into<DVec3>, x_ref: impl Into<DVec3>) -> Result<Self, Error> {
+		let (axis, x_ref): (DVec3, DVec3) = (axis.into(), x_ref.into());
 		let inner = ffi::make_helix_edge(axis.x, axis.y, axis.z, x_ref.x, x_ref.y, x_ref.z, radius, pitch, height);
 		Edge::try_from_ffi(inner, format!("helix: degenerate params (radius={radius}, pitch={pitch}, height={height}, axis={axis:?}, x_ref={x_ref:?})"))
 	}
@@ -88,17 +89,20 @@ impl EdgeStruct for Edge {
 			.collect()
 	}
 
-	fn circle(radius: f64, axis: DVec3) -> Result<Self, Error> {
+	fn circle(radius: f64, axis: impl Into<DVec3>) -> Result<Self, Error> {
+		let axis: DVec3 = axis.into();
 		let inner = ffi::make_circle_edge(axis.x, axis.y, axis.z, radius);
 		Edge::try_from_ffi(inner, format!("circle: invalid params (radius={radius}, axis={axis:?})"))
 	}
 
-	fn line(a: DVec3, b: DVec3) -> Result<Self, Error> {
+	fn line(a: impl Into<DVec3>, b: impl Into<DVec3>) -> Result<Self, Error> {
+		let (a, b): (DVec3, DVec3) = (a.into(), b.into());
 		let inner = ffi::make_line_edge(a.x, a.y, a.z, b.x, b.y, b.z);
 		Edge::try_from_ffi(inner, format!("line: zero-length segment (a={a:?}, b={b:?})"))
 	}
 
-	fn arc_3pts(start: DVec3, mid: DVec3, end: DVec3) -> Result<Self, Error> {
+	fn arc_3pts(start: impl Into<DVec3>, mid: impl Into<DVec3>, end: impl Into<DVec3>) -> Result<Self, Error> {
+		let (start, mid, end): (DVec3, DVec3, DVec3) = (start.into(), mid.into(), end.into());
 		let inner = ffi::make_arc_edge(start.x, start.y, start.z, mid.x, mid.y, mid.z, end.x, end.y, end.z);
 		Edge::try_from_ffi(inner, format!("arc_3pts: collinear or degenerate points (start={start:?}, mid={mid:?}, end={end:?})"))
 	}
@@ -186,12 +190,14 @@ impl Wire for Edge {
 // 有効な edge に対するアフィン変換は原理的に失敗しない (OCCT 側でも null を
 // 返す経路はない) ので、万一 null が返った場合は expect() で failfast する。
 impl Transform for Edge {
-	fn translate(self, t: DVec3) -> Self {
+	fn translate(self, t: impl Into<DVec3>) -> Self {
+		let t: DVec3 = t.into();
 		Edge::try_from_ffi(ffi::translate_edge(&self.inner, t.x, t.y, t.z), "Edge::translate: null from FFI".into())
 			.expect("Edge::translate: unexpected null from translate_edge (this is a bug)")
 	}
 
-	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self {
+	fn rotate(self, axis_origin: impl Into<DVec3>, axis_direction: impl Into<DVec3>, angle: f64) -> Self {
+		let (axis_origin, axis_direction): (DVec3, DVec3) = (axis_origin.into(), axis_direction.into());
 		Edge::try_from_ffi(
 			ffi::rotate_edge(&self.inner, axis_origin.x, axis_origin.y, axis_origin.z, axis_direction.x, axis_direction.y, axis_direction.z, angle),
 			"Edge::rotate: null from FFI".into(),
@@ -199,12 +205,14 @@ impl Transform for Edge {
 		.expect("Edge::rotate: unexpected null from rotate_edge (this is a bug)")
 	}
 
-	fn scale(self, center: DVec3, factor: f64) -> Self {
+	fn scale(self, center: impl Into<DVec3>, factor: f64) -> Self {
+		let center: DVec3 = center.into();
 		Edge::try_from_ffi(ffi::scale_edge(&self.inner, center.x, center.y, center.z, factor), "Edge::scale: null from FFI".into())
 			.expect("Edge::scale: unexpected null from scale_edge (this is a bug)")
 	}
 
-	fn mirror(self, plane_origin: DVec3, plane_normal: DVec3) -> Self {
+	fn mirror(self, plane_origin: impl Into<DVec3>, plane_normal: impl Into<DVec3>) -> Self {
+		let (plane_origin, plane_normal): (DVec3, DVec3) = (plane_origin.into(), plane_normal.into());
 		Edge::try_from_ffi(
 			ffi::mirror_edge(&self.inner, plane_origin.x, plane_origin.y, plane_origin.z, plane_normal.x, plane_normal.y, plane_normal.z),
 			"Edge::mirror: null from FFI".into(),

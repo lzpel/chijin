@@ -15,13 +15,13 @@ fn build_box() -> Result<Solid, Error> {
 		DVec3::new(5.0, 5.0, 0.0),
 		DVec3::new(0.0, 5.0, 0.0),
 	])?;
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 8.0))
+	Solid::extrude(&profile, [0.0, 0.0, 8.0])
 }
 
 /// Circle extruded at a steep angle → oblique cylinder.
 fn build_oblique_cylinder() -> Result<Solid, Error> {
 	let profile = [Edge::circle(3.0, DVec3::Z)?];
-	Solid::extrude(&profile, DVec3::new(-4.0, 6.0, 8.0))
+	Solid::extrude(&profile, [-4.0, 6.0, 8.0])
 }
 
 /// L-shaped polygon → L-beam.
@@ -34,7 +34,7 @@ fn build_l_beam() -> Result<Solid, Error> {
 		DVec3::new(1.0, 3.0, 0.0),
 		DVec3::new(0.0, 3.0, 0.0),
 	])?;
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 12.0))
+	Solid::extrude(&profile, [0.0, 0.0, 12.0])
 }
 
 /// Heart-shaped BSpline profile extruded along Z.
@@ -52,16 +52,16 @@ fn build_heart() -> Result<Solid, Error> {
 		],
 		BSplineEnd::Periodic,
 	)?];
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 7.0))
+	Solid::extrude(&profile, [0.0, 0.0, 7.0])
 }
 
 fn main() -> Result<(), Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
 	let box_solid = build_box()?.color("#b0d4f1");
-	let oblique = build_oblique_cylinder()?.color("#f1c8b0").translate(DVec3::new(12.0, 0.0, 0.0));
-	let l_beam = build_l_beam()?.color("#b0f1c8").translate(DVec3::new(28.0, 0.0, 0.0));
-	let heart = build_heart()?.color("#f1b0b0").translate(DVec3::new(38.0, 0.0, 0.0));
+	let oblique = build_oblique_cylinder()?.color("#f1c8b0").translate([12.0, 0.0, 0.0]);
+	let l_beam = build_l_beam()?.color("#b0f1c8").translate([28.0, 0.0, 0.0]);
+	let heart = build_heart()?.color("#f1b0b0").translate([38.0, 0.0, 0.0]);
 
 	let result = [box_solid, oblique, l_beam, heart];
 
