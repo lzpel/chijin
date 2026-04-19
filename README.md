@@ -71,16 +71,16 @@ fn main() {
         Solid::cube(10.0, 20.0, 30.0)
             .color("#4a90d9"),
         Solid::cylinder(8.0, DVec3::Z, 30.0)
-            .translate(DVec3::new(30.0, 0.0, 0.0))
+            .translate(DVec3::X * 30.0)
             .color("#e67e22"),
         Solid::sphere(8.0)
-            .translate(DVec3::new(60.0, 0.0, 15.0))
+            .translate(DVec3::X * 60.0 + DVec3::Z * 15.0)
             .color("#2ecc71"),
         Solid::cone(8.0, 0.0, DVec3::Z, 30.0)
-            .translate(DVec3::new(90.0, 0.0, 0.0))
+            .translate(DVec3::X * 90.0)
             .color("#e74c3c"),
         Solid::torus(12.0, 4.0, DVec3::Z)
-            .translate(DVec3::new(130.0, 0.0, 15.0))
+            .translate(DVec3::X * 130.0 + DVec3::Z * 15.0)
             .color("#9b59b6"),
     ];
 
@@ -88,7 +88,7 @@ fn main() {
     cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::ONE, true, false, &mut svg)).expect("failed to write SVG");
 }
 
 ```
@@ -199,29 +199,29 @@ fn main() {
         // translate — shift +20 along Z
         base.clone()
             .color("#4a90d9")
-            .translate(DVec3::new(40.0, 0.0, 20.0)),
+            .translate(DVec3::X * 40.0 + DVec3::Z * 20.0),
         // rotate — 90° around X axis so the cone tips toward Y
         base.clone()
             .color("#e67e22")
             .rotate_x(PI / 2.0)
-            .translate(DVec3::new(80.0, 0.0, 0.0)),
+            .translate(DVec3::X * 80.0),
         // scaled — 1.5x from its local origin
         base.clone()
             .color("#2ecc71")
             .scale(DVec3::ZERO, 1.5)
-            .translate(DVec3::new(120.0, 0.0, 0.0)),
+            .translate(DVec3::X * 120.0),
         // mirror — flip across Z=0 plane so the tip points down
         base.clone()
             .color("#e74c3c")
             .mirror(DVec3::ZERO, DVec3::Z)
-            .translate(DVec3::new(160.0, 0.0, 0.0)),
+            .translate(DVec3::X * 160.0),
     ];
 
     let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create file");
     cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::ONE, true, false, &mut svg)).expect("failed to write SVG");
 }
 
 ```
@@ -260,12 +260,12 @@ fn main() -> Result<(), cadrum::Error> {
     // subtract: box minus cylinder — offset X=40
     let subtract = make_box
         .subtract(&[make_cyl.clone()])?
-        .translate(DVec3::new(40.0, 0.0, 0.0));
+        .translate(DVec3::X * 40.0);
 
     // intersect: only the overlapping volume — offset X=80
     let intersect = make_box
         .intersect(&[make_cyl])?
-        .translate(DVec3::new(80.0, 0.0, 0.0));
+        .translate(DVec3::X * 80.0);
 
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
 
@@ -311,13 +311,13 @@ fn build_box() -> Result<Solid, Error> {
 		DVec3::new(5.0, 5.0, 0.0),
 		DVec3::new(0.0, 5.0, 0.0),
 	])?;
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 8.0))
+	Solid::extrude(&profile, DVec3::Z * 8.0)
 }
 
 /// Circle extruded at a steep angle → oblique cylinder.
 fn build_oblique_cylinder() -> Result<Solid, Error> {
 	let profile = [Edge::circle(3.0, DVec3::Z)?];
-	Solid::extrude(&profile, DVec3::new(-4.0, 6.0, 8.0))
+	Solid::extrude(&profile, DVec3::new(-4.0, -6.0, 8.0))
 }
 
 /// L-shaped polygon → L-beam.
@@ -330,7 +330,7 @@ fn build_l_beam() -> Result<Solid, Error> {
 		DVec3::new(1.0, 3.0, 0.0),
 		DVec3::new(0.0, 3.0, 0.0),
 	])?;
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 12.0))
+	Solid::extrude(&profile, DVec3::Z * 12.0)
 }
 
 /// Heart-shaped BSpline profile extruded along Z.
@@ -348,16 +348,16 @@ fn build_heart() -> Result<Solid, Error> {
 		],
 		BSplineEnd::Periodic,
 	)?];
-	Solid::extrude(&profile, DVec3::new(0.0, 0.0, 7.0))
+	Solid::extrude(&profile, DVec3::Z * 7.0)
 }
 
 fn main() -> Result<(), Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
 	let box_solid = build_box()?.color("#b0d4f1");
-	let oblique = build_oblique_cylinder()?.color("#f1c8b0").translate(DVec3::new(12.0, 0.0, 0.0));
-	let l_beam = build_l_beam()?.color("#b0f1c8").translate(DVec3::new(28.0, 0.0, 0.0));
-	let heart = build_heart()?.color("#f1b0b0").translate(DVec3::new(38.0, 0.0, 0.0));
+	let oblique = build_oblique_cylinder()?.color("#f1c8b0").translate(DVec3::X * 10.0);
+	let l_beam = build_l_beam()?.color("#b0f1c8").translate(DVec3::X * 20.0);
+	let heart = build_heart()?.color("#f1b0b0").translate(DVec3::X * 30.0);
 
 	let result = [box_solid, oblique, l_beam, heart];
 
@@ -365,7 +365,7 @@ fn main() -> Result<(), Error> {
 	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
 
 	let mut f = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut f)).expect("failed to write SVG");
+	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::ONE, true, false, &mut f)).expect("failed to write SVG");
 
 	println!("wrote {example_name}.step / {example_name}.svg");
 	Ok(())
@@ -420,7 +420,7 @@ fn build_morph() -> Result<Solid, Error> {
 fn build_tilted() -> Result<Solid, Error> {
 	let bottom = [Edge::circle(2.5, DVec3::Z)?];
 	let mid = [Edge::circle(2.0, DVec3::new(0.3, 0.0, 1.0).normalize())?
-		.translate(DVec3::new(1.0, 0.0, 5.0))];
+		.translate(DVec3::X + DVec3::Z * 5.0)];
 	let top = [Edge::circle(1.5, DVec3::new(-0.2, 0.3, 1.0).normalize())?
 		.translate(DVec3::new(-0.5, 1.0, 10.0))];
 
@@ -431,8 +431,8 @@ fn main() -> Result<(), Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
 	let frustum = build_frustum()?;
-	let morph = build_morph()?.translate(DVec3::new(10.0, 0.0, 0.0));
-	let tilted = build_tilted()?.translate(DVec3::new(20.0, 0.0, 0.0));
+	let morph = build_morph()?.translate(DVec3::X * 10.0);
+	let tilted = build_tilted()?.translate(DVec3::X * 20.0);
 
 	let result = [frustum, morph, tilted];
 
@@ -440,7 +440,7 @@ fn main() -> Result<(), Error> {
 	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
 
 	let mut f = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut f)).expect("failed to write SVG");
+	cadrum::mesh(&result, 0.5).and_then(|m| m.write_svg(DVec3::ONE, true, false, &mut f)).expect("failed to write SVG");
 
 	println!("wrote {example_name}.step / {example_name}.svg");
 	Ok(())

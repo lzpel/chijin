@@ -9,16 +9,16 @@ fn main() {
         Solid::cube(10.0, 20.0, 30.0)
             .color("#4a90d9"),
         Solid::cylinder(8.0, DVec3::Z, 30.0)
-            .translate(DVec3::new(30.0, 0.0, 0.0))
+            .translate(DVec3::X * 30.0)
             .color("#e67e22"),
         Solid::sphere(8.0)
-            .translate(DVec3::new(60.0, 0.0, 15.0))
+            .translate(DVec3::X * 60.0 + DVec3::Z * 15.0)
             .color("#2ecc71"),
         Solid::cone(8.0, 0.0, DVec3::Z, 30.0)
-            .translate(DVec3::new(90.0, 0.0, 0.0))
+            .translate(DVec3::X * 90.0)
             .color("#e74c3c"),
         Solid::torus(12.0, 4.0, DVec3::Z)
-            .translate(DVec3::new(130.0, 0.0, 15.0))
+            .translate(DVec3::X * 130.0 + DVec3::Z * 15.0)
             .color("#9b59b6"),
     ];
 
@@ -26,5 +26,5 @@ fn main() {
     cadrum::write_step(&solids, &mut f).expect("failed to write STEP");
 
     let mut svg = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
-    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 1.0), true, false, &mut svg)).expect("failed to write SVG");
+    cadrum::mesh(&solids, 0.5).and_then(|m| m.write_svg(DVec3::ONE, true, false, &mut svg)).expect("failed to write SVG");
 }

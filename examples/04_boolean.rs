@@ -18,12 +18,12 @@ fn main() -> Result<(), cadrum::Error> {
     // subtract: box minus cylinder — offset X=40
     let subtract = make_box
         .subtract(&[make_cyl.clone()])?
-        .translate(DVec3::new(40.0, 0.0, 0.0));
+        .translate(DVec3::X * 40.0);
 
     // intersect: only the overlapping volume — offset X=80
     let intersect = make_box
         .intersect(&[make_cyl])?
-        .translate(DVec3::new(80.0, 0.0, 0.0));
+        .translate(DVec3::X * 80.0);
 
     let shapes: Vec<Solid> = [union, subtract, intersect].concat();
 
