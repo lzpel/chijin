@@ -1,11 +1,11 @@
-//! Demo of `Solid::shell` and related cutaway techniques:
-//! - Cube: remove top face, offset inward → open-top container (real shell)
-//! - Torus: OCCT's `MakeThickSolidByJoin` needs at least one open face to
-//!   hollow a closed solid, so the ring is built by subtracting an inner torus
-//!   from an outer torus, then bisected with a half-space to expose the
-//!   cross-section.
+//! Demo of `Solid::shell`:
+//! - Cube: remove top face, offset inward → open-top container
+//! - Torus: bisect with a half-space to introduce planar cut faces, then
+//!   shell using those cut faces as the openings → thin-walled half-ring
+//!   with both cross-sections exposed
 
-use cadrum::{Compound, DVec3, Error, Solid};
+use cadrum::{DVec3, Error, Face, Solid};
+use std::collections::HashSet;
 
 fn hollow_cube() -> Result<Solid, Error> {
 	let cube = Solid::cube(8.0, 8.0, 8.0);
@@ -14,21 +14,25 @@ fn hollow_cube() -> Result<Solid, Error> {
 	cube.shell(-1.0, [top])
 }
 
-fn torus_ring_halved() -> Result<Vec<Solid>, Error> {
-	// Hollow ring: outer torus minus inner torus → 0.3-thick wall.
-	let outer = Solid::torus(6.0, 2.3, DVec3::Z);
-	let inner = Solid::torus(6.0, 2.0, DVec3::Z);
-	let ring = outer.subtract(&[inner])?;
-	// Bisect with the Y=0 plane (half-space normal +Y) to expose the cross-section.
+fn halved_shelled_torus() -> Result<Vec<Solid>, Error> {
+	let torus = Solid::torus(6.0, 2.0, DVec3::Z);
+	// Bisect with Y=0 half-space (normal +Y): keep the +Y half of the ring.
 	let cutter = Solid::half_space(DVec3::ZERO, DVec3::Y);
-	ring.intersect(&[cutter])
+	// Metadata variant returns [from_torus, from_cutter]: faces in the result
+	// that originated from the cutter are exactly the planar cut disks.
+	let (halves, [_, from_cutter]) = torus.intersect_with_metadata(&[cutter])?;
+	let cut_ids: HashSet<u64> = from_cutter.chunks(2).map(|p| p[0]).collect();
+	halves.into_iter().map(|half| {
+		let cuts: Vec<&Face> = half.iter_face().filter(|f| cut_ids.contains(&f.tshape_id())).collect();
+		half.shell(-0.3, cuts)
+	}).collect()
 }
 
 fn main() -> Result<(), Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
 	let cube = hollow_cube()?.color("#d0a878");
-	let torus_half: Vec<Solid> = torus_ring_halved()?
+	let torus_half: Vec<Solid> = halved_shelled_torus()?
 		.into_iter()
 		.map(|s| s.color("#a8c8d0").translate(DVec3::X * 18.0))
 		.collect();
