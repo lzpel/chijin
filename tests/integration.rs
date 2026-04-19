@@ -132,7 +132,7 @@ fn test_t03_mesh_normals_count() {
 fn test_t04_approximation_tolerance() {
 	let cyl = [Solid::cylinder(10.0, dvec3(0.0, 0.0, 1.0), 20.0)];
 	let mut has_difference = false;
-	for edge in cyl.iter().flat_map(|s| s.edges()) {
+	for edge in cyl.iter().flat_map(|s| s.iter_edge()) {
 		let coarse = edge.approximation_segments(1.0).len();
 		let fine = edge.approximation_segments(0.01).len();
 		if fine > coarse {

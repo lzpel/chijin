@@ -38,7 +38,7 @@ fn read_colored_step_populates_colormap() {
 	let shape = read_colored_box();
 	assert!(colormap_len(&shape) >= 6, "expected at least 6 colored faces, got {}", colormap_len(&shape));
 	// Every entry in the colormap should correspond to an actual face.
-	let face_ids: std::collections::HashSet<u64> = shape.iter().flat_map(|s| s.face_iter()).map(|f| f.tshape_id()).collect();
+	let face_ids: std::collections::HashSet<u64> = shape.iter().flat_map(|s| s.iter_face()).map(|f| f.tshape_id()).collect();
 	for solid in &shape {
 		for id in solid.colormap().keys() {
 			assert!(face_ids.contains(id), "colormap key {:?} does not match any face in the shape", id);

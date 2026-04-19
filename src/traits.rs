@@ -425,9 +425,14 @@ pub trait SolidStruct: Sized + Clone + Compound {
 	fn torus(r1: f64, r2: f64, axis: DVec3) -> Self;
 	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
 
-	// --- Topology ---
-	fn faces(&self) -> Vec<Self::Face>;
-	fn edges(&self) -> Vec<Self::Edge>;
+	// --- Topology iteration ---
+	//
+	// `iter_edge` / `iter_face` returning `std::slice::Iter<'_, T>` are exposed as
+	// inherent methods on each backend's `Solid` type (not on this trait) because
+	// `slice::Iter` is tied to a concrete `Vec<T>` cache (`OnceLock<Vec<Edge>>` /
+	// `OnceLock<Vec<Face>>` fields). Putting a backend-agnostic signature on the
+	// trait would require GATs or a custom iterator abstraction for marginal
+	// benefit — backends can each define their own iterator shape.
 
 	/// Extrude a closed profile wire along a direction vector to form a solid.
 	///

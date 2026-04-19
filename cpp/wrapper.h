@@ -21,7 +21,6 @@ namespace cadrum {
 using TopoDS_Shape = ::TopoDS_Shape;
 using TopoDS_Face = ::TopoDS_Face;
 using TopoDS_Edge = ::TopoDS_Edge;
-using TopExp_Explorer = ::TopExp_Explorer;
 
 // Forward-declare the Rust opaque types (defined by cxx in ffi.rs.h)
 struct RustReader;
@@ -184,14 +183,20 @@ void compound_add(TopoDS_Shape& compound, const TopoDS_Shape& child);
 
 MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance);
 
-// ==================== Explorer / Iterators ====================
+// ==================== Topology enumeration ====================
 
-std::unique_ptr<TopExp_Explorer> explore_faces(const TopoDS_Shape& shape);
-std::unique_ptr<TopExp_Explorer> explore_edges(const TopoDS_Shape& shape);
-bool explorer_more(const TopExp_Explorer& explorer);
-void explorer_next(TopExp_Explorer& explorer);
-std::unique_ptr<TopoDS_Face> explorer_current_face(const TopExp_Explorer& explorer);
-std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explorer);
+// One-shot enumeration of unique sub-shapes. `shape_edges` deduplicates
+// edges shared between faces (so each edge appears exactly once).
+// Callers typically cache the result in a Rust-side OnceLock<Vec<Edge>>.
+std::unique_ptr<std::vector<TopoDS_Edge>> shape_edges(const TopoDS_Shape& shape);
+std::unique_ptr<std::vector<TopoDS_Face>> shape_faces(const TopoDS_Shape& shape);
+
+// Shallow handle clone — C++ copy-ctor shares the underlying TShape via
+// OCCT's ref count. Needed when Rust materializes owned `Edge` / `Face`
+// wrappers from the `&TopoDS_*` references yielded by `CxxVector::iter()`.
+// Distinct from `deep_copy_edge` which creates a new TShape.
+std::unique_ptr<TopoDS_Edge> clone_edge_handle(const TopoDS_Edge& edge);
+std::unique_ptr<TopoDS_Face> clone_face_handle(const TopoDS_Face& face);
 
 // ==================== Edge Methods ====================
 

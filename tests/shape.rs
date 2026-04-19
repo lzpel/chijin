@@ -106,7 +106,7 @@ fn test_scale_preserves_shell_count() {
 #[test]
 fn test_preserves_face_ids() {
 	fn face_ids<'a>(s: impl IntoIterator<Item = &'a Solid>) -> Vec<u64> {
-		s.into_iter().flat_map(|s| s.face_iter()).map(|f| f.tshape_id()).collect()
+		s.into_iter().flat_map(|s| s.iter_face()).map(|f| f.tshape_id()).collect()
 	}
 
 	let shape = test_box();
@@ -134,7 +134,7 @@ fn test_new_faces_subtract_b_inside_a() {
 	let big = [Solid::cube(10.0, 10.0, 10.0)];
 	let small = [Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let (solids, meta) = big.subtract_with_metadata(&small).unwrap();
-	assert_eq!(solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
+	assert_eq!(solids.iter().flat_map(|s| s.iter_face()).filter(|f| cadrum::is_tool_face(&meta, f)).count(), 6, "subtract with B fully inside A: tool faces should be all 6 inner walls");
 }
 
 #[test]
@@ -144,9 +144,9 @@ fn test_new_faces_intersect_b_inside_a() {
 	let big = [Solid::cube(10.0, 10.0, 10.0)];
 	let small = [Solid::cube(4.0, 4.0, 4.0).translate(dvec3(3.0, 3.0, 3.0))];
 	let (solids, meta) = big.intersect_with_metadata(&small).unwrap();
-	let tool_count = solids.iter().flat_map(|s| s.face_iter()).filter(|f| cadrum::is_tool_face(&meta, f)).count();
+	let tool_count = solids.iter().flat_map(|s| s.iter_face()).filter(|f| cadrum::is_tool_face(&meta, f)).count();
 	assert_eq!(tool_count, 6, "intersect with B fully inside A: tool faces should equal all faces of result");
-	assert_eq!(solids.iter().flat_map(|s| s.face_iter()).count(), tool_count, "intersect with B fully inside A: tool faces should cover all result faces");
+	assert_eq!(solids.iter().flat_map(|s| s.iter_face()).count(), tool_count, "intersect with B fully inside A: tool faces should cover all result faces");
 }
 
 // ==================== bounding_box ====================

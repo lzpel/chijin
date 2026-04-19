@@ -739,40 +739,36 @@ MeshData mesh_shape(const TopoDS_Shape& shape, double tolerance) {
     return result;
 }
 
-// ==================== Explorer / Iterators ====================
+// ==================== Topology enumeration ====================
 
-std::unique_ptr<TopExp_Explorer> explore_faces(const TopoDS_Shape& shape) {
-    return std::make_unique<TopExp_Explorer>(shape, TopAbs_FACE);
-}
-
-std::unique_ptr<TopExp_Explorer> explore_edges(const TopoDS_Shape& shape) {
+std::unique_ptr<std::vector<TopoDS_Edge>> shape_edges(const TopoDS_Shape& shape) {
     // TopExp_Explorer visits shared edges once per adjacent face.
-    // Build a flat compound of unique edges so each is visited exactly once.
+    // NCollection_IndexedMap collapses those into unique edges.
     NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
     TopExp::MapShapes(shape, TopAbs_EDGE, edgeMap);
-    TopoDS_Compound compound;
-    BRep_Builder builder;
-    builder.MakeCompound(compound);
+    auto out = std::make_unique<std::vector<TopoDS_Edge>>();
+    out->reserve(edgeMap.Extent());
     for (int i = 1; i <= edgeMap.Extent(); i++) {
-        builder.Add(compound, edgeMap(i));
+        out->push_back(TopoDS::Edge(edgeMap(i)));
     }
-    return std::make_unique<TopExp_Explorer>(compound, TopAbs_EDGE);
+    return out;
 }
 
-bool explorer_more(const TopExp_Explorer& explorer) {
-    return explorer.More();
+std::unique_ptr<std::vector<TopoDS_Face>> shape_faces(const TopoDS_Shape& shape) {
+    // Faces in a valid shape are already unique under TopExp_Explorer.
+    auto out = std::make_unique<std::vector<TopoDS_Face>>();
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        out->push_back(TopoDS::Face(ex.Current()));
+    }
+    return out;
 }
 
-void explorer_next(TopExp_Explorer& explorer) {
-    explorer.Next();
+std::unique_ptr<TopoDS_Edge> clone_edge_handle(const TopoDS_Edge& edge) {
+    return std::make_unique<TopoDS_Edge>(edge);
 }
 
-std::unique_ptr<TopoDS_Face> explorer_current_face(const TopExp_Explorer& explorer) {
-    return std::make_unique<TopoDS_Face>(TopoDS::Face(explorer.Current()));
-}
-
-std::unique_ptr<TopoDS_Edge> explorer_current_edge(const TopExp_Explorer& explorer) {
-    return std::make_unique<TopoDS_Edge>(TopoDS::Edge(explorer.Current()));
+std::unique_ptr<TopoDS_Face> clone_face_handle(const TopoDS_Face& face) {
+    return std::make_unique<TopoDS_Face>(face);
 }
 
 // ==================== Face Methods ====================

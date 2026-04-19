@@ -36,7 +36,6 @@ mod ffi_bridge {
 		type TopoDS_Shape;
 		type TopoDS_Face;
 		type TopoDS_Edge;
-		type TopExp_Explorer;
 		type BooleanShape;
 
 		// ==================== Shape I/O (streambuf callback) ====================
@@ -141,16 +140,13 @@ mod ffi_bridge {
 
 		fn mesh_shape(shape: &TopoDS_Shape, tolerance: f64) -> MeshData;
 
-		// ==================== Explorer / Iterators ====================
+		// ==================== Topology enumeration ====================
 
-		fn explore_faces(shape: &TopoDS_Shape) -> UniquePtr<TopExp_Explorer>;
-		fn explore_edges(shape: &TopoDS_Shape) -> UniquePtr<TopExp_Explorer>;
+		fn shape_edges(shape: &TopoDS_Shape) -> UniquePtr<CxxVector<TopoDS_Edge>>;
+		fn shape_faces(shape: &TopoDS_Shape) -> UniquePtr<CxxVector<TopoDS_Face>>;
 
-		fn explorer_more(explorer: &TopExp_Explorer) -> bool;
-		fn explorer_next(explorer: Pin<&mut TopExp_Explorer>);
-
-		fn explorer_current_face(explorer: &TopExp_Explorer) -> UniquePtr<TopoDS_Face>;
-		fn explorer_current_edge(explorer: &TopExp_Explorer) -> UniquePtr<TopoDS_Edge>;
+		fn clone_edge_handle(edge: &TopoDS_Edge) -> UniquePtr<TopoDS_Edge>;
+		fn clone_face_handle(face: &TopoDS_Face) -> UniquePtr<TopoDS_Face>;
 
 		// ==================== Face Methods ====================
 
@@ -208,7 +204,6 @@ pub use ffi_bridge::*;
 unsafe impl Send for TopoDS_Shape {}
 unsafe impl Send for TopoDS_Face {}
 unsafe impl Send for TopoDS_Edge {}
-unsafe impl Send for TopExp_Explorer {}
 unsafe impl Send for BooleanShape {}
 #[cfg(feature = "color")]
 unsafe impl Send for CleanShape {}

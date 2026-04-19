@@ -2,11 +2,10 @@ use super::compound::CompoundShape;
 use super::edge::Edge;
 use super::face::Face;
 use super::ffi;
-use super::iterators::{EdgeIterator, FaceIterator};
 use crate::common::error::Error;
 use crate::traits::{Compound, ProfileOrient, SolidStruct, Transform};
 use glam::DVec3;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 // OCCT の BRepOffsetAPI_ThruSections は内部で global state (おそらく
 // BSplCLib のキャッシュや GeomFill_AppSurf の作業バッファ) を使うため、
@@ -36,9 +35,11 @@ fn encode_orient(orient: ProfileOrient) -> (u32, f64, f64, f64, cxx::UniquePtr<c
 #[cfg(feature = "color")]
 fn remap_colormap_by_order(old_inner: &ffi::TopoDS_Shape, new_inner: &ffi::TopoDS_Shape, old_colormap: &std::collections::HashMap<u64, crate::common::color::Color>) -> std::collections::HashMap<u64, crate::common::color::Color> {
 	let mut colormap = std::collections::HashMap::new();
-	for (old_face, new_face) in FaceIterator::new(ffi::explore_faces(old_inner)).zip(FaceIterator::new(ffi::explore_faces(new_inner))) {
-		if let Some(&color) = old_colormap.get(&old_face.tshape_id()) {
-			colormap.insert(new_face.tshape_id(), color);
+	let old_faces = ffi::shape_faces(old_inner);
+	let new_faces = ffi::shape_faces(new_inner);
+	for (old_face, new_face) in old_faces.iter().zip(new_faces.iter()) {
+		if let Some(&color) = old_colormap.get(&ffi::face_tshape_id(old_face)) {
+			colormap.insert(ffi::face_tshape_id(new_face), color);
 		}
 	}
 	colormap
@@ -48,8 +49,16 @@ fn remap_colormap_by_order(old_inner: &ffi::TopoDS_Shape, new_inner: &ffi::TopoD
 ///
 /// `inner` is private to prevent external mutation that could break the solid invariant.
 /// Use the provided methods to query and transform the solid.
+///
+/// `edges` / `faces` are lazy `OnceLock` caches populated on first `iter_edge` /
+/// `iter_face` call. Since topology-changing ops consume `self` and construct
+/// a new `Solid` via `Solid::new`, these caches are invalidated automatically
+/// (new instance → fresh `OnceLock::new()`). See
+/// `notes/20260420-OCCTトポロジ不変性と設計含意.md`.
 pub struct Solid {
 	inner: cxx::UniquePtr<ffi::TopoDS_Shape>,
+	edges: OnceLock<Vec<Edge>>,
+	faces: OnceLock<Vec<Face>>,
 	#[cfg(feature = "color")]
 	colormap: std::collections::HashMap<u64, crate::common::color::Color>,
 }
@@ -63,6 +72,8 @@ impl Solid {
 		debug_assert!(ffi::shape_is_null(&inner) || ffi::shape_is_solid(&inner), "Solid::new called with a non-SOLID shape");
 		Solid {
 			inner,
+			edges: OnceLock::new(),
+			faces: OnceLock::new(),
 			#[cfg(feature = "color")]
 			colormap,
 		}
@@ -101,16 +112,36 @@ impl Solid {
 		ffi::shape_is_null(&self.inner)
 	}
 
-	// ==================== Iterators ====================
+	// ==================== Topology iteration ====================
 
-	/// Get a face iterator over this solid.
-	pub fn face_iter(&self) -> FaceIterator {
-		FaceIterator::new(ffi::explore_faces(&self.inner))
+	/// Iterate over this solid's edges as `&Edge`. Unique under TShape identity
+	/// (each OCCT edge appears once even when shared between faces). First call
+	/// populates the internal cache; later calls are free.
+	pub fn iter_edge(&self) -> std::slice::Iter<'_, Edge> {
+		self.edges
+			.get_or_init(|| {
+				ffi::shape_edges(&self.inner)
+					.iter()
+					.map(|e_ref| {
+						let owned = ffi::clone_edge_handle(e_ref);
+						Edge::try_from_ffi(owned, "shape_edges: null".into()).expect("shape_edges: unexpected null (this is a bug)")
+					})
+					.collect()
+			})
+			.iter()
 	}
 
-	/// Get an edge iterator over this solid.
-	pub fn edge_iter(&self) -> EdgeIterator {
-		EdgeIterator::new(ffi::explore_edges(&self.inner))
+	/// Iterate over this solid's faces as `&Face`. First call populates the
+	/// internal cache; later calls are free.
+	pub fn iter_face(&self) -> std::slice::Iter<'_, Face> {
+		self.faces
+			.get_or_init(|| {
+				ffi::shape_faces(&self.inner)
+					.iter()
+					.map(|f_ref| Face::new(ffi::clone_face_handle(f_ref)))
+					.collect()
+			})
+			.iter()
 	}
 }
 
@@ -172,16 +203,6 @@ impl SolidStruct for Solid {
 			#[cfg(feature = "color")]
 			std::collections::HashMap::new(),
 		)
-	}
-
-	// ==================== Topology ====================
-
-	fn faces(&self) -> Vec<Face> {
-		FaceIterator::new(ffi::explore_faces(&self.inner)).collect()
-	}
-
-	fn edges(&self) -> Vec<Edge> {
-		EdgeIterator::new(ffi::explore_edges(&self.inner)).collect()
 	}
 
 	// ==================== Extrude ====================
@@ -320,20 +341,23 @@ impl SolidStruct for Solid {
 impl Transform for Solid {
 	fn translate(self, translation: DVec3) -> Self {
 		let inner = ffi::translate_shape(&self.inner, translation.x, translation.y, translation.z);
-		Solid {
-			#[cfg(feature = "color")]
-			colormap: self.colormap,
+		// translate/rotate use shape.Moved() — TShape is shared but Location
+		// changes, so cached edges/faces (which embed Location) would go stale.
+		// Solid::new gives a fresh OnceLock::new() cache matching the new Location.
+		Solid::new(
 			inner,
-		}
+			#[cfg(feature = "color")]
+			self.colormap,
+		)
 	}
 
 	fn rotate(self, axis_origin: DVec3, axis_direction: DVec3, angle: f64) -> Self {
 		let inner = ffi::rotate_shape(&self.inner, axis_origin.x, axis_origin.y, axis_origin.z, axis_direction.x, axis_direction.y, axis_direction.z, angle);
-		Solid {
-			#[cfg(feature = "color")]
-			colormap: self.colormap,
+		Solid::new(
 			inner,
-		}
+			#[cfg(feature = "color")]
+			self.colormap,
+		)
 	}
 
 	// scale/mirror consume self for API consistency, but internally clone the geometry.
@@ -434,7 +458,7 @@ impl Compound for Solid {
 	#[cfg(feature = "color")]
 	fn color(self, color: impl Into<crate::common::color::Color>) -> Self {
 		let c = color.into();
-		let colormap = FaceIterator::new(ffi::explore_faces(&self.inner)).map(|f| (f.tshape_id(), c)).collect();
+		let colormap = ffi::shape_faces(&self.inner).iter().map(|f| (ffi::face_tshape_id(f), c)).collect();
 		Self::new(self.inner, colormap)
 	}
 

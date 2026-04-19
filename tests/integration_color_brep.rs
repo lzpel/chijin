@@ -39,8 +39,8 @@ fn bin_write_then_read_preserves_colors() {
 
 	assert_eq!(colormap_len(&reloaded), colormap_len(&original), "color count should be preserved (binary)");
 
-	let original_colors: Vec<Color> = original.iter().flat_map(|s| s.face_iter()).filter_map(|f| original.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
-	let reloaded_colors: Vec<Color> = reloaded.iter().flat_map(|s| s.face_iter()).filter_map(|f| reloaded.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
+	let original_colors: Vec<Color> = original.iter().flat_map(|s| s.iter_face()).filter_map(|f| original.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
+	let reloaded_colors: Vec<Color> = reloaded.iter().flat_map(|s| s.iter_face()).filter_map(|f| reloaded.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
 
 	assert_eq!(original_colors, reloaded_colors, "RGB values should be identical (binary)");
 }
@@ -76,8 +76,8 @@ fn text_write_then_read_preserves_colors() {
 
 	assert_eq!(colormap_len(&reloaded), colormap_len(&original), "color count should be preserved (text)");
 
-	let original_colors: Vec<Color> = original.iter().flat_map(|s| s.face_iter()).filter_map(|f| original.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
-	let reloaded_colors: Vec<Color> = reloaded.iter().flat_map(|s| s.face_iter()).filter_map(|f| reloaded.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
+	let original_colors: Vec<Color> = original.iter().flat_map(|s| s.iter_face()).filter_map(|f| original.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
+	let reloaded_colors: Vec<Color> = reloaded.iter().flat_map(|s| s.iter_face()).filter_map(|f| reloaded.iter().find_map(|s| s.colormap().get(&f.tshape_id()).copied())).collect();
 
 	assert_eq!(original_colors, reloaded_colors, "RGB values should be identical (text)");
 }

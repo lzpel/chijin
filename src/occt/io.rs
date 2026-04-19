@@ -7,8 +7,6 @@ use crate::traits::IoModule;
 use std::io::{Read, Write};
 
 #[cfg(feature = "color")]
-use super::iterators::FaceIterator;
-#[cfg(feature = "color")]
 use crate::common::color::Color;
 
 /// I/O operations backed by OpenCASCADE.
@@ -45,7 +43,8 @@ fn strip_color_trailer(buf: &[u8]) -> (std::collections::HashMap<u64, Color>, us
 
 #[cfg(feature = "color")]
 fn resolve_color_trailer(inner: &ffi::TopoDS_Shape, index_colormap: &std::collections::HashMap<u64, Color>) -> std::collections::HashMap<u64, Color> {
-	let index_to_id: Vec<u64> = FaceIterator::new(ffi::explore_faces(inner)).map(|f| f.tshape_id()).collect();
+	let faces = ffi::shape_faces(inner);
+	let index_to_id: Vec<u64> = faces.iter().map(ffi::face_tshape_id).collect();
 	index_colormap.iter().filter_map(|(&idx, &color)| index_to_id.get(idx as usize).map(|&id| (id, color))).collect()
 }
 
@@ -55,7 +54,8 @@ fn write_color_trailer<W: Write>(compound: &CompoundShape, writer: &mut W) -> Re
 	if colormap.is_empty() {
 		return Ok(());
 	}
-	let id_to_index: std::collections::HashMap<u64, u32> = FaceIterator::new(ffi::explore_faces(compound.inner())).enumerate().map(|(i, f)| (f.tshape_id(), i as u32)).collect();
+	let faces = ffi::shape_faces(compound.inner());
+	let id_to_index: std::collections::HashMap<u64, u32> = faces.iter().enumerate().map(|(i, f)| (ffi::face_tshape_id(f), i as u32)).collect();
 	let mut entries: Vec<(u32, f32, f32, f32)> = colormap.iter().filter_map(|(id, rgb)| id_to_index.get(id).map(|&idx| (idx, rgb.r, rgb.g, rgb.b))).collect();
 	entries.sort_by_key(|e| e.0);
 
