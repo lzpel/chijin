@@ -783,39 +783,25 @@ uint64_t shape_tshape_id(const TopoDS_Shape& shape) {
 
 // ==================== Edge Methods ====================
 
-ApproxPoints edge_approximation_segments_ex(
+rust::Vec<double> edge_approximation_segments(
     const TopoDS_Edge& edge, double angular, double chord)
 {
-    ApproxPoints result;
-    result.count = 0;
-
+    rust::Vec<double> out;
     try {
         BRepAdaptor_Curve curve(edge);
         GCPnts_TangentialDeflection approx(curve, angular, chord);
 
         int nb_points = approx.NbPoints();
-        result.count = static_cast<uint32_t>(nb_points);
-
         for (int i = 1; i <= nb_points; i++) {
             gp_Pnt p = approx.Value(i);
-            result.coords.push_back(p.X());
-            result.coords.push_back(p.Y());
-            result.coords.push_back(p.Z());
+            out.push_back(p.X());
+            out.push_back(p.Y());
+            out.push_back(p.Z());
         }
     } catch (const Standard_Failure&) {
-        result.count = 0;
-        result.coords.clear();
+        out.clear();
     }
-
-    return result;
-}
-
-ApproxPoints edge_approximation_segments(
-    const TopoDS_Edge& edge, double tolerance)
-{
-    // Bug 4 fix: tolerance is now a parameter instead of hardcoded 0.1.
-    // Delegate to the ex variant with angular == chord == tolerance.
-    return edge_approximation_segments_ex(edge, tolerance, tolerance);
+    return out;
 }
 
 std::unique_ptr<TopoDS_Edge> make_helix_edge(

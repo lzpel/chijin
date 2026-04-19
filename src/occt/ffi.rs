@@ -13,12 +13,6 @@ mod ffi_bridge {
 		success: bool,
 	}
 
-	// Shared struct for approximation points
-	struct ApproxPoints {
-		coords: Vec<f64>, // flat xyz
-		count: u32,
-	}
-
 	// Expose Rust stream types to C++ for streambuf callbacks
 	extern "Rust" {
 		type RustReader;
@@ -155,8 +149,7 @@ mod ffi_bridge {
 
 		// ==================== Edge Methods ====================
 
-		fn edge_approximation_segments(edge: &TopoDS_Edge, tolerance: f64) -> ApproxPoints;
-		fn edge_approximation_segments_ex(edge: &TopoDS_Edge, angular: f64, chord: f64) -> ApproxPoints;
+		fn edge_approximation_segments(edge: &TopoDS_Edge, angular: f64, chord: f64) -> Vec<f64>;
 
 		fn make_helix_edge(ax: f64, ay: f64, az: f64, xrx: f64, xry: f64, xrz: f64, radius: f64, pitch: f64, height: f64) -> UniquePtr<TopoDS_Edge>;
 		fn make_polygon_edges(coords: &[f64]) -> UniquePtr<CxxVector<TopoDS_Edge>>;

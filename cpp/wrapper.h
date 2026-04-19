@@ -28,7 +28,6 @@ struct RustWriter;
 
 // Forward-declare shared structs (defined by cxx in ffi.rs.h)
 struct MeshData;
-struct ApproxPoints;
 // ==================== Streambuf bridges ====================
 
 // std::streambuf subclass that reads from a Rust `dyn Read` via FFI callback
@@ -200,13 +199,9 @@ std::unique_ptr<TopoDS_Face> clone_face_handle(const TopoDS_Face& face);
 
 // ==================== Edge Methods ====================
 
-// Approximate an edge as a polyline. The `_ex` variant is the implementation
-// body and takes independent angular/chord deflection bounds. The plain
-// variant is a convenience wrapper that maps a single `tolerance` value to
-// both deflection bounds.
-ApproxPoints edge_approximation_segments(
-    const TopoDS_Edge& edge, double tolerance);
-ApproxPoints edge_approximation_segments_ex(
+// Approximate an edge as a polyline. Takes independent angular/chord
+// deflection bounds. Returns a flat xyz `Vec<f64>` (length = 3 * point count).
+rust::Vec<double> edge_approximation_segments(
     const TopoDS_Edge& edge, double angular, double chord);
 
 // Construct a single helical edge on a cylindrical surface centered at the

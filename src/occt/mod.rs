@@ -3,6 +3,5 @@ pub mod edge;
 pub mod face;
 pub(crate) mod ffi;
 pub mod io;
-pub(crate) mod iterators;
 pub mod solid;
 pub mod stream;
