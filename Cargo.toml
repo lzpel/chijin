@@ -1,6 +1,6 @@
 [package]
 name = "cadrum"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2021"
 description = "Rust CAD library powered by statically linked, headless OpenCASCADE (OCCT 8.0.0-rc5)"
 license = "MIT"
