@@ -5,7 +5,6 @@
 //!   with both cross-sections exposed
 
 use cadrum::{DVec3, Error, Solid};
-use std::collections::HashSet;
 
 fn hollow_cube() -> Result<Solid, Error> {
 	let cube = Solid::cube(8.0, 8.0, 8.0);
@@ -18,12 +17,12 @@ fn halved_shelled_torus() -> Result<Solid, Error> {
 	let torus = Solid::torus(6.0, 2.0, DVec3::Z);
 	// Bisect with Y=0 half-space (normal +Y): keep the +Y half of the ring — always 1 solid.
 	let cutter = Solid::half_space(DVec3::ZERO, DVec3::Y);
-	// Metadata variant returns [from_torus, from_cutter] as flat [post_id, src_id, ...];
-	// even indices are the post_ids of faces in the result that came from the cutter.
+	// from_cutter is a flat [post_id, src_id, ...]: post_ids are TShape addresses
+	// in the result tree, src_ids live in the cutter tree. Both are globally
+	// unique pointers, so `contains` works without separating even/odd indices.
 	let (mut halves, [_, from_cutter]) = torus.intersect_with_metadata(&[cutter])?;
 	let half = halves.pop().ok_or(Error::BooleanOperationFailed)?;
-	let cut_ids: HashSet<u64> = from_cutter.iter().step_by(2).copied().collect();
-	half.shell(-0.3, half.iter_face().filter(|f| cut_ids.contains(&f.tshape_id())))
+	half.shell(-0.3, half.iter_face().filter(|f| from_cutter.contains(&f.tshape_id())))
 }
 
 fn main() -> Result<(), Error> {
