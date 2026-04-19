@@ -4,7 +4,7 @@
 //!   shell using those cut faces as the openings → thin-walled half-ring
 //!   with both cross-sections exposed
 
-use cadrum::{DVec3, Error, Face, Solid};
+use cadrum::{DVec3, Error, Solid};
 use std::collections::HashSet;
 
 fn hollow_cube() -> Result<Solid, Error> {
@@ -14,29 +14,24 @@ fn hollow_cube() -> Result<Solid, Error> {
 	cube.shell(-1.0, [top])
 }
 
-fn halved_shelled_torus() -> Result<Vec<Solid>, Error> {
+fn halved_shelled_torus() -> Result<Solid, Error> {
 	let torus = Solid::torus(6.0, 2.0, DVec3::Z);
-	// Bisect with Y=0 half-space (normal +Y): keep the +Y half of the ring.
+	// Bisect with Y=0 half-space (normal +Y): keep the +Y half of the ring — always 1 solid.
 	let cutter = Solid::half_space(DVec3::ZERO, DVec3::Y);
-	// Metadata variant returns [from_torus, from_cutter]: faces in the result
-	// that originated from the cutter are exactly the planar cut disks.
-	let (halves, [_, from_cutter]) = torus.intersect_with_metadata(&[cutter])?;
-	let cut_ids: HashSet<u64> = from_cutter.chunks(2).map(|p| p[0]).collect();
-	halves.into_iter().map(|half| {
-		let cuts: Vec<&Face> = half.iter_face().filter(|f| cut_ids.contains(&f.tshape_id())).collect();
-		half.shell(-0.3, cuts)
-	}).collect()
+	// Metadata variant returns [from_torus, from_cutter] as flat [post_id, src_id, ...];
+	// even indices are the post_ids of faces in the result that came from the cutter.
+	let (mut halves, [_, from_cutter]) = torus.intersect_with_metadata(&[cutter])?;
+	let half = halves.pop().ok_or(Error::BooleanOperationFailed)?;
+	let cut_ids: HashSet<u64> = from_cutter.iter().step_by(2).copied().collect();
+	half.shell(-0.3, half.iter_face().filter(|f| cut_ids.contains(&f.tshape_id())))
 }
 
 fn main() -> Result<(), Error> {
 	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
 
 	let cube = hollow_cube()?.color("#d0a878");
-	let torus_half: Vec<Solid> = halved_shelled_torus()?
-		.into_iter()
-		.map(|s| s.color("#a8c8d0").translate(DVec3::X * 18.0))
-		.collect();
-	let result: Vec<Solid> = std::iter::once(cube).chain(torus_half).collect();
+	let torus_half = halved_shelled_torus()?.color("#a8c8d0").translate(DVec3::X * 18.0);
+	let result = [cube, torus_half];
 
 	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
 	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
