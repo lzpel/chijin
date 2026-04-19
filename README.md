@@ -15,8 +15,10 @@ Rust CAD library powered by statically linked, headless [OpenCASCADE](https://de
 | [primitives](#primitives) | [write read](#write-read) | [transform](#transform) | [boolean](#boolean) |
 |:---:|:---:|:---:|:---:|
 | [<img src="https://lzpel.github.io/cadrum/01_primitives.svg" width="180" alt="primitives"/>](#primitives) | [<img src="https://lzpel.github.io/cadrum/02_write_read.svg" width="180" alt="write read"/>](#write-read) | [<img src="https://lzpel.github.io/cadrum/03_transform.svg" width="180" alt="transform"/>](#transform) | [<img src="https://lzpel.github.io/cadrum/04_boolean.svg" width="180" alt="boolean"/>](#boolean) |
-| [extrude](#extrude) | [loft](#loft) | [sweep](#sweep) | [bspline](#bspline) |
-| [<img src="https://lzpel.github.io/cadrum/05_extrude.svg" width="180" alt="extrude"/>](#extrude) | [<img src="https://lzpel.github.io/cadrum/06_loft.svg" width="180" alt="loft"/>](#loft) | [<img src="https://lzpel.github.io/cadrum/07_sweep.svg" width="180" alt="sweep"/>](#sweep) | [<img src="https://lzpel.github.io/cadrum/08_bspline.svg" width="180" alt="bspline"/>](#bspline) |
+| [extrude](#extrude) | [loft](#loft) | [sweep](#sweep) | [shell](#shell) |
+| [<img src="https://lzpel.github.io/cadrum/05_extrude.svg" width="180" alt="extrude"/>](#extrude) | [<img src="https://lzpel.github.io/cadrum/06_loft.svg" width="180" alt="loft"/>](#loft) | [<img src="https://lzpel.github.io/cadrum/07_sweep.svg" width="180" alt="sweep"/>](#sweep) | [<img src="https://lzpel.github.io/cadrum/08_shell.svg" width="180" alt="shell"/>](#shell) |
+| [bspline](#bspline) |  |  |  |
+| [<img src="https://lzpel.github.io/cadrum/09_bspline.svg" width="180" alt="bspline"/>](#bspline) |  |  |  |
 
 More examples with source code are available at [lzpel.github.io/cadrum](https://lzpel.github.io/cadrum).
 
@@ -599,10 +601,74 @@ fn main() -> Result<(), Error> {
   <img src="https://lzpel.github.io/cadrum/07_sweep.svg" alt="07_sweep" width="360"/>
 </p>
 
+#### Shell
+
+Demo of `Solid::shell`:
+
+```sh
+cargo run --example 08_shell
+```
+
+```rust
+//! Demo of `Solid::shell`:
+//! - Cube: remove top face, offset inward → open-top container
+//! - Torus: bisect with a half-space to introduce planar cut faces, then
+//!   shell using those cut faces as the openings → thin-walled half-ring
+//!   with both cross-sections exposed
+
+use cadrum::{DVec3, Error, Solid};
+
+fn hollow_cube() -> Result<Solid, Error> {
+	let cube = Solid::cube(8.0, 8.0, 8.0);
+	// TopExp_Explorer order on a box is stable; +Z face ends up last.
+	let top = cube.iter_face().last().expect("cube has faces");
+	cube.shell(-1.0, [top])
+}
+
+fn halved_shelled_torus(thickness: f64) -> Result<Solid, Error> {
+	let torus = Solid::torus(6.0, 2.0, DVec3::Y);
+	// Bisect with Y=0 half-space (normal +Y): keep the +Y half of the ring — always 1 solid.
+	let cutter = Solid::half_space(DVec3::ZERO, -DVec3::Z);
+	// from_cutter is a flat [post_id, src_id, ...]: post_ids are TShape addresses
+	// in the result tree, src_ids live in the cutter tree. Both are globally
+	// unique pointers, so `contains` works without separating even/odd indices.
+	let (mut halves, [_, from_cutter]) = torus.intersect_with_metadata(&[cutter])?;
+	let half = halves.pop().ok_or(Error::BooleanOperationFailed)?;
+	half.shell(thickness, half.iter_face().filter(|f| from_cutter.contains(&f.tshape_id())))
+}
+
+fn main() -> Result<(), Error> {
+	let example_name = std::path::Path::new(file!()).file_stem().unwrap().to_str().unwrap();
+
+	let result = [
+		hollow_cube()?.color("#d0a878"),
+		halved_shelled_torus(1.0)?.color("#ff5e00").translate(DVec3::X * 18.0),
+		halved_shelled_torus(-1.0)?.color("#0052ff").translate(DVec3::X * 18.0 + DVec3::Y * 10.0),
+	];
+
+	let mut f = std::fs::File::create(format!("{example_name}.step")).expect("failed to create STEP file");
+	cadrum::write_step(&result, &mut f).expect("failed to write STEP");
+
+	// Isometric view from (1, 1, 2) with shading so the cavity depth reads
+	// naturally.
+	let mut f = std::fs::File::create(format!("{example_name}.svg")).expect("failed to create SVG file");
+	cadrum::mesh(&result, 0.2).and_then(|m| m.write_svg(DVec3::new(1.0, 1.0, 2.0), false, true, &mut f)).expect("failed to write SVG");
+
+	println!("wrote {example_name}.step / {example_name}.svg");
+	Ok(())
+}
+
+```
+- [08_shell.step](https://lzpel.github.io/cadrum/08_shell.step)
+
+<p align="center">
+  <img src="https://lzpel.github.io/cadrum/08_shell.svg" alt="08_shell" width="360"/>
+</p>
+
 #### Bspline
 
 ```sh
-cargo run --example 08_bspline
+cargo run --example 09_bspline
 ```
 
 ```rust
@@ -655,10 +721,10 @@ fn main() {
 }
 
 ```
-- [08_bspline.step](https://lzpel.github.io/cadrum/08_bspline.step)
+- [09_bspline.step](https://lzpel.github.io/cadrum/09_bspline.step)
 
 <p align="center">
-  <img src="https://lzpel.github.io/cadrum/08_bspline.svg" alt="08_bspline" width="360"/>
+  <img src="https://lzpel.github.io/cadrum/09_bspline.svg" alt="09_bspline" width="360"/>
 </p>
 
 
