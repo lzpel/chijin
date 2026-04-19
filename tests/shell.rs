@@ -30,3 +30,4 @@ fn test_shell_outward_produces_wall() {
 	assert!(shell.volume() > 0.0 && shell.volume() < 1000.0, "outer shell is wall material only, not the original cube");
 	assert_eq!(shell.shell_count(), 1);
 }
+
