@@ -34,28 +34,32 @@ impl Iterator for FaceIterator {
 /// Wraps `TopExp_Explorer` with `TopAbs_EDGE`.
 pub struct EdgeIterator {
 	explorer: cxx::UniquePtr<ffi::TopExp_Explorer>,
+	current: Option<Edge>,
 }
 
 impl EdgeIterator {
 	pub(crate) fn new(explorer: cxx::UniquePtr<ffi::TopExp_Explorer>) -> Self {
-		EdgeIterator { explorer }
+		EdgeIterator {
+			explorer,
+			current: None,
+		}
 	}
 }
 
-impl Iterator for EdgeIterator {
-	type Item = Edge;
+impl<'a> Iterator for EdgeIterator {
+	type Item = &'a Edge;
 
-	fn next(&mut self) -> Option<Edge> {
-		if !ffi::explorer_more(&self.explorer) {
+	fn next(&mut self) -> Option<&'a Edge> {
+		self.current = if !ffi::explorer_more(&self.explorer) {
 			return None;
-		}
-		let edge = ffi::explorer_current_edge(&self.explorer);
-		ffi::explorer_next(self.explorer.pin_mut());
-		// TopExp_Explorer は探索中の有効な edge のみを返すので null は想定外。
-		Some(
-			Edge::try_from_ffi(edge, "EdgeIterator: explorer_current_edge returned null".into())
-				.expect("EdgeIterator: unexpected null from explorer_current_edge (this is a bug)"),
-		)
+		} else {
+			let edge = ffi::explorer_current_edge(&self.explorer);
+			ffi::explorer_next(self.explorer.pin_mut());
+			let e = Edge::try_from_ffi(edge, "EdgeIterator: explorer_current_edge returned null".into()).expect("EdgeIterator: unexpected null from explorer_current_edge (this is a bug)");
+			// TopExp_Explorer は探索中の有効な edge のみを返すので null は想定外。
+			Some(e)
+		};
+		self.current.as_ref()
 	}
 }
 

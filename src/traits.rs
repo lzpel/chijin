@@ -331,6 +331,7 @@ pub trait Wire: Transform {
 /// `Error::InvalidEdge(String)` with a message that identifies the failing
 /// constructor and the offending parameters.
 pub trait EdgeStruct: Sized + Clone + Wire {
+	type Iterator<'a>: Iterator<Item = &'a Self>;
 	/// Construct a single helical edge on a cylindrical surface centered at
 	/// the world origin.
 	///
@@ -426,13 +427,14 @@ pub trait SolidStruct: Sized + Clone + Compound {
 	fn half_space(plane_origin: DVec3, plane_normal: DVec3) -> Self;
 
 	// --- Topology ---
-	fn faces(&self) -> Vec<Self::Face>;
-	fn edges(&self) -> Vec<Self::Edge>;
+	// fn into_faces(&self) -> Vec<Self::Face>;
+	fn iter_edges(&self) -> <Self::Edge as EdgeStruct>::Iterator;
 
 	/// Extrude a closed profile wire along a direction vector to form a solid.
 	///
 	/// Internally builds a face from the wire and uses `BRepPrimAPI_MakePrism`.
 	/// Fails if the profile is empty, not closed, or the direction is zero-length.
+	// 	fn faces(&self) -> Vec<Self::Face>;
 	fn extrude<'a>(profile: impl IntoIterator<Item = &'a Self::Edge>, dir: DVec3) -> Result<Self, Error> where Self::Edge: 'a;
 
 	// --- Sweep ---

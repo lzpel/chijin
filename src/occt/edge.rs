@@ -1,6 +1,7 @@
 use super::ffi;
 use super::iterators::ApproximationSegmentIterator;
 use crate::common::error::Error;
+use crate::occt::iterators::EdgeIterator;
 use crate::traits::{BSplineEnd, EdgeStruct, Transform, Wire};
 use glam::DVec3;
 
@@ -57,6 +58,8 @@ impl Clone for Edge {
 }
 
 impl EdgeStruct for Edge {
+	type Iterator = EdgeIterator;
+
 	fn helix(radius: f64, pitch: f64, height: f64, axis: DVec3, x_ref: DVec3) -> Result<Self, Error> {
 		let inner = ffi::make_helix_edge(axis.x, axis.y, axis.z, x_ref.x, x_ref.y, x_ref.z, radius, pitch, height);
 		Edge::try_from_ffi(inner, format!("helix: degenerate params (radius={radius}, pitch={pitch}, height={height}, axis={axis:?}, x_ref={x_ref:?})"))

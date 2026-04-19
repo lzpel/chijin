@@ -176,12 +176,8 @@ impl SolidStruct for Solid {
 
 	// ==================== Topology ====================
 
-	fn faces(&self) -> Vec<Face> {
-		FaceIterator::new(ffi::explore_faces(&self.inner)).collect()
-	}
-
-	fn edges(&self) -> Vec<Edge> {
-		EdgeIterator::new(ffi::explore_edges(&self.inner)).collect()
+	fn iter_edges(&self) -> EdgeIterator {
+		EdgeIterator::new(ffi::explore_edges(&self.inner))
 	}
 
 	// ==================== Extrude ====================
